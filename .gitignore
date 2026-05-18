@@ -1,3 +1,21 @@
-2026_season_data
+.DS_Store
 .env
-.claude
+.env.*
+!.env.example
+
+# Real PCA RMR season data — contains member PII (names, emails, member #s).
+# Local dev only. See feedback_sensitive_axdb_fixtures memory.
+2026_season_data/
+
+# claude config / scratch
+.claude/
+
+# deps & build output (workspace-wide)
+node_modules/
+
+# pnpm
+.pnpm-store/
+
+# local databases (Prisma SQLite dev/test files)
+*.db
+*.db-journal

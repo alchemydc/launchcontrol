@@ -1,0 +1,102 @@
+// PCA Launch Control — app database
+// See docs/PRD.md §2.4 for the source of truth.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Event {
+  id         Int      @id @default(autoincrement())
+  msrEventId String?  @unique
+  slug       String   @unique
+  name       String
+  date       DateTime
+  location   String?
+  axdbSha256 String?
+  createdAt  DateTime @default(now())
+
+  entries Entry[]
+  videos  Video[]
+}
+
+model Driver {
+  id        Int     @id @default(autoincrement())
+  msrUid    String? @unique
+  firstName String
+  lastName  String
+  memberNum String? @unique
+
+  entries Entry[]
+  videos  Video[]
+}
+
+model CarClass {
+  id       Int     @id @default(autoincrement())
+  code     String  @unique
+  paxIndex Decimal @default(1.0000)
+
+  enteredEntries Entry[] @relation("EnteredClass")
+  paxEntries     Entry[] @relation("PaxClass")
+}
+
+model Entry {
+  id             Int     @id @default(autoincrement())
+  eventId        Int
+  driverId       Int
+  classId        Int
+  paxClassId     Int
+  carNumber      String
+  carDescription String?
+
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  driver   Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  class    CarClass @relation("EnteredClass", fields: [classId], references: [id])
+  paxClass CarClass @relation("PaxClass", fields: [paxClassId], references: [id])
+  runs     Run[]
+
+  // No @@unique on (eventId, driverId): a driver can enter the same event
+  // multiple times via co-drives or multi-class entries.
+  @@index([eventId])
+  @@index([driverId])
+}
+
+enum RunDisposition {
+  CLEAN
+  DNF
+  RRN
+}
+
+model Run {
+  id          Int            @id @default(autoincrement())
+  entryId     Int
+  runNumber   Int
+  rawTimeMs   Int?
+  cones       Int            @default(0)
+  disposition RunDisposition @default(CLEAN)
+
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, runNumber])
+  @@index([entryId])
+}
+
+model Video {
+  id          Int      @id @default(autoincrement())
+  eventId     Int
+  driverId    Int
+  url         String
+  runGroup    String?
+  carClass    String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}

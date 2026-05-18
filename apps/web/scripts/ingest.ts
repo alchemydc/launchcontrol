@@ -1,0 +1,31 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { ingestAxdb } from "@/lib/ingest";
+import { prisma } from "@/lib/prisma";
+
+async function main() {
+  const arg = process.argv[2];
+  if (!arg) {
+    console.error("Usage: pnpm ingest <path-to-axdb>");
+    process.exit(2);
+  }
+
+  // pnpm sets INIT_CWD to the directory where the user invoked pnpm,
+  // so relative paths work the way the user expects (not relative to apps/web).
+  const baseDir = process.env.INIT_CWD ?? process.cwd();
+  const path = resolve(baseDir, arg);
+  if (!existsSync(path)) {
+    console.error(`File not found: ${path}`);
+    process.exit(2);
+  }
+
+  const result = await ingestAxdb(path);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+main()
+  .catch((e: unknown) => {
+    console.error(e);
+    process.exitCode = 1;
+  })
+  .finally(() => prisma.$disconnect());
