@@ -308,7 +308,7 @@ Note that static leaderboard is *not* yet using tailwind styling or shadcn table
 Land redaction on its own first so the change is reversible and the new assertions can stabilize before we also move the DB underneath them.
 
 - **Schema:** rename `Driver.lastName` → `Driver.lastInitial` (`String`). `Driver.memberNum @unique` is already on disk in migration `20260518224456_driver_member_num_unique`; PRD §2.4 reflects it. Migration name: `entry_redact_last_initial`.
-- **Ingest:** in `src/lib/ingest.ts`, introduce a `redactLastInitial(name)` helper: trim, take first char, uppercase, append `.`; blank/whitespace input → `?.`. Use it in the driver upsert path. Stop reading or persisting full last names.
+- **Ingest:** in `src/lib/ingest.ts`, introduce a `redactLastName(name)` helper: trim, take first char, uppercase, append `.`; blank/whitespace input → `?.`. Use it in the driver upsert path. Stop reading or persisting full last names.
 - **Display:** `src/lib/leaderboard.ts` — update `EntryWithRelations.driver` type and the `driverName` template literal to `${firstName} ${lastInitial}`. No changes to `LeaderboardTable` itself.
 - **Tests:** the synthetic `.axdb` does **not** change — it represents the unredacted AxWare source, which is what we receive in real life. What changes is what the post-ingest test DB looks like. Add two assertions to `tests/ingest.test.ts`:
   - every `Driver.lastInitial` matches `/^[A-Z?]\.$/`,
