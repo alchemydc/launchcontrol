@@ -45,6 +45,18 @@ node apps/web/tests/fixtures/build-synthetic-axdb.mjs
 
 The dev SQLite file lives at `apps/web/dev.db` and is gitignored.
 
+### Environment variables
+
+Local dev works out of the box — no Turso credentials needed. Copy `.env.example` to `.env` (or `.env.local`) and edit as needed:
+
+| Variable | Local default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `file:./dev.db` | Local libSQL file path |
+| `TURSO_DATABASE_URL` | _(blank)_ | Turso remote URL — set in Vercel for preview/prod |
+| `TURSO_AUTH_TOKEN` | _(blank)_ | Turso auth token — set in Vercel for preview/prod |
+
+If `TURSO_DATABASE_URL` is set, the app connects to Turso; otherwise it falls back to `DATABASE_URL` (local file). No Turso account or credentials are needed for local development.
+
 ## Project status
 
 Milestones tracked in [docs/PRD.md §3](docs/PRD.md). M0 (scaffold) and M1 (ingest + static leaderboard) are done; M2 (MSR OAuth) is blocked on credentials from MotorsportReg.

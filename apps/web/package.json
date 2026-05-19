@@ -8,12 +8,15 @@
     "start": "next start",
     "lint": "eslint",
     "ingest": "tsx --env-file=.env scripts/ingest.ts",
+    "migrate:turso": "tsx --env-file=.env scripts/migrate-turso.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
-    "@prisma/adapter-better-sqlite3": "^7.8.0",
+    "@libsql/client": "^0.14.0",
+    "@prisma/adapter-libsql": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@tanstack/react-table": "^8.21.3",
     "better-sqlite3": "^12.10.0",
