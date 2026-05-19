@@ -81,6 +81,24 @@ export function LeaderboardTable({
   const columns = useMemo<ColumnDef<LeaderboardRow>[]>(
     () => [
       {
+        id: "rank",
+        header: () => (
+          <span className="tabular-nums text-center block w-full">#</span>
+        ),
+        enableSorting: false,
+        cell: ({ row, table }) => {
+          const sortedRows = table.getSortedRowModel().rows;
+          const rank = sortedRows.findIndex((r) => r.id === row.id) + 1;
+          const rankClass =
+            rank === 1
+              ? "text-primary font-bold tabular-nums text-center"
+              : rank <= 3
+                ? "font-semibold text-foreground tabular-nums text-center"
+                : "text-muted-foreground tabular-nums text-center";
+          return <span className={rankClass}>{rank}</span>;
+        },
+      },
+      {
         id: "carNumber",
         accessorKey: "carNumber",
         header: ({ column }) => (
@@ -191,7 +209,7 @@ export function LeaderboardTable({
               const variant =
                 r.disposition === "DNF" || r.disposition === "RRN"
                   ? "destructive"
-                  : "secondary";
+                  : "success";
               return (
                 <Badge
                   key={r.runNumber}
@@ -222,13 +240,15 @@ export function LeaderboardTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <span className="text-muted-foreground text-sm">Filter class:</span>
+      <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4 shadow-sm md:flex-row md:items-center">
+        <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          Filter class
+        </span>
         <Select
           value={classFilter}
           onValueChange={(v) => setClassFilter(v ?? ALL_CLASSES)}
         >
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full bg-background md:w-44">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -240,18 +260,21 @@ export function LeaderboardTable({
             ))}
           </SelectContent>
         </Select>
-        <span className="text-muted-foreground ml-auto text-sm tabular-nums">
+        <span className="rounded-full bg-background px-3 py-1 text-sm tabular-nums text-muted-foreground md:ml-auto">
           {filteredRows.length} of {rows.length}
         </span>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
+      <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+        <Table className="min-w-[760px]">
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
-              <TableRow key={group.id}>
+              <TableRow key={group.id} className="bg-muted/40 hover:bg-muted/40">
                 {group.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead
+                    key={header.id}
+                    className="h-11 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
+                  >
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -265,21 +288,32 @@ export function LeaderboardTable({
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
-                  className="text-muted-foreground py-8 text-center text-sm"
+                  className="py-10 text-center text-sm text-muted-foreground"
                 >
                   No entries match the current filter.
                 </TableCell>
               </TableRow>
             ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map((row) => {
+                const sortedRows = table.getSortedRowModel().rows;
+                const rank = sortedRows.findIndex((r) => r.id === row.id) + 1;
+                return (
+                  <TableRow
+                    key={row.id}
+                    className={
+                      rank === 1
+                        ? "bg-primary/5 hover:bg-primary/10"
+                        : "odd:bg-background even:bg-muted/10 hover:bg-accent/30"
+                    }
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="px-3 py-3 align-top">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

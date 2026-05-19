@@ -279,7 +279,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 
 ## Part 3 · Build Plan (Milestones)
 
-**Status (2026-05-19):** M0 ✓ · M1 ✓ — local MVP runs end-to-end: ingest works against both `2026_season_data/*/.axdb` files, home page lists events, `/events/[slug]` renders the leaderboard. **Two follow-ups before going further:** (a) ingest still persists full last names — must be reduced to last-initial only (see new M1.5); (b) leaderboard components are wired to shadcn (`Table`/`Badge`/`Card`/`Select`/`Button`) in code, but the rendered page in the browser is not picking up Tailwind v4 / shadcn styles — likely a CSS pipeline issue with the `@import "shadcn/tailwind.css"` line in `globals.css` rather than missing components (M1.6). MSR OAuth creds requested 2026-05-18, awaiting response. No Vercel preview deploys yet — gated on the DB migration in M1.5.
+**Status (2026-05-19):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.6 ✓ — local MVP runs end-to-end with last-name redaction and a styled UI (racing-red palette, system-controlled dark mode, sticky header/footer, ranked leaderboard). **Remaining before public preview:** M1.5b (Turso swap + first Vercel deploy at `launchcontrol.club`). MSR OAuth creds requested 2026-05-18, awaiting response.
 
 ### M0 — Scaffold ✓ (done 2026-05-18)
 
@@ -322,15 +322,20 @@ Land redaction on its own first so the change is reversible and the new assertio
 - **Deploy:** link the repo to Vercel (deferred from M0). Set `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and any future MSR env vars. Verify a preview deploy renders the home page and an ingested event.
 - **Custom domain:** the project's apex is `launchcontrol.club` (registered 2026-05-19). Attach to the Vercel project once a preview deploy is verified green. Production points to `launchcontrol.club` + `www.launchcontrol.club`; preview deploys remain on `*.vercel.app`.
 
-### M1.6 — Visual fix: confirm Tailwind v4 + shadcn styles actually render (target: 0.5 session)
+### M1.6 — Initial styling pass ✓ (done 2026-05-19)
 
-The `globals.css` file imports `tailwindcss`, `tw-animate-css`, and `shadcn/tailwind.css`. The third import is the suspicious one — `shadcn` is a CLI, not a runtime package that ships a `tailwind.css`. Investigate:
-- Run `pnpm dev` and inspect the rendered DOM: are the `bg-background`, `text-foreground`, and the `oklch(...)` CSS variables actually applied? Browser devtools will show this in 30 seconds.
-- If the `@import "shadcn/tailwind.css"` line is unresolved or no-op under Tailwind v4, remove it; the `:root` block in `globals.css` already defines every color/radius variable shadcn expects, and `@import "tailwindcss"` brings the utility layer.
-- Confirm `app/layout.tsx` imports `globals.css` and `<html>` carries no class that would block dark-mode defaults.
-- Add a tiny smoke check to the README on how to verify styling locally (one screenshot URL).
+Browser inspection ruled out the suspected CSS pipeline problem — Tailwind v4 + shadcn variables were rendering correctly. The real issue was that the palette was pure zero-chroma neutrals (`oklch(... 0 0)`), so the styled app read as raw HTML. Scope expanded from "visual fix" to a full first-pass styling.
 
-No new components in this milestone — the goal is to make existing shadcn components look the way shadcn intends.
+What landed:
+- **Palette:** racing-red primary (`oklch(0.55 0.22 25)` light / `oklch(0.62 0.20 25)` dark) on warm-slate surfaces; matching ring, destructive, accent, and a 5-stop chart spectrum (red → orange → amber → slate → graphite). Removed the stale `@import "shadcn/tailwind.css"` line.
+- **System-controlled dark mode:** added `@media (prefers-color-scheme: dark) :root { ... }` alongside the existing `.dark` class variant, so the OS pref controls theme without JS, no FOUC, no `next-themes` dependency. The `dark:` Tailwind variant remains usable for any future class-based override.
+- **Site chrome (`app/layout.tsx`):** sticky top header with the wordmark "Launch Control" linking to `/` and a muted `RMR · 2026 Season` kicker; footer with PCA RMR attribution. Page metadata updated from "Create Next App" to a real title template and description.
+- **Home page:** kicker + accent strip hero, event list wrapped in a soft tinted panel, card hover lifts to `border-primary/40` + `group-hover:text-primary`.
+- **Leaderboard:** added a rank column derived from the current sort (top-1 in `text-primary font-bold`, top-3 semibold, rest muted) with a subtle `bg-primary/5` accent on the leader row; added a `success` Badge variant for clean runs so DNF/RRN (now red, matching destructive) stand visually apart.
+
+No UI tests added — the change is purely presentational. Existing `tests/ingest.test.ts` (6 tests) plus `tsc --noEmit` continue to cover the regression surface. Visual regression / a11y testing can come later if the surface grows.
+
+Deferred from the original M1.6 plan: README screenshot smoke check (defer to M1.5b when there's a Vercel preview URL to link).
 
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)
 
@@ -392,9 +397,11 @@ No new components in this milestone — the goal is to make existing shadcn comp
 Out of scope for the MVP but noted to keep prior thinking discoverable:
 
 - **Containerization** (Docker / `docker-compose`) for parity between dev, preview, and prod.
-- **Tailscale ACL** for staging exposure before the site is public.
-- **Postgres** (or Supabase) migration if multi-writer / multi-region concurrency or row-level auth becomes a requirement.
 - **Background ingestion worker** if `.axdb` uploads outgrow Vercel function limits.
+
+## Post MVP Feature Ideas
+* Allow driver to add tunes, tires, setup changes to a "vehicle timeline" which should expose performance impact of changes made.
+* Allow driver to track performance against leaders or specific rivals visually.
 
 
 ## Feedback on PRD from other devs
