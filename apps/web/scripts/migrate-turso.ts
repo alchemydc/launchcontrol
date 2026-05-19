@@ -43,14 +43,13 @@ function listMigrationDirs(migrationsDir: string): string[] {
 }
 
 async function main(): Promise<void> {
-  const url = process.env.TURSO_DATABASE_URL ?? process.env.DATABASE_URL;
+  const tursoUrl = process.env.TURSO_DATABASE_URL?.trim();
+  const url = tursoUrl || process.env.DATABASE_URL?.trim();
   if (!url) {
     console.error("TURSO_DATABASE_URL or DATABASE_URL must be set.");
     process.exit(2);
   }
-  const authToken = process.env.TURSO_DATABASE_URL
-    ? process.env.TURSO_AUTH_TOKEN
-    : undefined;
+  const authToken = tursoUrl ? process.env.TURSO_AUTH_TOKEN : undefined;
 
   const client = createClient({ url, authToken });
   const migrationsDir = resolve(__dirname, "..", "prisma", "migrations");
