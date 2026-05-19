@@ -8,7 +8,7 @@ type EntryWithRelations = {
   id: number;
   carNumber: string;
   carDescription: string | null;
-  driver: { firstName: string; lastInitial: string };
+  driver: { id: number; firstName: string; lastInitial: string };
   class: { code: string };
   paxClass: { code: string; paxIndex: { toString(): string } };
   runs: Array<{
@@ -28,6 +28,7 @@ export type LeaderboardRun = {
 };
 
 export type LeaderboardRow = {
+  driverId: number;
   driverName: string;
   carNumber: string;
   classCode: string;
@@ -62,6 +63,7 @@ export function buildLeaderboard(entries: EntryWithRelations[]): LeaderboardRow[
     const bestPaxMs = bestRawMs == null ? null : Math.round(bestRawMs * paxIndex);
 
     return {
+      driverId: entry.driver.id,
       driverName: `${entry.driver.firstName} ${entry.driver.lastInitial}`,
       carNumber: entry.carNumber,
       classCode: entry.class.code,
