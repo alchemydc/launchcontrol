@@ -33,6 +33,12 @@ type SrcRun = {
 
 const REQUIRED_TABLES = ["events", "classes", "drivers", "registrations", "runs"] as const;
 
+function redactLastName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return "?.";
+  return trimmed[0]!.toUpperCase() + ".";
+}
+
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -139,18 +145,19 @@ export async function ingestAxdb(
       const driverIdBySrc = new Map<number, number>();
       for (const d of srcDrivers) {
         const memberNum = d.member_num?.trim() || null;
+        const lastInitial = redactLastName(d.last_name);
         const appDriver = memberNum
           ? await tx.driver.upsert({
               where: { memberNum },
               create: {
                 memberNum,
                 firstName: d.first_name,
-                lastName: d.last_name,
+                lastInitial,
               },
-              update: { firstName: d.first_name, lastName: d.last_name },
+              update: { firstName: d.first_name, lastInitial },
             })
           : await tx.driver.create({
-              data: { firstName: d.first_name, lastName: d.last_name },
+              data: { firstName: d.first_name, lastInitial },
             });
         driverIdBySrc.set(d.id, appDriver.id);
       }

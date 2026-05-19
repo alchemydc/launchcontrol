@@ -3,7 +3,7 @@
 .env.*
 !.env.example
 
-# Real PCA RMR season data — contains member PII (names, emails, member #s).
+# Real PCA RMR season data — may contain member PII (names, emails, member #s).
 # Local dev only. See feedback_sensitive_axdb_fixtures memory.
 2026_season_data/
 
@@ -19,3 +19,6 @@ node_modules/
 # local databases (Prisma SQLite dev/test files)
 *.db
 *.db-journal
+
+# local docs (private, not for public consumption)
+docs/private/

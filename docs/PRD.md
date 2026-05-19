@@ -34,9 +34,10 @@ A streamlined, high-performance web platform for the Porsche Club of America Roc
 
 #### 1.3.2 AxWare `.axdb` ingestion
 
-- **Local ingest CLI (M1)** — `pnpm ingest <path-to-axdb>` reads the source SQLite read-only, normalizes into the app DB. Developers point this at their gitignored `2026_season_data/*/.axdb` files for local smoke testing; CI/tests use a synthetic fixture (see DoD).
+- **PII redaction at ingest** — driver last names from AxWare are reduced to a single uppercase initial + period (e.g. `Kennedy` → `K.`) **before** any row reaches the app DB. The full last name is never persisted by this app. The on-event AxWare DB still holds the unredacted source, but our deploy DB and any leaderboard rendering only ever expose `First L.`. See §2.4 schema (`Driver.lastInitial`) and §2.6 mapping rules.
+- **Local ingest CLI (M1)** — `pnpm ingest <path-to-axdb>` reads the source SQLite read-only, normalizes (with redaction) into the app DB. Developers point this at their gitignored `2026_season_data/*/.axdb` files for local smoke testing; CI/tests use a synthetic fixture (see DoD).
 - **Admin upload (M4)** — `POST /api/admin/ingest` (multipart, admin-only) reuses the same ingest logic.
-- **Dynamic leaderboards** — `/events/[slug]` renders sortable, filterable tables: overall raw, PAX/indexed, class standings; per-driver run details (cones, DNF/RRN dispositions, splits).
+- **Dynamic leaderboards** — `/events/[slug]` renders sortable, filterable tables: overall raw, PAX/indexed, class standings; per-driver run details (cones, DNF/RRN dispositions, splits). Driver column shows `First L.` only.
 
 #### 1.3.3 Media aggregation
 
@@ -72,7 +73,7 @@ External:
 [ Next.js ] ──REST──────▶ api.motorsportreg.com/rest/* (with stored access token)
 ```
 
-No Docker, Nginx, or Tailscale in the MVP. See the post-MVP appendix for hardening options.
+The "SQLite app DB" above is **SQLite locally** and **Turso (libSQL) in preview/prod** — same SQL dialect, swapped at the Prisma driver-adapter layer. See §2.7 for rationale. No Docker, Nginx, or Tailscale in the MVP. See the post-MVP appendix for hardening options.
 
 ### 2.2 MSR OAuth 1.0a (verified)
 
@@ -147,8 +148,8 @@ model Driver {
   id          Int      @id @default(autoincrement())
   msrUid      String?  @unique
   firstName   String
-  lastName    String
-  memberNum   String?
+  lastInitial String                       // single uppercase letter + period, e.g. "K." — never the full last name; enforced at ingest (§2.6)
+  memberNum   String?  @unique
   entries     Entry[]
   videos      Video[]
 }
@@ -239,17 +240,46 @@ Mapping rules:
 |--------------------------------------------|--------------------------------------------------------------|
 | `events.event_name`, `event_date`          | `Event.name`, `Event.date`                                   |
 | `classes.class_name`, `classes.pax`        | `CarClass.code`, `CarClass.paxIndex` (upsert by `code`)      |
-| `drivers.*`                                | `Driver` (match by `member_num` if present; else upsert)     |
+| `drivers.first_name`                       | `Driver.firstName` (verbatim)                                |
+| `drivers.last_name`                        | `Driver.lastInitial` = `last_name.trim()[0].toUpperCase() + '.'` — **full last name is never persisted** |
+| `drivers.member_num`                       | `Driver.memberNum` (used as the upsert key; matches across events) |
 | `registrations`                            | `Entry` (one row per driver-event)                           |
 | `runs.finish_tick - runs.start_tick`       | `Run.rawTimeMs` (null when disposition='DNF' and no time)    |
 | `runs.cones`                               | `Run.cones`                                                  |
 | `runs.disposition`                         | `Run.disposition` (`''→CLEAN`, `'DNF'→DNF`, `'RRN'→RRN`)     |
 
+Drivers without a `member_num` cannot be reliably deduplicated under redaction (two `John K.` entries are indistinguishable), so the ingest creates a fresh `Driver` row for each name+event in that case. Acceptable for MVP; revisit if it produces visible duplicates on a real-event leaderboard.
+
+### 2.7 Database hosting — local SQLite, Turso (libSQL) in preview/prod
+
+The original M0 plan put SQLite directly on the host. That works locally but **blocks Vercel deploys**: Vercel's serverless functions have an ephemeral filesystem with no shared state between invocations, so a single-writer SQLite file cannot be the production DB. This was discovered at the first attempted preview deploy after M1.
+
+**Decision: keep SQLite locally; use Turso (libSQL) for preview + production.** Turso is a hosted, SQLite-compatible (libSQL) database with an HTTP wire protocol designed for serverless. The decision was made over the candidates below.
+
+| Option              | Why considered                                  | Why not chosen for MVP                                                                                  |
+|---------------------|-------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| **Turso (libSQL)**  | API key already procured; SQLite-compatible     | **Chosen.** See below.                                                                                  |
+| Supabase Postgres   | Native Decimal/enum, broad feature set          | Free tier pauses inactive DBs; Supavisor pool URL config is a known foot-gun; Docker for local parity   |
+| Neon serverless PG  | Excellent serverless latency; CI branching      | Best-in-class but requires full Postgres migration; benefit not worth the time at MVP scale             |
+| Vercel Postgres     | Vercel-integrated provisioning UI               | It's Neon underneath; adds a layer of indirection with no technical gain                                |
+| Cloudflare D1       | SQLite-shaped; great free tier                  | Workers-only runtime; incompatible with Vercel Node functions                                           |
+
+**Why Turso for this MVP:**
+
+- **Smallest migration:** the existing schema already targets `provider = "sqlite"` and we're already on the Prisma 7 driver-adapter pattern (`@prisma/adapter-better-sqlite3`). Swap to `@prisma/adapter-libsql` + a different `DATABASE_URL`. No schema model changes; `Decimal` (paxIndex) and the `RunDisposition` enum are emulated transparently by Prisma over libSQL — paxIndex stored as REAL is fine for the multiplier math we do, and the enum stored as TEXT is fine for filters.
+- **Local-dev unchanged:** `file:./dev.db` for local, Turso remote URL in `.env.preview` / Vercel env. Same driver adapter both sides; no Docker, no daemon.
+- **Latency:** Turso's HTTP protocol is stateless per request (no pooler needed). ~10–30ms added per query from a warm Vercel function — imperceptible for read-heavy public leaderboards at our scale.
+- **Free tier:** 9 GB storage / 1B row-reads per month. We will never approach this.
+
+**When we'd revisit:** if we ever need native Postgres features (full-text search via `tsvector`, JSONB querying, PostGIS), or if we want per-PR DB branching wired into CI. Neither is on the MVP roadmap.
+
+**Local-only secrets:** `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` live in Vercel env vars (preview + prod) and a developer's `.env.local` for those who want to point local dev at Turso. The default local dev path stays `file:./dev.db`.
+
 ---
 
 ## Part 3 · Build Plan (Milestones)
 
-**Status (2026-05-18):** M0 ✓ · M1 ✓ · M2–M5 not started · MSR OAuth creds requested, awaiting response.
+**Status (2026-05-19):** M0 ✓ · M1 ✓ — local MVP runs end-to-end: ingest works against both `2026_season_data/*/.axdb` files, home page lists events, `/events/[slug]` renders the leaderboard. **Two follow-ups before going further:** (a) ingest still persists full last names — must be reduced to last-initial only (see new M1.5); (b) leaderboard components are wired to shadcn (`Table`/`Badge`/`Card`/`Select`/`Button`) in code, but the rendered page in the browser is not picking up Tailwind v4 / shadcn styles — likely a CSS pipeline issue with the `@import "shadcn/tailwind.css"` line in `globals.css` rather than missing components (M1.6). MSR OAuth creds requested 2026-05-18, awaiting response. No Vercel preview deploys yet — gated on the DB migration in M1.5.
 
 ### M0 — Scaffold ✓ (done 2026-05-18)
 
@@ -272,6 +302,35 @@ Mapping rules:
 - Real-event smoke: both `2026_season_data/*/.axdb` files ingest cleanly into local dev.db.
 - **Schema correction during M1:** dropped `@@unique([eventId, driverId])` on `Entry` — autocross allows co-drives and multi-class entries (same person ↦ multiple entries at one event). Migration: `20260518230343_entry_allow_multi`.
 Note that static leaderboard is *not* yet using tailwind styling or shadcn table, icons, etc.
+
+### M1.5a — PII redaction + standalone smoke test (target: 0.5 session)
+
+Land redaction on its own first so the change is reversible and the new assertions can stabilize before we also move the DB underneath them.
+
+- **Schema:** rename `Driver.lastName` → `Driver.lastInitial` (`String`). `Driver.memberNum @unique` is already on disk in migration `20260518224456_driver_member_num_unique`; PRD §2.4 reflects it. Migration name: `entry_redact_last_initial`.
+- **Ingest:** in `src/lib/ingest.ts`, introduce a `redactLastInitial(name)` helper: trim, take first char, uppercase, append `.`; blank/whitespace input → `?.`. Use it in the driver upsert path. Stop reading or persisting full last names.
+- **Display:** `src/lib/leaderboard.ts` — update `EntryWithRelations.driver` type and the `driverName` template literal to `${firstName} ${lastInitial}`. No changes to `LeaderboardTable` itself.
+- **Tests:** the synthetic `.axdb` does **not** change — it represents the unredacted AxWare source, which is what we receive in real life. What changes is what the post-ingest test DB looks like. Add two assertions to `tests/ingest.test.ts`:
+  - every `Driver.lastInitial` matches `/^[A-Z?]\.$/`,
+  - a regex sweep over all `Driver` rows confirms no fixture last name (`Ada`, `Brook`, `Chen`, `Diaz`, `Eckhart`) appears in any column beyond its first character.
+- **Smoke test:** ingest both gitignored `2026_season_data/*/.axdb` files into local `dev.db`, run `pnpm dev`, and visually confirm the leaderboard shows `First L.` for every driver.
+
+### M1.5b — Turso migration + first Vercel preview deploy at `launchcontrol.club` (target: 0.5 session)
+
+- **DB driver swap:** replace `@prisma/adapter-better-sqlite3` with `@prisma/adapter-libsql`. Update the singleton in `src/lib/prisma.ts` to instantiate from `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` when set, else fall back to a local `file:./dev.db` libSQL URL. `pnpm ingest` keeps working locally with no changes to its CLI.
+- **Migrations:** keep the local `prisma migrate dev` flow; `prisma migrate deploy` runs against Turso on first preview deploy.
+- **Deploy:** link the repo to Vercel (deferred from M0). Set `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and any future MSR env vars. Verify a preview deploy renders the home page and an ingested event.
+- **Custom domain:** the project's apex is `launchcontrol.club` (registered 2026-05-19). Attach to the Vercel project once a preview deploy is verified green. Production points to `launchcontrol.club` + `www.launchcontrol.club`; preview deploys remain on `*.vercel.app`.
+
+### M1.6 — Visual fix: confirm Tailwind v4 + shadcn styles actually render (target: 0.5 session)
+
+The `globals.css` file imports `tailwindcss`, `tw-animate-css`, and `shadcn/tailwind.css`. The third import is the suspicious one — `shadcn` is a CLI, not a runtime package that ships a `tailwind.css`. Investigate:
+- Run `pnpm dev` and inspect the rendered DOM: are the `bg-background`, `text-foreground`, and the `oklch(...)` CSS variables actually applied? Browser devtools will show this in 30 seconds.
+- If the `@import "shadcn/tailwind.css"` line is unresolved or no-op under Tailwind v4, remove it; the `:root` block in `globals.css` already defines every color/radius variable shadcn expects, and `@import "tailwindcss"` brings the utility layer.
+- Confirm `app/layout.tsx` imports `globals.css` and `<html>` carries no class that would block dark-mode defaults.
+- Add a tiny smoke check to the README on how to verify styling locally (one screenshot URL).
+
+No new components in this milestone — the goal is to make existing shadcn components look the way shadcn intends.
 
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)
 
@@ -304,7 +363,9 @@ Note that static leaderboard is *not* yet using tailwind styling or shadcn table
 - **Ingestion correctness:** integration test ingests the synthetic `apps/web/tests/fixtures/synthetic.axdb` (committed) and asserts:
   - 5 drivers, 14 runs, 3 classes (codes `C1`, `CS`, `TO`),
   - exactly 1 `DNF` and 1 `RRN`,
-  - class PAX multipliers preserved (`C1`=1.0, `CS`=0.92, `TO`=0.85).
+  - class PAX multipliers preserved (`C1`=1.0, `CS`=0.92, `TO`=0.85),
+  - **every persisted `Driver.lastInitial` matches `/^[A-Z?]\.$/`** (no full last names reach the app DB),
+  - no Driver, Entry, or Run row contains a substring matching any source last name beyond the first character (regex sweep on the dumped DB).
   Regenerate the fixture via `node apps/web/tests/fixtures/build-synthetic-axdb.mjs`. Real `2026_season_data/*/.axdb` files are gitignored (member PII) and never used as test fixtures.
 - **Auth boundary:** every route under `/api/admin/*` returns 401 unless the session is present and `msrUid` is in the `ADMIN_MSR_UIDS` env-var allowlist (post-MVP: DB-backed roles).
 - **Public reads** of completed event leaderboards do **not** require auth (matches the Driver/Competitor persona).
@@ -319,9 +380,10 @@ Note that static leaderboard is *not* yet using tailwind styling or shadcn table
 | 1 | MSR OAuth credentials — **requested 2026-05-18**, awaiting MSR's response. Also need RMR org ID.     | M2, M3  | DC    |
 | 2 | RMR's MSR organization ID (for `/rest/calendars/organization/{org_id}`).                             | M3      | TBD   |
 | 3 | SmugMug: existing RMR gallery account + URL pattern, or per-event user-submitted galleries?          | M5      | TBD   |
-| 4 | Vercel free tier OK for MVP? Custom domain plan?                                                     | Deploy  | TBD   |
+| 4 | ~~Vercel free tier OK for MVP? Custom domain plan?~~ **Resolved 2026-05-19:** Turso (libSQL) is the hosted DB; Vercel hosts the app on the free tier. Custom domain `launchcontrol.club` registered, to be attached in M1.5b. | Deploy  | DC    |
 | 5 | Admin allowlist: which MSR UIDs / emails bootstrap as admin?                                         | M4      | TBD   |
 | 6 | Series scoring (cumulative across events) — in MVP, or post-MVP? Source CSVs exist in season data.   | Scope   | TBD   |
+| 7 | Drivers without `member_num` produce duplicate rows under redaction. Acceptable for MVP? Real-event smoke shows N collisions: TBD on first real ingest. | Ingest  | DC    |
 
 ---
 
