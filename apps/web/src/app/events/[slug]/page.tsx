@@ -53,7 +53,7 @@ export default async function EventPage({
         </Link>
         <div className="mt-2 flex items-baseline justify-between gap-4">
           <h1 className="text-3xl font-semibold tracking-tight">{event.name}</h1>
-          <Badge variant="secondary">{rows.length} entries</Badge>
+          <Badge variant="default">{rows.length} entries</Badge>
         </div>
         <p className="text-muted-foreground mt-1 text-sm">{formatDate(event.date)}</p>
       </header>

@@ -21,16 +21,24 @@ export default async function HomePage() {
   });
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
+    <main className="mx-auto max-w-4xl px-6 py-12">
       <header className="mb-8">
-        <h1 className="text-3xl font-semibold tracking-tight">PCA Launch Control</h1>
-        <p className="text-muted-foreground mt-2">
-          Rocky Mountain Region · 2026 Autocross results
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary mb-3">
+          2026 Season
         </p>
+        <div className="flex items-start gap-4">
+          <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">Event results</h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Rocky Mountain Region autocross results, sorted by most recent event.
+            </p>
+          </div>
+        </div>
       </header>
 
       {events.length === 0 ? (
-        <Card>
+        <Card className="border border-border/70 bg-card shadow-sm">
           <CardHeader>
             <CardTitle>No events ingested yet</CardTitle>
           </CardHeader>
@@ -39,25 +47,31 @@ export default async function HomePage() {
           </CardContent>
         </Card>
       ) : (
-        <ul className="space-y-3">
-          {events.map((event) => (
-            <li key={event.id}>
-              <Link href={`/events/${event.slug}`} className="block">
-                <Card className="hover:bg-accent/50 transition-colors">
-                  <CardHeader className="flex flex-row items-start justify-between gap-4">
-                    <div>
-                      <CardTitle>{event.name}</CardTitle>
-                      <p className="text-muted-foreground mt-1 text-sm">
-                        {formatDate(event.date)}
-                      </p>
-                    </div>
-                    <Badge variant="secondary">{event._count.entries} entries</Badge>
-                  </CardHeader>
-                </Card>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <section className="rounded-3xl border border-border/70 bg-muted/20 p-3 shadow-sm">
+          <ul className="space-y-3">
+            {events.map((event) => (
+              <li key={event.id}>
+                <Link href={`/events/${event.slug}`} className="group block">
+                  <Card className="border border-border/70 bg-background/95 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background hover:shadow-md">
+                    <CardHeader className="flex flex-row items-start justify-between gap-4">
+                      <div>
+                        <CardTitle className="group-hover:text-primary transition-colors">
+                          {event.name}
+                        </CardTitle>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {formatDate(event.date)}
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="shrink-0">
+                        {event._count.entries} entries
+                      </Badge>
+                    </CardHeader>
+                  </Card>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </main>
   );
