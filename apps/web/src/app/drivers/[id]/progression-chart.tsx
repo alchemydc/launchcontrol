@@ -22,7 +22,7 @@ export type ProgressionPoint = {
 };
 
 const POSITION_COLOR = "#d4a017";
-const PERCENTILE_COLOR = "#1f3a93";
+const PERCENTILE_COLOR = "#3b82f6";
 
 function formatTooltipValue(value: unknown, name: unknown): [string, string] {
   const n = typeof name === "string" ? name : "";

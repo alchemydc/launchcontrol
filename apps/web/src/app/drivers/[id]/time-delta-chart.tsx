@@ -14,9 +14,9 @@ import {
 } from "recharts";
 import type { ProgressionPoint } from "./progression-chart";
 
-const LEADER_COLOR = "#1f3a93";
+const LEADER_COLOR = "#3b82f6";
 const MEDIAN_COLOR = "#d4a017";
-const ZERO_LINE_COLOR = "#7f1d1d";
+const ZERO_LINE_COLOR = "#dc2626";
 
 function formatTooltipValue(value: unknown, name: unknown): [string, string] {
   const n = typeof name === "string" ? name : "";

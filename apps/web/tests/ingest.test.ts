@@ -14,8 +14,7 @@ let prisma: PrismaClient;
 
 beforeAll(() => {
   rmSync(TEST_DB_PATH, { force: true });
-  const prismaBin = resolve(__dirname, "..", "node_modules", ".bin", "prisma");
-  execSync(`${prismaBin} migrate deploy`, {
+  execSync("pnpm exec prisma migrate deploy", {
     cwd: resolve(__dirname, ".."),
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
     stdio: "pipe",
