@@ -25,11 +25,11 @@ model Event {
 }
 
 model Driver {
-  id        Int     @id @default(autoincrement())
-  msrUid    String? @unique
-  firstName String
-  lastName  String
-  memberNum String? @unique
+  id          Int     @id @default(autoincrement())
+  msrUid      String? @unique
+  firstName   String
+  lastInitial String  // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest.ts redactLastName()
+  memberNum   String? @unique
 
   entries Entry[]
   videos  Video[]

@@ -71,4 +71,31 @@ describe("ingestAxdb(synthetic.axdb)", () => {
     expect(coned).toHaveLength(1);
     expect(coned[0]!.cones).toBe(1);
   });
+
+  it("redacts driver last names to a single initial + period", async () => {
+    const drivers = await prisma.driver.findMany();
+    expect(drivers).toHaveLength(5);
+
+    for (const d of drivers) {
+      expect(d.lastInitial).toMatch(/^[A-Z?]\.$/);
+      expect(d.lastInitial).toHaveLength(2);
+    }
+
+    const initials = drivers.map((d) => d.lastInitial).sort();
+    expect(initials).toEqual(["A.", "B.", "C.", "D.", "E."]);
+  });
+
+  it("never persists a full source last name anywhere in the Driver table", async () => {
+    const drivers = await prisma.driver.findMany();
+    const fixtureLastNames = ["Ada", "Brook", "Chen", "Diaz", "Eckhart"];
+    for (const d of drivers) {
+      const blob = JSON.stringify(d);
+      for (const name of fixtureLastNames) {
+        expect(
+          blob.includes(name),
+          `Driver row leaks full last name '${name}': ${blob}`,
+        ).toBe(false);
+      }
+    }
+  });
 });
