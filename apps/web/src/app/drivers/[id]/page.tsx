@@ -227,7 +227,7 @@ export default async function DriverPage({
                   <TableHead className="text-right">Percentile</TableHead>
                   <TableHead
                     className="text-right"
-                    title="How much slower (or faster) your PAX time was than the event leader's. 0% = tied with the leader; negative = ahead."
+                    title="How much slower your PAX time was than the event leader's. 0% = tied with the leader; larger = further behind."
                   >
                     vs. event leader
                   </TableHead>
