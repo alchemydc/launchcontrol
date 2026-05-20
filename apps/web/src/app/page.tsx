@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
+import { findSmugmugEventFolder } from "@/lib/smugmug";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ export default async function HomePage() {
     orderBy: { date: "desc" },
     include: { _count: { select: { entries: true } } },
   });
+
+  const photosUrls = await Promise.all(
+    events.map((e) => findSmugmugEventFolder(e.name, e.date))
+  );
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
@@ -49,25 +54,40 @@ export default async function HomePage() {
       ) : (
         <section className="rounded-3xl border border-border/70 bg-muted/20 p-3 shadow-sm">
           <ul className="space-y-3">
-            {events.map((event) => (
+            {events.map((event, i) => (
               <li key={event.id}>
-                <Link href={`/events/${event.slug}`} className="group block">
-                  <Card className="border border-border/70 bg-background/95 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background hover:shadow-md">
-                    <CardHeader className="flex flex-row items-start justify-between gap-4">
-                      <div>
-                        <CardTitle className="group-hover:text-primary transition-colors">
+                <Card className="group relative border border-border/70 bg-background/95 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background hover:shadow-md">
+                  <CardHeader className="flex flex-row items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="group-hover:text-primary transition-colors">
+                        <Link
+                          href={`/events/${event.slug}`}
+                          className="after:absolute after:inset-0"
+                        >
                           {event.name}
-                        </CardTitle>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {formatDate(event.date)}
-                        </p>
-                      </div>
-                      <Badge variant="secondary" className="shrink-0">
+                        </Link>
+                      </CardTitle>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {formatDate(event.date)}
+                      </p>
+                    </div>
+                    <div className="relative z-10 flex items-center gap-3 shrink-0">
+                      {photosUrls[i] && (
+                        <a
+                          href={photosUrls[i]!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline text-sm"
+                        >
+                          Photos ↗
+                        </a>
+                      )}
+                      <Badge variant="secondary">
                         {event._count.entries} entries
                       </Badge>
-                    </CardHeader>
-                  </Card>
-                </Link>
+                    </div>
+                  </CardHeader>
+                </Card>
               </li>
             ))}
           </ul>
