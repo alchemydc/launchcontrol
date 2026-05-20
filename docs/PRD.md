@@ -279,7 +279,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 
 ## Part 3 · Build Plan (Milestones)
 
-**Status (2026-05-19):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.6 ✓ — local MVP runs end-to-end with last-name redaction and a styled UI (racing-red palette, system-controlled dark mode, sticky header/footer, ranked leaderboard). **Remaining before public preview:** M1.5b (Turso swap + first Vercel deploy at `launchcontrol.club`). MSR OAuth creds requested 2026-05-18, awaiting response.
+**Status (2026-05-20):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), and a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season. **Next up:** M2 (MSR OAuth) — credentials requested 2026-05-18, awaiting MSR response.
 
 ### M0 — Scaffold ✓ (done 2026-05-18)
 
@@ -315,12 +315,18 @@ Land redaction on its own first so the change is reversible and the new assertio
   - a regex sweep over all `Driver` rows confirms no fixture last name (`Ada`, `Brook`, `Chen`, `Diaz`, `Eckhart`) appears in any column beyond its first character.
 - **Smoke test:** ingest both gitignored `2026_season_data/*/.axdb` files into local `dev.db`, run `pnpm dev`, and visually confirm the leaderboard shows `First L.` for every driver.
 
-### M1.5b — Turso migration + first Vercel preview deploy at `launchcontrol.club` (target: 0.5 session)
+### M1.5b — Turso migration + first Vercel preview deploy at `launchcontrol.club` ✓ (done 2026-05-19)
 
-- **DB driver swap:** replace `@prisma/adapter-better-sqlite3` with `@prisma/adapter-libsql`. Update the singleton in `src/lib/prisma.ts` to instantiate from `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` when set, else fall back to a local `file:./dev.db` libSQL URL. `pnpm ingest` keeps working locally with no changes to its CLI.
-- **Migrations:** keep the local `prisma migrate dev` flow; `prisma migrate deploy` runs against Turso on first preview deploy.
-- **Deploy:** link the repo to Vercel (deferred from M0). Set `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and any future MSR env vars. Verify a preview deploy renders the home page and an ingested event.
-- **Custom domain:** the project's apex is `launchcontrol.club` (registered 2026-05-19). Attach to the Vercel project once a preview deploy is verified green. Production points to `launchcontrol.club` + `www.launchcontrol.club`; preview deploys remain on `*.vercel.app`.
+- **DB driver swap ✓:** replaced `@prisma/adapter-better-sqlite3` with `@prisma/adapter-libsql`. The Prisma singleton in `src/lib/prisma.ts` instantiates from `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` when set, else falls back to local `file:./dev.db` via libSQL. `pnpm ingest` keeps working locally with no CLI changes.
+- **Migrations ✓:** local `prisma migrate dev` flow preserved; `prisma migrate deploy` runs against Turso on deploy. Added a `postinstall: prisma generate` in `apps/web/package.json` so Vercel's build picks up a fresh client.
+- **Deploy ✓:** repo linked to Vercel, env vars (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `DATABASE_URL`) set in Vercel preview + prod. Initial deploy hit two issues — both fixed in-flight:
+  - `@libsql/client` import path / runtime mismatch on Vercel Node 20 — resolved by importing from `@libsql/client/web`.
+  - Single-statement Turso HTTP transactions need looser timeouts than the local file path — relaxed Prisma transaction defaults.
+- **Custom domain ✓:** `launchcontrol.club` (registered 2026-05-19) attached to the Vercel project; production serves `launchcontrol.club` + `www.launchcontrol.club`, previews on `*.vercel.app`.
+
+### M1.65 — CI ✓ (done 2026-05-19)
+
+GitHub Actions workflow at `.github/workflows/ci.yml` runs on every PR and `main` push: `pnpm install --frozen-lockfile`, `prisma generate`, lint, typecheck, vitest, and `next build`. Node 22 + pnpm via `pnpm/action-setup`. Concurrency group cancels superseded runs on the same ref. Vitest is invoked with `execFileSync` for `prisma migrate deploy` to avoid shell injection (Copilot review note on the first CI PR).
 
 ### M1.6 — Initial styling pass ✓ (done 2026-05-19)
 
@@ -336,6 +342,18 @@ What landed:
 No UI tests added — the change is purely presentational. Existing `tests/ingest.test.ts` (6 tests) plus `tsc --noEmit` continue to cover the regression surface. Visual regression / a11y testing can come later if the surface grows.
 
 Deferred from the original M1.6 plan: README screenshot smoke check (defer to M1.5b when there's a Vercel preview URL to link).
+
+### M1.7 — Driver progression page ✓ (done 2026-05-20)
+
+A first cut of the "track performance against leaders/rivals visually" post-MVP idea landed early because the data was already in-DB and the leaderboard alone wasn't telling a season story.
+
+- **Route:** `/drivers/[id]` — server-rendered (`force-dynamic`), shows the driver's per-event history table plus two Recharts panels.
+- **Lib:** `src/lib/driver-history.ts` — assembles a driver's events chronologically with raw best, PAX best, and the event-leader PAX time for delta computation.
+- **Charts:**
+  - `ProgressionChart` — raw best vs. PAX best vs. running best-of-season per driver across events.
+  - `TimeDeltaChart` — driver's PAX best minus the event-leader PAX best (always ≥ 0; the leader sits at the x-axis). Y-axis clamped to 0 so the leader visually anchors the chart (Copilot review #2). Tooltip copy reads "vs. event leader" (Copilot review #3).
+- **Dark mode:** chart palette pulled from the racing-red CSS variable set so both light and dark modes read correctly (initial deploy had washed-out chart colors in dark mode — fixed before the merge).
+- **Linking:** leaderboard driver names link to `/drivers/[id]`.
 
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)
 
@@ -401,15 +419,15 @@ Out of scope for the MVP but noted to keep prior thinking discoverable:
 
 ## Post MVP Feature Ideas
 * Allow driver to add tunes, tires, setup changes to a "vehicle timeline" which should expose performance impact of changes made.
-* Allow driver to track performance against leaders or specific rivals visually.
+* ~~Allow driver to track performance against leaders or specific rivals visually.~~ **Shipped in M1.7** for "vs. event leader." Specific-rival comparison still open.
 
 
 ## Feedback on PRD from other devs
 
-- Use the /identifier-naming skill on that PRD just to double-check the names of tables, variables, etc.
-- Prisma has great DX, but if things get complex with queries you might prefer Drizzle ORM
-- If using SQLite, the Turso library is great to have local/remote duality
-- For OAuth (or authentication in general), I recommend Better Auth, so you don't have to build your own auth manually
-- For Calendars and scheduling you can use cal.com (they have an open source version)
+- [ ] Use the /identifier-naming skill on that PRD just to double-check the names of tables, variables, etc.
+- [ ] Prisma has great DX, but if things get complex with queries you might prefer Drizzle ORM
+- [x] If using SQLite, the Turso library is great to have local/remote duality
+- [ ] For OAuth (or authentication in general), I recommend Better Auth, so you don't have to build your own auth manually
+- [ ] For Calendars and scheduling you can use cal.com (they have an open source version)
 
 
