@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
 import { ingestAxdb } from "@/lib/ingest";
 
@@ -19,7 +19,7 @@ beforeAll(() => {
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
     stdio: "pipe",
   });
-  const adapter = new PrismaBetterSqlite3({ url: TEST_DB_URL });
+  const adapter = new PrismaLibSql({ url: TEST_DB_URL });
   prisma = new PrismaClient({ adapter });
 });
 

@@ -1,7 +1,5 @@
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
-
-const url = process.env.DATABASE_URL ?? "file:./dev.db";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -9,7 +7,14 @@ declare global {
 }
 
 function createPrismaClient(): PrismaClient {
-  const adapter = new PrismaBetterSqlite3({ url });
+  // If TURSO_DATABASE_URL is set (and non-empty), use Turso (preview/prod).
+  // Otherwise fall back to DATABASE_URL (defaults to file:./dev.db for local dev).
+  // Empty strings count as unset so that `.env.example`-shaped local configs
+  // (TURSO_DATABASE_URL=) do not accidentally route to a blank libsql URL.
+  const tursoUrl = process.env.TURSO_DATABASE_URL?.trim();
+  const url = tursoUrl || process.env.DATABASE_URL?.trim() || "file:./dev.db";
+  const authToken = tursoUrl ? process.env.TURSO_AUTH_TOKEN : undefined;
+  const adapter = new PrismaLibSql({ url, authToken });
   return new PrismaClient({ adapter });
 }
 

@@ -303,7 +303,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 - **Schema correction during M1:** dropped `@@unique([eventId, driverId])` on `Entry` — autocross allows co-drives and multi-class entries (same person ↦ multiple entries at one event). Migration: `20260518230343_entry_allow_multi`.
 Note that static leaderboard is *not* yet using tailwind styling or shadcn table, icons, etc.
 
-### M1.5a — PII redaction + standalone smoke test (target: 0.5 session)
+### M1.5a — PII redaction + standalone smoke test ✓ (done 2026-05-19)
 
 Land redaction on its own first so the change is reversible and the new assertions can stabilize before we also move the DB underneath them.
 

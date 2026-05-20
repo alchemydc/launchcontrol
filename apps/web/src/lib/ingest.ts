@@ -232,7 +232,7 @@ export async function ingestAxdb(
           runs: runCount,
         },
       };
-    });
+    }, { timeout: 60_000, maxWait: 10_000 });
   } finally {
     src.close();
   }
