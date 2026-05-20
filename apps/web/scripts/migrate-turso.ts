@@ -30,7 +30,7 @@ const MIGRATIONS_TABLE_DDL = `
 
 async function listAppliedMigrations(client: Client): Promise<Set<string>> {
   const rs = await client.execute(
-    "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL"
+    "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL"
   );
   return new Set(rs.rows.map((r) => String(r.migration_name)));
 }
@@ -54,39 +54,53 @@ async function main(): Promise<void> {
   const client = createClient({ url, authToken });
   const migrationsDir = resolve(__dirname, "..", "prisma", "migrations");
 
-  await client.executeMultiple(MIGRATIONS_TABLE_DDL);
-  const applied = await listAppliedMigrations(client);
-  const dirs = listMigrationDirs(migrationsDir);
-
   let appliedCount = 0;
-  for (const dir of dirs) {
-    if (applied.has(dir)) {
-      console.log(`  ok  ${dir} (already applied)`);
-      continue;
-    }
-    const sql = readFileSync(
-      resolve(migrationsDir, dir, "migration.sql"),
-      "utf8"
-    );
-    const checksum = createHash("sha256").update(sql).digest("hex");
+  let totalDirs = 0;
+  try {
+    await client.executeMultiple(MIGRATIONS_TABLE_DDL);
+    const applied = await listAppliedMigrations(client);
+    const dirs = listMigrationDirs(migrationsDir);
+    totalDirs = dirs.length;
 
-    console.log(`  →   ${dir}`);
-    await client.executeMultiple(sql);
-    await client.execute({
-      sql: `INSERT INTO _prisma_migrations
-              (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
-            VALUES (?, ?, current_timestamp, ?, current_timestamp, 1)`,
-      args: [randomUUID(), checksum, dir],
-    });
-    console.log(`  ok  ${dir}`);
-    appliedCount += 1;
+    for (const dir of dirs) {
+      if (applied.has(dir)) {
+        console.log(`  ok  ${dir} (already applied)`);
+        continue;
+      }
+      const sql = readFileSync(
+        resolve(migrationsDir, dir, "migration.sql"),
+        "utf8"
+      );
+      const checksum = createHash("sha256").update(sql).digest("hex");
+
+      console.log(`  →   ${dir}`);
+      const tx = await client.transaction("write");
+      try {
+        await tx.executeMultiple(sql);
+        await tx.execute({
+          sql: `INSERT INTO _prisma_migrations
+                  (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
+                VALUES (?, ?, current_timestamp, ?, current_timestamp, 1)`,
+          args: [randomUUID(), checksum, dir],
+        });
+        await tx.commit();
+      } catch (e) {
+        await tx.rollback().catch(() => {});
+        throw e;
+      } finally {
+        tx.close();
+      }
+      console.log(`  ok  ${dir}`);
+      appliedCount += 1;
+    }
+  } finally {
+    client.close();
   }
 
-  client.close();
   console.log(
     appliedCount === 0
-      ? `Up to date — ${dirs.length} migrations already applied.`
-      : `Applied ${appliedCount} new migration(s); ${dirs.length} total.`
+      ? `Up to date — ${totalDirs} migrations already applied.`
+      : `Applied ${appliedCount} new migration(s); ${totalDirs} total.`
   );
 }
 

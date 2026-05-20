@@ -47,7 +47,7 @@ The dev SQLite file lives at `apps/web/dev.db` and is gitignored.
 
 ### Environment variables
 
-Local dev works out of the box — no Turso credentials needed. Copy `.env.example` to `.env` (or `.env.local`) and edit as needed:
+Local dev works out of the box — no Turso credentials needed. The env file lives under `apps/web/`, not the repo root. Copy `apps/web/.env.example` to `apps/web/.env` (or `.env.local`) and edit as needed:
 
 | Variable | Local default | Purpose |
 |---|---|---|
