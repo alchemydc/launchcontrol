@@ -33,6 +33,15 @@ function deltaDomain(domain: readonly [number, number]): [number, number] {
   return [min - pad, max + pad];
 }
 
+// Pad the y-axis by ~10% of range so points don't hug the chart edges.
+// Leader variant: clamp the lower bound to 0 because diffFromLeaderPct is
+// always ≥ 0 (leader = min PAX).
+function leaderDeltaDomain(domain: readonly [number, number]): [number, number] {
+  const [, max] = domain;
+  const padded = max * 0.1;
+  return [0, max + Math.max(0.005, padded)];
+}
+
 const tickFmt = (v: number) =>
   `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
 
@@ -59,7 +68,7 @@ export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
             yAxisId="leader"
             orientation="left"
             reversed
-            domain={deltaDomain}
+            domain={leaderDeltaDomain}
             tickFormatter={tickFmt}
             tick={{ fontSize: 12, fill: LEADER_COLOR }}
             label={{
