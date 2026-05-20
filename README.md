@@ -60,3 +60,9 @@ If `TURSO_DATABASE_URL` is set, the app connects to Turso; otherwise it falls ba
 ## Project status
 
 Milestones tracked in [docs/PRD.md §3](docs/PRD.md). M0 (scaffold) and M1 (ingest + static leaderboard) are done; M2 (MSR OAuth) is blocked on credentials from MotorsportReg.
+
+## License
+
+Copyright (C) 2026 David Campbell and BJ Fulton.
+
+Licensed under the [GNU General Public License v3.0 or later](LICENSE). This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; see the LICENSE file for details.
