@@ -101,11 +101,6 @@ export default async function DriverPage({
             <h1 className="text-3xl font-semibold tracking-tight">
               {driverName}
             </h1>
-            {driver.memberNum && (
-              <p className="text-muted-foreground mt-1 text-sm">
-                PCA #{driver.memberNum}
-              </p>
-            )}
           </div>
           <Badge variant="secondary">
             {history.length} {history.length === 1 ? "event" : "events"}
