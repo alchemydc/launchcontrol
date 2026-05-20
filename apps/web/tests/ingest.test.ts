@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ let prisma: PrismaClient;
 
 beforeAll(() => {
   rmSync(TEST_DB_PATH, { force: true });
-  execSync("pnpm exec prisma migrate deploy", {
+  execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
     cwd: resolve(__dirname, ".."),
     env: { ...process.env, DATABASE_URL: TEST_DB_URL },
     stdio: "pipe",

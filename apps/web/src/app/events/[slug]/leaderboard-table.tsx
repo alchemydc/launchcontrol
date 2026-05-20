@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   type ColumnDef,
   type SortingState,
@@ -126,7 +127,12 @@ export function LeaderboardTable({
         ),
         cell: ({ row }) => (
           <div>
-            <div className="font-medium">{row.original.driverName}</div>
+            <Link
+              href={`/drivers/${row.original.driverId}`}
+              className="font-medium hover:underline"
+            >
+              {row.original.driverName}
+            </Link>
             {row.original.carDescription && (
               <div className="text-muted-foreground text-xs">
                 {row.original.carDescription}
