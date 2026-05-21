@@ -54,12 +54,17 @@ Local dev works out of the box — no Turso credentials needed. The env file liv
 | `DATABASE_URL` | `file:./dev.db` | Local libSQL file path |
 | `TURSO_DATABASE_URL` | _(blank)_ | Turso remote URL — set in Vercel for preview/prod |
 | `TURSO_AUTH_TOKEN` | _(blank)_ | Turso auth token — set in Vercel for preview/prod |
+| `SMUGMUG_API_KEY` | _(blank)_ | SmugMug API key. Optional — leave blank locally; the event "Photos ↗" link is hidden when unset. |
+| `SMUGMUG_USER` | `rmrpca` | SmugMug account whose galleries are searched. Hard-coded to RMR PCA for MVP. |
+| `SMUGMUG_DISCIPLINE_PATH` | `Autocross` | Discipline folder within the SmugMug account. |
 
 If `TURSO_DATABASE_URL` is set, the app connects to Turso; otherwise it falls back to `DATABASE_URL` (local file). No Turso account or credentials are needed for local development.
 
+SmugMug photo album links are surfaced on the home page event cards and on each event page when `SMUGMUG_API_KEY` is set. The lookup is fuzzy-matched by event name + date against the SmugMug folder tree — see PRD §M1.8 for the matching rules and the known RMR/PCA scoping limitations.
+
 ## Project status
 
-Milestones tracked in [docs/PRD.md §3](docs/PRD.md). M0 (scaffold) and M1 (ingest + static leaderboard) are done; M2 (MSR OAuth) is blocked on credentials from MotorsportReg.
+Milestones tracked in [docs/PRD.md §3](docs/PRD.md). Public preview is live at **[launchcontrol.club](https://launchcontrol.club)** (Vercel + Turso libSQL). M0 through M1.8 shipped: ingest, last-name redaction, styled leaderboards, GitHub Actions CI, per-driver progression page at `/drivers/[id]`, and SmugMug event photo links. M1.9 (RMR season leaderboard with multi-season nav and 2025 backfill) is next up. M2 (MSR OAuth) remains blocked on credentials from MotorsportReg.
 
 ## License
 

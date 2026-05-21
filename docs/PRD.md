@@ -279,7 +279,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 
 ## Part 3 · Build Plan (Milestones)
 
-**Status (2026-05-20):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), and a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season. **Next up:** M2 (MSR OAuth) — credentials requested 2026-05-18, awaiting MSR response.
+**Status (2026-05-21):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, and SmugMug photo album links surfaced on home + event pages. **Next up:** M1.9 — RMR season leaderboard (multi-season nav; M2 MSR OAuth remains blocked pending credentials requested 2026-05-18).
 
 ### M0 — Scaffold ✓ (done 2026-05-18)
 
@@ -355,6 +355,72 @@ A first cut of the "track performance against leaders/rivals visually" post-MVP 
 - **Dark mode:** chart palette pulled from the racing-red CSS variable set so both light and dark modes read correctly (initial deploy had washed-out chart colors in dark mode — fixed before the merge).
 - **Linking:** leaderboard driver names link to `/drivers/[id]`.
 
+**Deferred — test coverage gap (follow-up task, schedule alongside or before M1.9):** `src/lib/driver-history.ts` ships real computation (CLEAN-filter + cone correction in `bestPaxMsForEntry`, per-event ranking, event-leader PAX delta) but has no tests. Add vitest coverage in `apps/web/tests/driver-history.test.ts` for:
+- `bestPaxMsForEntry()` — CLEAN runs only, cone penalty applied, PAX multiplier applied; returns `null` when no CLEAN runs exist.
+- `buildDriverHistory()` — events appear in chronological order; per-event position, raw best, PAX best, leader PAX time, and running best-of-season are correct against a deterministic fixture; driver absent from an event is omitted (not zero-filled).
+- Edge cases: driver with only DNFs at an event, driver tied with event leader (delta = 0), driver who never set a clean time across the season.
+
+Component-level tests for `ProgressionChart` / `TimeDeltaChart` are out of scope — the M1.9 plan keeps "visual regression / a11y testing for later if the surface grows."
+
+### M1.8 — SmugMug event photo links ✓ (done 2026-05-20)
+
+Unplanned feature: surface RMR's existing SmugMug event galleries directly on event listings, since members were already linking to them by hand.
+
+- **Module:** `apps/web/src/lib/smugmug.ts` — `findSmugmugEventFolder()` exported and consumed by `app/page.tsx` (home event cards) and `app/events/[slug]/page.tsx` (event header). Renders a "Photos ↗" affordance when a match is found; silent when not.
+- **Matching:** hybrid score = `0.6 * tokenScore + 0.4 * dateScore`, threshold 0.6. Token side strips stopwords (`autocross`, `ax`, `axn`, `round`, articles) and uses bidirectional overlap so photographers' abbreviated folder names still match. Date side reads ISO 8601 prefix from folder name (e.g. `2026-04-25-Blooming-Cones`), falls back to SmugMug's `dateAdded`, scores within a 30-day window. No admin slug/override — fully algorithmic.
+- **Caching:** two-tier `unstable_cache` — year-folder lookup 1 week TTL, event-folder list 1 hour TTL. Cache keys include `SMUGMUG_USER` + `SMUGMUG_DISCIPLINE` so changing org/discipline invalidates correctly (b140abe).
+- **Env vars (added to `.env.example`):** `SMUGMUG_API_KEY` (required; warning logged if missing), `SMUGMUG_USER` (default `"rmrpca"`), `SMUGMUG_DISCIPLINE_PATH` (default `"Autocross"`).
+- **Tests:** `apps/web/tests/smugmug.test.ts` — token overlap, stopwords, date tiebreaking, bidirectional matching, threshold edge cases.
+- **Known limitations — RMR/PCA-specific, revisit post-MVP:**
+  - Single-tenant by design: one `SMUGMUG_USER` + one `SMUGMUG_DISCIPLINE_PATH` per deploy. No per-event or per-region overrides.
+  - Defaults hard-code `rmrpca` / `Autocross`. Other regions or other disciplines (track, rallycross, social) would require separate deploys today.
+  - Matching is best-effort; mismatches are silent (no admin UI to confirm or override a fuzzy match).
+  - Post-MVP generalization sketch: per-event SmugMug folder override (admin-set), or per-region config keyed off a future `Region` entity. See open question #9 and the post-MVP feature list.
+
+### M1.9 — RMR season leaderboard (target: 2 sessions; next up while M2 is blocked)
+
+A season-long points standings page across each car class, plus the navigation shape to support both the current 2026 season and a historical 2025 season (data backfill in scope).
+
+**Scoring rules (RMR PCA 2026 — region-specific):**
+- 1000 points per event to the fastest driver in each class.
+- All other drivers in the class earn `points = (fastest_class_time / driver_best_time) * 1000`.
+- "Best time" = best CLEAN run, corrected for cones (`raw_time_ms + cones * CONE_PENALTY_MS`). **No PAX adjustment** — drivers are already class-scoped, so PAX is irrelevant for intra-class comparison.
+- Season is 7 events. **Best 4 scores per driver count** toward the season total; the other 3 are dropped (but still rendered, visually muted, for transparency). Drivers with fewer than 4 attended events score with whatever they have — no zero-fill for absences.
+- A driver who enters multiple classes at one event (multi-class or co-drive in a different class) scores independently in each class's season standings. Same-driver, same-class, same-event co-drives are theoretically possible but rare — see open question #10.
+
+**Scope (RMR-only for MVP):** 7-event / best-4-of-7 is the RMR PCA 2026 rule. Other regions or future rule changes are out of scope for M1.9; revisit when we have a `Region` or per-season `RuleSet` entity (see post-MVP).
+
+**Routes & navigation:**
+- New: `apps/web/src/app/leaderboard/page.tsx` — current season (derived as the latest year present in `Event.date`).
+- New: `apps/web/src/app/leaderboard/[year]/page.tsx` — historical seasons (e.g. `/leaderboard/2025`).
+- Update site header in `apps/web/src/app/layout.tsx:33–42`: the static `RMR · 2026 Season` chip becomes real nav. Add **Events** (home) and **Leaderboard** links plus a small season switcher (dropdown or pill row) listing every distinct year present in the DB — no hard-coded years.
+- Update home page (`apps/web/src/app/page.tsx`) — currently lists all events with no year filter and a hard-coded "2026 Season" header. Once 2025 lands, filter the home list to the current season and surface a matching year picker.
+
+**Data model & query approach:**
+- **No schema change for MVP.** Derive season year via `event.date.getFullYear()`. Query helper: `where: { date: { gte: new Date(year, 0, 1), lt: new Date(year + 1, 0, 1) } }`.
+- **Future migration noted (post-MVP):** add `Event.seasonYear Int` (indexed) so season is decoupled from calendar year and queries avoid per-row date math. Out of scope for M1.9 but logged in the post-MVP list so we don't forget.
+
+**Computation library:**
+- New file `apps/web/src/lib/season-leaderboard.ts`. Reuses the CLEAN-filter + cone-correction pattern from `bestPaxMsForEntry()` in `src/lib/driver-history.ts` (factor out a shared `bestCorrectedMsForEntry()` helper, or duplicate the few lines — the existing helper applies a PAX multiplier we explicitly don't want here). `CONE_PENALTY_MS` already lives in `src/lib/constants.ts`.
+- Algorithm:
+  1. Load all events in the season + their entries + clean runs.
+  2. For each event, group entries by **entered class** (`Entry.classId` → `CarClass.code`).
+  3. Per (event, class): find `min(bestCorrected)` across entries with at least one CLEAN run; assign each scoring entry `points = 1000 * fastest / theirs` (winner = 1000; ties earn 1000 each).
+  4. Per driver: group (event, class, points) tuples by class, sort points desc within each class, take top 4, sum.
+- Returns per-class standings: `{ classCode, drivers: [{ driverId, name, totalPoints, eventScores: [{ eventSlug, points, dropped: boolean }] }] }`.
+
+**UI:**
+- `/leaderboard` renders class sections (or tabs) reusing the shadcn `Table` styling from the per-event leaderboard. Columns: rank, driver name (link to `/drivers/[id]`), total points, per-event score chips with dropped scores visually muted.
+- Driver names continue to use redacted `First L.` form automatically — `Driver.lastInitial` is the only persisted shape (§2.6).
+
+**Historical 2025 ingest:** the existing `pnpm ingest <path-to-axdb>` CLI handles 2025 files unchanged — `Event.axdbSha256` keeps re-ingests idempotent and `event.date` already carries the year. Prerequisite: DC has the 2025 `.axdb` files locally (see open question #8).
+
+**Definition of Done:**
+- New routes return server-rendered, sortable per-class standings.
+- A driver who attended only 1–2 events appears with that many scoring rows; a driver who attended all 7 shows 4 counted + 3 dropped.
+- Vitest coverage in `apps/web/tests/` for: class-winner = 1000, fractional scoring math, best-4 selection (verify dropped rows don't contribute to totals but still render), zero-attendance driver excluded, multi-class same-driver scores independently.
+- Header nav renders and the season switcher offers exactly the years present in the DB (no hard-coded `2026`).
+
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)
 
 - Route handlers: `app/api/auth/msr/login`, `app/api/auth/msr/callback`.
@@ -407,6 +473,9 @@ A first cut of the "track performance against leaders/rivals visually" post-MVP 
 | 5 | Admin allowlist: which MSR UIDs / emails bootstrap as admin?                                         | M4      | TBD   |
 | 6 | Series scoring (cumulative across events) — in MVP, or post-MVP? Source CSVs exist in season data.   | Scope   | TBD   |
 | 7 | Drivers without `member_num` produce duplicate rows under redaction. Acceptable for MVP? Real-event smoke shows N collisions: TBD on first real ingest. | Ingest  | DC    |
+| 8 | 2025 historical `.axdb` files — do we have all 7 events on hand? Any missing or corrupt that would leave gaps in a 2025 season leaderboard? | M1.9 backfill | DC |
+| 9 | SmugMug integration is single-tenant (hard-coded `rmrpca` / `Autocross` defaults). Acceptable to leave as-is through MVP, or do we need per-event overrides before M5 ships? | Post-MVP | DC |
+| 10 | Same-driver, same-class, same-event co-drives (rare) — score both `Entry` rows independently and show both in season standings, or collapse to the driver's better score? | M1.9    | DC |
 
 ---
 
@@ -420,6 +489,9 @@ Out of scope for the MVP but noted to keep prior thinking discoverable:
 ## Post MVP Feature Ideas
 * Allow driver to add tunes, tires, setup changes to a "vehicle timeline" which should expose performance impact of changes made.
 * ~~Allow driver to track performance against leaders or specific rivals visually.~~ **Shipped in M1.7** for "vs. event leader." Specific-rival comparison still open.
+* Generalize SmugMug integration beyond RMR/Autocross: per-event folder overrides (admin-set), or per-region config keyed off a future `Region` entity. Optional admin UI to confirm/override fuzzy matches.
+* Add explicit `Event.seasonYear Int` column (migration + ingest update) so season is decoupled from calendar year and indexed for fast season queries — M1.9 derives the year from `Event.date` for MVP simplicity.
+* Series scoring rules as data: RMR's 7-events / best-4-of-7 rule lives in code today (M1.9). Future regions or rule changes would want a per-season `RuleSet` (events-counted, points formula, drop-week count, tiebreakers).
 
 
 ## Feedback on PRD from other devs
