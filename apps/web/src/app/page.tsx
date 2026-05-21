@@ -25,11 +25,13 @@ export default async function HomePage() {
     events.map((e) => findSmugmugEventFolder(e.name, e.date))
   );
 
+  const currentYear = events[0]?.date.getFullYear() ?? new Date().getFullYear();
+
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
       <header className="mb-8">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary mb-3">
-          2026 Season
+          {currentYear} Season
         </p>
         <div className="flex items-start gap-4">
           <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />

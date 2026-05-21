@@ -37,7 +37,20 @@ export default function RootLayout({
                 Launch Control
               </span>
             </Link>
-            <span className="text-xs text-muted-foreground">RMR · 2026 Season</span>
+            <nav className="flex items-center gap-4">
+              <Link
+                href="/"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Events
+              </Link>
+              <Link
+                href="/leaderboard"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Leaderboard
+              </Link>
+            </nav>
           </div>
         </header>
 
