@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
 import { buildLeaderboard } from "@/lib/leaderboard";
+import { findSmugmugEventFolder } from "@/lib/smugmug";
 import { LeaderboardTable } from "./leaderboard-table";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,7 @@ export default async function EventPage({
   if (!event) notFound();
 
   const rows = buildLeaderboard(event.entries);
+  const photosUrl = await findSmugmugEventFolder(event.name, event.date);
   const classCodes = Array.from(new Set(rows.map((r) => r.classCode))).sort();
 
   return (
@@ -53,7 +55,19 @@ export default async function EventPage({
         </Link>
         <div className="mt-2 flex items-baseline justify-between gap-4">
           <h1 className="text-3xl font-semibold tracking-tight">{event.name}</h1>
-          <Badge variant="default">{rows.length} entries</Badge>
+          <div className="flex items-center gap-3">
+            {photosUrl && (
+              <a
+                href={photosUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline text-sm"
+              >
+                Photos ↗
+              </a>
+            )}
+            <Badge variant="default">{rows.length} entries</Badge>
+          </div>
         </div>
         <p className="text-muted-foreground mt-1 text-sm">{formatDate(event.date)}</p>
       </header>
