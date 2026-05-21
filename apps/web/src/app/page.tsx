@@ -62,7 +62,7 @@ export default async function HomePage() {
                       <CardTitle className="group-hover:text-primary transition-colors">
                         <Link
                           href={`/events/${event.slug}`}
-                          className="after:absolute after:inset-0"
+                          className="after:content-[''] after:absolute after:inset-0"
                         >
                           {event.name}
                         </Link>

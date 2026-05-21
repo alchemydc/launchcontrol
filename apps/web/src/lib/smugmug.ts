@@ -63,10 +63,13 @@ export function matchEventFolder(
     const folderDate = dateMatch
       ? new Date(dateMatch[1] + "T00:00:00Z")
       : new Date(folder.dateAdded);
-    const daysDiff =
-      Math.abs(eventDate.getTime() - folderDate.getTime()) /
-      (1000 * 60 * 60 * 24);
-    const dateScore = Math.max(0, 1 - daysDiff / 30);
+    let dateScore = 0;
+    if (!Number.isNaN(folderDate.getTime())) {
+      const daysDiff =
+        Math.abs(eventDate.getTime() - folderDate.getTime()) /
+        (1000 * 60 * 60 * 24);
+      dateScore = Math.max(0, 1 - daysDiff / 30);
+    }
 
     const combined = 0.6 * tScore + 0.4 * dateScore;
     if (combined > bestScore) {
@@ -129,14 +132,14 @@ async function fetchEventFolders(yearNodeId: string): Promise<FolderSummary[]> {
 // Cached per year — 1 week TTL (year folders are stable)
 const cachedYearNodeId = unstable_cache(
   async (year: number) => fetchYearNodeId(year),
-  ["smugmug-year-node"],
+  ["smugmug-year-node", SMUGMUG_USER, SMUGMUG_DISCIPLINE],
   { revalidate: 604800 }
 );
 
 // Cached per year node — 1 hour TTL (new event folders get added during season)
 const cachedEventFolders = unstable_cache(
   async (yearNodeId: string) => fetchEventFolders(yearNodeId),
-  ["smugmug-event-folders"],
+  ["smugmug-event-folders", SMUGMUG_USER, SMUGMUG_DISCIPLINE],
   { revalidate: 3600 }
 );
 
