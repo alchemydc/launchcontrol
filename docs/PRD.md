@@ -383,10 +383,18 @@ A season-long points standings page across each car class, plus the navigation s
 
 **Scoring rules (RMR PCA 2026 — region-specific):**
 - 1000 points per event to the fastest driver in each class.
-- All other drivers in the class earn `points = (fastest_class_time / driver_best_time) * 1000`.
+- All other drivers in the class earn `points = round(1000 * fastest_class_time / driver_best_time)`. Ties for fastest → all tied drivers earn 1000.
 - "Best time" = best CLEAN run, corrected for cones (`raw_time_ms + cones * CONE_PENALTY_MS`). **No PAX adjustment** — drivers are already class-scoped, so PAX is irrelevant for intra-class comparison.
-- Season is 7 events. **Best 4 scores per driver count** toward the season total; the other 3 are dropped (but still rendered, visually muted, for transparency). Drivers with fewer than 4 attended events score with whatever they have — no zero-fill for absences.
-- A driver who enters multiple classes at one event (multi-class or co-drive in a different class) scores independently in each class's season standings. Same-driver, same-class, same-event co-drives are theoretically possible but rare — see open question #10.
+- Season is 7 events. **Best 4 scores per driver count** toward the season total; the other 3 are dropped (but still rendered, visually muted, for transparency).
+
+**Single season class per driver:**
+- Each driver competes in **one** season class — the class in which they have the most `Entry` rows that season. Ties broken by earliest event date.
+- Entries the driver makes in any other class (e.g. C5 at event 1, C4 at event 2 → season class = whichever has more entries; a tie of 1-1 resolves to C5 since its event came first) are **excluded from season standings entirely**. Those entries still appear normally in per-event leaderboards.
+- **Co-drives** are represented in AxWare as separate `Driver` records (numbered `337` and `337X`); each scores independently. There is no same-driver / same-class / same-event collision case to handle in code.
+
+**Eligibility:**
+- Minimum **4 scoring events in the driver's season class** (events where the driver had at least one CLEAN run) for an "official" standing.
+- Drivers below the threshold are flagged "Provisional · N/4" and still rendered, so the leaderboard remains useful early in the season (e.g. with only 2 events ingested, every driver renders as provisional). Their `totalPoints` is the sum of whatever scores they have — no zero-fill for absences.
 
 **Scope (RMR-only for MVP):** 7-event / best-4-of-7 is the RMR PCA 2026 rule. Other regions or future rule changes are out of scope for M1.9; revisit when we have a `Region` or per-season `RuleSet` entity (see post-MVP).
 
@@ -405,20 +413,22 @@ A season-long points standings page across each car class, plus the navigation s
 - Algorithm:
   1. Load all events in the season + their entries + clean runs.
   2. For each event, group entries by **entered class** (`Entry.classId` → `CarClass.code`).
-  3. Per (event, class): find `min(bestCorrected)` across entries with at least one CLEAN run; assign each scoring entry `points = 1000 * fastest / theirs` (winner = 1000; ties earn 1000 each).
-  4. Per driver: group (event, class, points) tuples by class, sort points desc within each class, take top 4, sum.
-- Returns per-class standings: `{ classCode, drivers: [{ driverId, name, totalPoints, eventScores: [{ eventSlug, points, dropped: boolean }] }] }`.
+  3. Per (event, class): find `min(bestCorrected)` across entries with at least one CLEAN run; assign each scoring entry `points = round(1000 * fastest / theirs)` (winner = 1000; ties earn 1000 each).
+  4. **Derive each driver's season class** = the class with the most `Entry` rows that season, ties broken by earliest event date.
+  5. Per driver: filter scored entries to their season class only, sort points desc, take top 4, sum into `totalPoints`. Mark `eligible = (eventsInSeasonClass >= 4)`.
+- Returns per-class standings: `{ classCode, drivers: [{ driverId, name, totalPoints, eligible, eventsCountedInClass, eventScores: [{ eventSlug, points, dropped: boolean }] }] }`.
 
 **UI:**
 - `/leaderboard` renders class sections (or tabs) reusing the shadcn `Table` styling from the per-event leaderboard. Columns: rank, driver name (link to `/drivers/[id]`), total points, per-event score chips with dropped scores visually muted.
+- Provisional drivers (`eligible: false`, i.e. fewer than 4 scoring events in their season class) render with a `Provisional · N/4` badge next to the driver name. They still sort by `totalPoints` alongside official drivers — the badge does the visual work.
 - Driver names continue to use redacted `First L.` form automatically — `Driver.lastInitial` is the only persisted shape (§2.6).
 
 **Historical 2025 ingest:** the existing `pnpm ingest <path-to-axdb>` CLI handles 2025 files unchanged — `Event.axdbSha256` keeps re-ingests idempotent and `event.date` already carries the year. Prerequisite: DC has the 2025 `.axdb` files locally (see open question #8).
 
 **Definition of Done:**
 - New routes return server-rendered, sortable per-class standings.
-- A driver who attended only 1–2 events appears with that many scoring rows; a driver who attended all 7 shows 4 counted + 3 dropped.
-- Vitest coverage in `apps/web/tests/` for: class-winner = 1000, fractional scoring math, best-4 selection (verify dropped rows don't contribute to totals but still render), zero-attendance driver excluded, multi-class same-driver scores independently.
+- A driver who attended only 1–2 events appears flagged "Provisional" with that many scoring rows; a driver who attended all 7 in their season class shows 4 counted + 3 dropped.
+- Vitest coverage in `apps/web/tests/` for: class-winner = 1000, fractional scoring math, best-4 selection (verify dropped rows don't contribute to totals but still render), zero-attendance driver excluded, **season-class derivation (most-entered wins; ties resolve to earliest event), off-class entries excluded from season standings**, eligibility flag (driver with <4 in-class scoring events is `Provisional`, ≥4 is official).
 - Header nav renders and the season switcher offers exactly the years present in the DB (no hard-coded `2026`).
 
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)
@@ -473,9 +483,9 @@ A season-long points standings page across each car class, plus the navigation s
 | 5 | Admin allowlist: which MSR UIDs / emails bootstrap as admin?                                         | M4      | TBD   |
 | 6 | Series scoring (cumulative across events) — in MVP, or post-MVP? Source CSVs exist in season data.   | Scope   | TBD   |
 | 7 | Drivers without `member_num` produce duplicate rows under redaction. Acceptable for MVP? Real-event smoke shows N collisions: TBD on first real ingest. | Ingest  | DC    |
-| 8 | 2025 historical `.axdb` files — do we have all 7 events on hand? Any missing or corrupt that would leave gaps in a 2025 season leaderboard? | M1.9 backfill | DC |
+| 8 | ~~2025 historical `.axdb` files — do we have all 7 events on hand? Any missing or corrupt that would leave gaps in a 2025 season leaderboard?~~ **Resolved 2026-05-21:** Deferred from M1.9. Navigation/season-switcher shape still built so 2025 can slot in later when the data is available. | Post-MVP | DC |
 | 9 | SmugMug integration is single-tenant (hard-coded `rmrpca` / `Autocross` defaults). Acceptable to leave as-is through MVP, or do we need per-event overrides before M5 ships? | Post-MVP | DC |
-| 10 | Same-driver, same-class, same-event co-drives (rare) — score both `Entry` rows independently and show both in season standings, or collapse to the driver's better score? | M1.9    | DC |
+| 10 | ~~Same-driver, same-class, same-event co-drives (rare) — score both `Entry` rows independently and show both in season standings, or collapse to the driver's better score?~~ **Resolved 2026-05-21:** Not a real case. Co-drives are represented in AxWare as separate `Driver` records (`337` + `337X`); each scores independently. Single-class-per-driver season rule (see §M1.9) means there's no same-driver/same-class/same-event collision to handle in code. | Resolved | DC |
 
 ---
 

@@ -10,6 +10,7 @@
     "lint": "eslint",
     "ingest": "tsx --env-file=.env scripts/ingest.ts",
     "migrate:turso": "tsx --env-file=.env scripts/migrate-turso.ts",
+    "pretest": "node tests/fixtures/build-multi-event-season.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate"

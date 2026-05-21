@@ -20,5 +20,8 @@ node_modules/
 *.db
 *.db-journal
 
+# generated test fixtures (rebuilt by `pnpm --filter web pretest`)
+apps/web/tests/fixtures/season-event-*.axdb
+
 # local docs (private, not for public consumption)
 docs/private/
