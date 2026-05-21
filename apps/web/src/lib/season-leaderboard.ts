@@ -3,7 +3,7 @@ import { CONE_PENALTY_MS } from "@/lib/constants";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 // RMR PCA 2026 season rules (region-specific constants)
-const MIN_EVENTS_FOR_ELIGIBILITY = 4; // fewer than this = "Provisional"
+export const MIN_EVENTS_FOR_ELIGIBILITY = 4; // fewer than this = "Provisional"
 const COUNTED_SCORES_PER_DRIVER = 4; // best-4-of-N toward season total
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ export async function listSeasonYears(
   client: PrismaClient = defaultClient,
 ): Promise<number[]> {
   const events = await client.event.findMany({ select: { date: true } });
-  const years = Array.from(new Set(events.map((e) => e.date.getFullYear())));
+  const years = Array.from(new Set(events.map((e) => e.date.getUTCFullYear())));
   return years.sort((a, b) => b - a);
 }
 
@@ -80,8 +80,8 @@ export async function buildSeasonLeaderboard(
   const events = await client.event.findMany({
     where: {
       date: {
-        gte: new Date(year, 0, 1),
-        lt: new Date(year + 1, 0, 1),
+        gte: new Date(Date.UTC(year, 0, 1)),
+        lt: new Date(Date.UTC(year + 1, 0, 1)),
       },
     },
     orderBy: { date: "asc" },

@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { SeasonStandingsByClass, SeasonStandingsRow } from "@/lib/season-leaderboard";
+import { MIN_EVENTS_FOR_ELIGIBILITY } from "@/lib/season-leaderboard";
 import { SeasonSwitcher } from "./season-switcher";
 
 interface SeasonLeaderboardViewProps {
@@ -56,7 +57,7 @@ function DriverRow({
           </Link>
           {!driver.eligible && (
             <Badge variant="outline" className="text-xs">
-              Provisional · {driver.eventsCountedInClass}/4
+              Provisional · {driver.eventsCountedInClass}/{MIN_EVENTS_FOR_ELIGIBILITY}
             </Badge>
           )}
         </div>
@@ -155,7 +156,7 @@ export function SeasonLeaderboardView({
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Points are awarded per event: 1000 to the class winner, others
                 proportional. Best 4 scores count toward the season total.
-                Drivers with fewer than 4 events are marked Provisional.
+                Drivers with fewer than 4 scoring events are marked Provisional.
               </p>
             </div>
           </div>

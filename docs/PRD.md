@@ -393,7 +393,7 @@ A season-long points standings page across each car class, plus the navigation s
 - **Co-drives** are represented in AxWare as separate `Driver` records (numbered `337` and `337X`); each scores independently. There is no same-driver / same-class / same-event collision case to handle in code.
 
 **Eligibility:**
-- Minimum **4 events in the driver's season class** for an "official" standing.
+- Minimum **4 scoring events in the driver's season class** (events where the driver had at least one CLEAN run) for an "official" standing.
 - Drivers below the threshold are flagged "Provisional · N/4" and still rendered, so the leaderboard remains useful early in the season (e.g. with only 2 events ingested, every driver renders as provisional). Their `totalPoints` is the sum of whatever scores they have — no zero-fill for absences.
 
 **Scope (RMR-only for MVP):** 7-event / best-4-of-7 is the RMR PCA 2026 rule. Other regions or future rule changes are out of scope for M1.9; revisit when we have a `Region` or per-season `RuleSet` entity (see post-MVP).
@@ -420,7 +420,7 @@ A season-long points standings page across each car class, plus the navigation s
 
 **UI:**
 - `/leaderboard` renders class sections (or tabs) reusing the shadcn `Table` styling from the per-event leaderboard. Columns: rank, driver name (link to `/drivers/[id]`), total points, per-event score chips with dropped scores visually muted.
-- Provisional drivers (`eligible: false`, i.e. fewer than 4 events in their season class) render with a `Provisional · N/4` badge next to the driver name. They still sort by `totalPoints` alongside official drivers — the badge does the visual work.
+- Provisional drivers (`eligible: false`, i.e. fewer than 4 scoring events in their season class) render with a `Provisional · N/4` badge next to the driver name. They still sort by `totalPoints` alongside official drivers — the badge does the visual work.
 - Driver names continue to use redacted `First L.` form automatically — `Driver.lastInitial` is the only persisted shape (§2.6).
 
 **Historical 2025 ingest:** the existing `pnpm ingest <path-to-axdb>` CLI handles 2025 files unchanged — `Event.axdbSha256` keeps re-ingests idempotent and `event.date` already carries the year. Prerequisite: DC has the 2025 `.axdb` files locally (see open question #8).
@@ -428,7 +428,7 @@ A season-long points standings page across each car class, plus the navigation s
 **Definition of Done:**
 - New routes return server-rendered, sortable per-class standings.
 - A driver who attended only 1–2 events appears flagged "Provisional" with that many scoring rows; a driver who attended all 7 in their season class shows 4 counted + 3 dropped.
-- Vitest coverage in `apps/web/tests/` for: class-winner = 1000, fractional scoring math, best-4 selection (verify dropped rows don't contribute to totals but still render), zero-attendance driver excluded, **season-class derivation (most-entered wins; ties resolve to earliest event), off-class entries excluded from season standings**, eligibility flag (driver with <4 in-class events is `Provisional`, ≥4 is official).
+- Vitest coverage in `apps/web/tests/` for: class-winner = 1000, fractional scoring math, best-4 selection (verify dropped rows don't contribute to totals but still render), zero-attendance driver excluded, **season-class derivation (most-entered wins; ties resolve to earliest event), off-class entries excluded from season standings**, eligibility flag (driver with <4 in-class scoring events is `Provisional`, ≥4 is official).
 - Header nav renders and the season switcher offers exactly the years present in the DB (no hard-coded `2026`).
 
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)

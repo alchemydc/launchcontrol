@@ -25,7 +25,7 @@ export default async function HomePage() {
     events.map((e) => findSmugmugEventFolder(e.name, e.date))
   );
 
-  const currentYear = events[0]?.date.getFullYear() ?? new Date().getFullYear();
+  const currentYear = events[0]?.date.getUTCFullYear() ?? new Date().getUTCFullYear();
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
