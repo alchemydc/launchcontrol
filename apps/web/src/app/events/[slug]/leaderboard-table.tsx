@@ -69,7 +69,9 @@ function RunChips({ runs }: { runs: LeaderboardRow["runs"] }) {
         const variant =
           r.disposition === "DNF" || r.disposition === "RRN"
             ? "destructive"
-            : "success";
+            : r.cones > 0
+              ? "warning"
+              : "success";
         return (
           <Badge
             key={r.runNumber}
