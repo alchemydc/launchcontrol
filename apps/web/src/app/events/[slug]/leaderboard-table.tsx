@@ -14,13 +14,7 @@ import {
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RankPill } from "@/components/podium";
 import {
   Table,
   TableBody,
@@ -59,6 +53,122 @@ function SortHeader({
   );
 }
 
+function RunChips({ runs }: { runs: LeaderboardRow["runs"] }) {
+  if (runs.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {runs.map((r) => {
+        const text =
+          r.disposition === "DNF"
+            ? "DNF"
+            : r.disposition === "RRN"
+              ? "RRN"
+              : `${formatMs(r.correctedMs ?? r.rawTimeMs)}${
+                  r.cones > 0 ? `+${r.cones}` : ""
+                }`;
+        const variant =
+          r.disposition === "DNF" || r.disposition === "RRN"
+            ? "destructive"
+            : "success";
+        return (
+          <Badge
+            key={r.runNumber}
+            variant={variant}
+            className="tabular-nums font-normal"
+            title={`Run ${r.runNumber}`}
+          >
+            {text}
+          </Badge>
+        );
+      })}
+    </div>
+  );
+}
+
+function ClassChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        active
+          ? "inline-flex items-center rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-primary transition-colors"
+          : "inline-flex items-center rounded-full border border-border bg-background px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none"
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+function ClassBadge({
+  classCode,
+  paxClassCode,
+}: {
+  classCode: string;
+  paxClassCode: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Badge variant="outline">{classCode}</Badge>
+      {paxClassCode !== classCode && (
+        <span className="text-muted-foreground text-xs">PAX {paxClassCode}</span>
+      )}
+    </div>
+  );
+}
+
+function DriverCard({ row, rank }: { row: LeaderboardRow; rank: number }) {
+  return (
+    <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
+      <div className="flex items-start gap-3">
+        <RankPill rank={rank} />
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/drivers/${row.driverId}`}
+            className="block font-medium hover:underline truncate"
+          >
+            {row.driverName}
+          </Link>
+          {row.carDescription && (
+            <p className="text-xs text-muted-foreground truncate">
+              {row.carDescription}
+            </p>
+          )}
+          <div className="mt-1.5">
+            <ClassBadge
+              classCode={row.classCode}
+              paxClassCode={row.paxClassCode}
+            />
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-base font-semibold tabular-nums leading-none">
+            {formatMs(row.bestPaxMs)}
+          </div>
+          <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            best pax
+          </div>
+        </div>
+      </div>
+      {row.runs.length > 0 && (
+        <div className="mt-3">
+          <RunChips runs={row.runs} />
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function LeaderboardTable({
   rows,
   classCodes,
@@ -83,20 +193,12 @@ export function LeaderboardTable({
     () => [
       {
         id: "rank",
-        header: () => (
-          <span className="tabular-nums text-center block w-full">#</span>
-        ),
+        header: () => <span className="text-left block">#</span>,
         enableSorting: false,
         cell: ({ row, table }) => {
           const sortedRows = table.getSortedRowModel().rows;
           const rank = sortedRows.findIndex((r) => r.id === row.id) + 1;
-          const rankClass =
-            rank === 1
-              ? "text-primary font-bold tabular-nums text-center"
-              : rank <= 3
-                ? "font-semibold text-foreground tabular-nums text-center"
-                : "text-muted-foreground tabular-nums text-center";
-          return <span className={rankClass}>{rank}</span>;
+          return <RankPill rank={rank} />;
         },
       },
       {
@@ -151,19 +253,12 @@ export function LeaderboardTable({
             onClick={() => column.toggleSorting()}
           />
         ),
-        cell: ({ row }) => {
-          const { classCode, paxClassCode } = row.original;
-          return (
-            <div className="flex items-center gap-1.5">
-              <Badge variant="outline">{classCode}</Badge>
-              {paxClassCode !== classCode && (
-                <span className="text-muted-foreground text-xs">
-                  PAX {paxClassCode}
-                </span>
-              )}
-            </div>
-          );
-        },
+        cell: ({ row }) => (
+          <ClassBadge
+            classCode={row.original.classCode}
+            paxClassCode={row.original.paxClassCode}
+          />
+        ),
       },
       {
         id: "bestRawMs",
@@ -201,34 +296,7 @@ export function LeaderboardTable({
         id: "runs",
         header: "Runs",
         enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
-            {row.original.runs.map((r) => {
-              const text =
-                r.disposition === "DNF"
-                  ? "DNF"
-                  : r.disposition === "RRN"
-                    ? "RRN"
-                    : `${formatMs(r.correctedMs ?? r.rawTimeMs)}${
-                        r.cones > 0 ? `+${r.cones}` : ""
-                      }`;
-              const variant =
-                r.disposition === "DNF" || r.disposition === "RRN"
-                  ? "destructive"
-                  : "success";
-              return (
-                <Badge
-                  key={r.runNumber}
-                  variant={variant}
-                  className="tabular-nums font-normal"
-                  title={`Run ${r.runNumber}`}
-                >
-                  {text}
-                </Badge>
-              );
-            })}
-          </div>
-        ),
+        cell: ({ row }) => <RunChips runs={row.original.runs} />,
       },
     ],
     [],
@@ -244,38 +312,64 @@ export function LeaderboardTable({
     getFilteredRowModel: getFilteredRowModel(),
   });
 
+  const sortedRows = table.getRowModel().rows;
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4 shadow-sm md:flex-row md:items-center">
-        <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+    <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+      {/* Filter header strip */}
+      <div className="flex flex-col gap-3 bg-muted/40 px-4 py-3 border-b border-border/60 md:flex-row md:items-center">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground shrink-0">
           Filter class
         </span>
-        <Select
-          value={classFilter}
-          onValueChange={(v) => setClassFilter(v ?? ALL_CLASSES)}
+        <nav
+          aria-label="Filter by class"
+          className="-mx-1 px-1 overflow-x-auto flex-1"
         >
-          <SelectTrigger className="w-full bg-background md:w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_CLASSES}>All classes</SelectItem>
+          <ul className="flex gap-1.5 w-max">
+            <li>
+              <ClassChip
+                active={classFilter === ALL_CLASSES}
+                onClick={() => setClassFilter(ALL_CLASSES)}
+              >
+                All
+              </ClassChip>
+            </li>
             {classCodes.map((code) => (
-              <SelectItem key={code} value={code}>
-                {code}
-              </SelectItem>
+              <li key={code}>
+                <ClassChip
+                  active={classFilter === code}
+                  onClick={() => setClassFilter(code)}
+                >
+                  {code}
+                </ClassChip>
+              </li>
             ))}
-          </SelectContent>
-        </Select>
-        <span className="rounded-full bg-background px-3 py-1 text-sm tabular-nums text-muted-foreground md:ml-auto">
+          </ul>
+        </nav>
+        <span className="rounded-full bg-background px-3 py-1 text-xs tabular-nums text-muted-foreground shrink-0 self-start md:self-auto md:ml-auto">
           {filteredRows.length} of {rows.length}
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
-        <Table className="min-w-[760px]">
+      {/* Mobile: card list */}
+      <ul className="md:hidden divide-y divide-border/60">
+        {sortedRows.length === 0 ? (
+          <li className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No entries match the current filter.
+          </li>
+        ) : (
+          sortedRows.map((row, i) => (
+            <DriverCard key={row.id} row={row.original} rank={i + 1} />
+          ))
+        )}
+      </ul>
+
+      {/* Desktop: sortable table */}
+      <div className="hidden md:block">
+        <Table>
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
-              <TableRow key={group.id} className="bg-muted/40 hover:bg-muted/40">
+              <TableRow key={group.id} className="bg-muted/20 hover:bg-muted/20">
                 {group.headers.map((header) => (
                   <TableHead
                     key={header.id}
@@ -283,14 +377,17 @@ export function LeaderboardTable({
                   >
                     {header.isPlaceholder
                       ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </TableHead>
                 ))}
               </TableRow>
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length === 0 ? (
+            {sortedRows.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
@@ -300,15 +397,14 @@ export function LeaderboardTable({
                 </TableCell>
               </TableRow>
             ) : (
-              table.getRowModel().rows.map((row) => {
-                const sortedRows = table.getSortedRowModel().rows;
-                const rank = sortedRows.findIndex((r) => r.id === row.id) + 1;
+              sortedRows.map((row, i) => {
+                const rank = i + 1;
                 return (
                   <TableRow
                     key={row.id}
                     className={
-                      rank === 1
-                        ? "bg-primary/5 hover:bg-primary/10"
+                      rank <= 3
+                        ? "hover:bg-accent/20"
                         : "odd:bg-background even:bg-muted/10 hover:bg-accent/30"
                     }
                   >
@@ -324,6 +420,6 @@ export function LeaderboardTable({
           </TableBody>
         </Table>
       </div>
-    </div>
+    </section>
   );
 }

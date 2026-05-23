@@ -45,17 +45,29 @@ export default async function EventPage({
   const classCodes = Array.from(new Set(rows.map((r) => r.classCode))).sort();
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-6">
-        <Link
-          href="/"
-          className="text-muted-foreground hover:text-foreground text-sm"
-        >
-          ← All events
-        </Link>
-        <div className="mt-2 flex items-baseline justify-between gap-4">
-          <h1 className="text-3xl font-semibold tracking-tight">{event.name}</h1>
-          <div className="flex items-center gap-3">
+    <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
+      <header className="mb-6 sm:mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <Link
+            href="/"
+            className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            ← All events
+          </Link>
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
+            {formatDate(event.date)}
+          </p>
+        </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+                {event.name}
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 sm:ml-4">
             {photosUrl && (
               <a
                 href={photosUrl}
@@ -69,7 +81,6 @@ export default async function EventPage({
             <Badge variant="default">{rows.length} entries</Badge>
           </div>
         </div>
-        <p className="text-muted-foreground mt-1 text-sm">{formatDate(event.date)}</p>
       </header>
 
       <LeaderboardTable rows={rows} classCodes={classCodes} />
