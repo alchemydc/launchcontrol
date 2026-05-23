@@ -3,28 +3,28 @@ import { ordinal } from "@/components/podium";
 
 describe("ordinal", () => {
   it.each([
-    [1, "1st"],
-    [2, "2nd"],
-    [3, "3rd"],
-    [4, "4th"],
-    [10, "10th"],
+    ["1st", 1],
+    ["2nd", 2],
+    ["3rd", 3],
+    ["4th", 4],
+    ["10th", 10],
     // Teens always take "th" (11th/12th/13th, never 11st/12nd/13rd)
-    [11, "11th"],
-    [12, "12th"],
-    [13, "13th"],
-    [14, "14th"],
-    [20, "20th"],
-    [21, "21st"],
-    [22, "22nd"],
-    [23, "23rd"],
-    [100, "100th"],
-    [101, "101st"],
+    ["11th", 11],
+    ["12th", 12],
+    ["13th", 13],
+    ["14th", 14],
+    ["20th", 20],
+    ["21st", 21],
+    ["22nd", 22],
+    ["23rd", 23],
+    ["100th", 100],
+    ["101st", 101],
     // Same teen rule applies past 100 (111th/112th/113th)
-    [111, "111th"],
-    [112, "112th"],
-    [113, "113th"],
-    [121, "121st"],
-  ])("returns %s for %i", (input, expected) => {
+    ["111th", 111],
+    ["112th", 112],
+    ["113th", 113],
+    ["121st", 121],
+  ])("returns %s for %d", (expected, input) => {
     expect(ordinal(input)).toBe(expected);
   });
 });

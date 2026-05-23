@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   type ColumnDef,
@@ -182,6 +182,7 @@ export function LeaderboardTable({
     { id: "bestPaxMs", desc: false },
   ]);
   const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
+  const rankByIdRef = useRef<Map<string, number>>(new Map());
 
   const filteredRows = useMemo(
     () =>
@@ -197,11 +198,9 @@ export function LeaderboardTable({
         id: "rank",
         header: () => <span className="text-left block">#</span>,
         enableSorting: false,
-        cell: ({ row, table }) => {
-          const sortedRows = table.getSortedRowModel().rows;
-          const rank = sortedRows.findIndex((r) => r.id === row.id) + 1;
-          return <RankPill rank={rank} />;
-        },
+        cell: ({ row }) => (
+          <RankPill rank={rankByIdRef.current.get(row.id) ?? 0} />
+        ),
       },
       {
         id: "carNumber",
@@ -315,6 +314,10 @@ export function LeaderboardTable({
   });
 
   const sortedRows = table.getRowModel().rows;
+
+  const newRankMap = new Map<string, number>();
+  sortedRows.forEach((r, i) => newRankMap.set(r.id, i + 1));
+  rankByIdRef.current = newRankMap;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
