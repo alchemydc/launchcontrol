@@ -175,14 +175,14 @@ describe("buildDriverHistory", () => {
 
   it("omits events where the driver had no entry (Cam absent from event 4)", async () => {
     const history = await buildDriverHistory(camId, prisma);
-    const slugs = history.map((h) => h.eventName);
-    expect(slugs).toEqual([
+    const eventNames = history.map((h) => h.eventName);
+    expect(eventNames).toEqual([
       "Season Event 1",
       "Season Event 2",
       "Season Event 3",
       "Season Event 5",
     ]);
-    expect(slugs).not.toContain("Season Event 4");
+    expect(eventNames).not.toContain("Season Event 4");
   });
 
   it("computes Alex's per-event best, position, and leader delta", async () => {
