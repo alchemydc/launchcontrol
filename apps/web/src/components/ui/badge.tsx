@@ -21,6 +21,8 @@ const badgeVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         success:
           "bg-emerald-500/10 text-emerald-700 border-transparent dark:text-emerald-300",
+        warning:
+          "bg-amber-500/15 text-amber-800 border-transparent dark:text-amber-300",
       },
     },
     defaultVariants: {
