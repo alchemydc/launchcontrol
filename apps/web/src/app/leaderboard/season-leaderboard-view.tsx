@@ -8,7 +8,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { SeasonStandingsByClass, SeasonStandingsRow } from "@/lib/season-leaderboard";
+import type {
+  SeasonStandingsByClass,
+  SeasonStandingsRow,
+} from "@/lib/season-leaderboard";
 import { MIN_EVENTS_FOR_ELIGIBILITY } from "@/lib/season-leaderboard";
 import { SeasonSwitcher } from "./season-switcher";
 
@@ -18,6 +21,8 @@ interface SeasonLeaderboardViewProps {
   standings: SeasonStandingsByClass[];
 }
 
+type EventScore = SeasonStandingsRow["scores"][number];
+
 function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", {
     timeZone: "UTC",
@@ -26,7 +31,128 @@ function formatDate(date: Date): string {
   });
 }
 
-function DriverRow({
+function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+function podiumClasses(rank: number): string {
+  switch (rank) {
+    case 1:
+      return "bg-amber-100 text-amber-900 ring-1 ring-amber-300/70 dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-400/30";
+    case 2:
+      return "bg-zinc-200 text-zinc-800 ring-1 ring-zinc-300/70 dark:bg-zinc-400/20 dark:text-zinc-100 dark:ring-zinc-300/30";
+    case 3:
+      return "bg-orange-200 text-orange-900 ring-1 ring-orange-300/70 dark:bg-orange-500/15 dark:text-orange-200 dark:ring-orange-400/30";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+}
+
+function RankPill({ rank }: { rank: number }) {
+  return (
+    <div
+      aria-label={`${ordinal(rank)} place`}
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold tabular-nums ${podiumClasses(rank)}`}
+    >
+      {rank}
+    </div>
+  );
+}
+
+function EventScoreChip({ score }: { score: EventScore }) {
+  const dropped = score.dropped;
+  return (
+    <Link
+      href={`/events/${score.eventSlug}`}
+      title={`${score.eventName} — ${formatDate(score.eventDate)}${dropped ? " (dropped)" : ""}`}
+      className={
+        "flex min-w-[3rem] flex-col items-center rounded-md px-1.5 py-1 text-center transition-colors " +
+        (dropped
+          ? "border border-dashed border-border/70 text-muted-foreground hover:bg-muted/30"
+          : "bg-muted/50 text-foreground hover:bg-accent/60")
+      }
+    >
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80 leading-none">
+        {formatDate(score.eventDate)}
+      </span>
+      <span
+        className={
+          "mt-1 text-xs tabular-nums font-medium leading-none " +
+          (dropped ? "line-through decoration-from-font" : "")
+        }
+      >
+        {score.points}
+      </span>
+    </Link>
+  );
+}
+
+function EventScoreStrip({ scores }: { scores: EventScore[] }) {
+  if (scores.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {scores.map((s) => (
+        <EventScoreChip key={s.eventId} score={s} />
+      ))}
+    </div>
+  );
+}
+
+function DriverCard({
+  driver,
+  rank,
+}: {
+  driver: SeasonStandingsRow;
+  rank: number;
+}) {
+  return (
+    <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
+      <div className="flex items-center gap-3">
+        <RankPill rank={rank} />
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/drivers/${driver.driverId}`}
+            className="block truncate font-medium hover:underline"
+          >
+            {driver.driverName}
+          </Link>
+          {!driver.eligible && (
+            <Badge variant="outline" className="mt-1 text-[10px]">
+              Provisional · {driver.eventsCountedInClass}/
+              {MIN_EVENTS_FOR_ELIGIBILITY}
+            </Badge>
+          )}
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-lg font-semibold tabular-nums leading-none">
+            {driver.totalPoints}
+          </div>
+          <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            points
+          </div>
+        </div>
+      </div>
+      {driver.scores.length > 0 && (
+        <div className="mt-3">
+          <EventScoreStrip scores={driver.scores} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+function DriverTableRow({
   driver,
   rank,
 }: {
@@ -36,102 +162,142 @@ function DriverRow({
   return (
     <TableRow
       className={
-        rank === 1
-          ? "bg-primary/5 hover:bg-primary/10"
+        rank <= 3
+          ? "hover:bg-accent/20"
           : "odd:bg-background even:bg-muted/10 hover:bg-accent/30"
       }
     >
-      {/* Rank */}
-      <TableCell className="px-3 py-3 w-10 tabular-nums text-muted-foreground">
-        {rank}
+      <TableCell className="px-3 py-3 w-12">
+        <RankPill rank={rank} />
       </TableCell>
-
-      {/* Driver name + provisional badge */}
       <TableCell className="px-3 py-3">
         <div className="flex items-center gap-2 flex-wrap">
           <Link
             href={`/drivers/${driver.driverId}`}
-            className="hover:underline font-medium"
+            className="font-medium hover:underline"
           >
             {driver.driverName}
           </Link>
           {!driver.eligible && (
             <Badge variant="outline" className="text-xs">
-              Provisional · {driver.eventsCountedInClass}/{MIN_EVENTS_FOR_ELIGIBILITY}
+              Provisional · {driver.eventsCountedInClass}/
+              {MIN_EVENTS_FOR_ELIGIBILITY}
             </Badge>
           )}
         </div>
       </TableCell>
-
-      {/* Total points */}
-      <TableCell className="px-3 py-3 text-right tabular-nums font-semibold">
+      <TableCell className="px-3 py-3 text-right tabular-nums font-semibold whitespace-nowrap">
         {driver.totalPoints}
       </TableCell>
-
-      {/* Per-event score chips */}
       <TableCell className="px-3 py-3">
-        <div className="flex flex-wrap gap-1">
-          {driver.scores.map((score) => (
-            <Link
-              key={score.eventId}
-              href={`/events/${score.eventSlug}`}
-              title={`${score.eventName} — ${formatDate(score.eventDate)}`}
-              className={
-                score.dropped
-                  ? "text-muted-foreground line-through text-xs tabular-nums hover:no-underline"
-                  : "text-xs tabular-nums hover:underline"
-              }
-            >
-              {score.points}
-            </Link>
-          ))}
-        </div>
+        <EventScoreStrip scores={driver.scores} />
       </TableCell>
     </TableRow>
   );
 }
 
-function ClassSection({
-  section,
-}: {
-  section: SeasonStandingsByClass;
-}) {
+function classAnchorId(classCode: string): string {
+  return `class-${classCode.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+}
+
+function ClassSection({ section }: { section: SeasonStandingsByClass }) {
   if (section.drivers.length === 0) return null;
+  const leader = section.drivers[0];
+  const driverCount = section.drivers.length;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm mb-6">
-      <div className="bg-muted/40 px-4 py-3 border-b border-border/60">
-        <h2 className="text-sm font-semibold tracking-wide uppercase text-foreground">
-          {section.classCode}
-        </h2>
+    <section
+      id={classAnchorId(section.classCode)}
+      className="scroll-mt-20 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm mb-6"
+    >
+      <div className="flex items-center justify-between gap-3 bg-muted/40 px-4 py-3 border-b border-border/60">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="text-sm font-semibold tracking-wide uppercase text-foreground">
+            {section.classCode}
+          </h2>
+          <Badge variant="secondary" className="text-[10px]">
+            {driverCount} {driverCount === 1 ? "driver" : "drivers"}
+          </Badge>
+        </div>
+        {leader && (
+          <p className="hidden sm:block truncate text-xs text-muted-foreground">
+            Leader:{" "}
+            <Link
+              href={`/drivers/${leader.driverId}`}
+              className="font-medium text-foreground hover:underline hover:text-primary"
+            >
+              {leader.driverName}
+            </Link>{" "}
+            · <span className="tabular-nums">{leader.totalPoints}</span> pts
+          </p>
+        )}
       </div>
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/20 hover:bg-muted/20">
-            <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground w-10">
-              #
-            </TableHead>
-            <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-              Driver
-            </TableHead>
-            <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right">
-              Points
-            </TableHead>
-            <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-              Event scores
-              <span className="ml-1 normal-case font-normal text-muted-foreground/60">
-                (best 4 count · struck-through = dropped)
-              </span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {section.drivers.map((driver, i) => (
-            <DriverRow key={driver.driverId} driver={driver} rank={i + 1} />
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+
+      {/* Mobile: card list */}
+      <ul className="md:hidden divide-y divide-border/60">
+        {section.drivers.map((d, i) => (
+          <DriverCard key={d.driverId} driver={d} rank={i + 1} />
+        ))}
+      </ul>
+
+      {/* Desktop: table */}
+      <div className="hidden md:block">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/20 hover:bg-muted/20">
+              <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground w-12">
+                #
+              </TableHead>
+              <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Driver
+              </TableHead>
+              <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right">
+                Points
+              </TableHead>
+              <TableHead
+                className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
+                title="Best 4 scores count toward season total. Dashed border = dropped score."
+              >
+                Event scores
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {section.drivers.map((d, i) => (
+              <DriverTableRow key={d.driverId} driver={d} rank={i + 1} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function ClassJumpBar({
+  standings,
+}: {
+  standings: SeasonStandingsByClass[];
+}) {
+  const sections = standings.filter((s) => s.drivers.length > 0);
+  if (sections.length < 2) return null;
+  return (
+    <nav
+      aria-label="Jump to class"
+      className="-mx-4 sm:-mx-6 px-4 sm:px-6 mb-6 overflow-x-auto"
+    >
+      <ul className="flex gap-1.5 w-max">
+        {sections.map((s) => (
+          <li key={s.classCode}>
+            <a
+              href={`#${classAnchorId(s.classCode)}`}
+              className="inline-flex items-center rounded-full border border-border bg-background px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none"
+            >
+              {s.classCode}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 
@@ -141,16 +307,16 @@ export function SeasonLeaderboardView({
   standings,
 }: SeasonLeaderboardViewProps) {
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-8">
+    <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
+      <header className="mb-6 sm:mb-8">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary mb-3">
           Season standings
         </p>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-4 min-w-0">
             <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight">
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
                 {year} Season Leaderboard
               </h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -161,16 +327,21 @@ export function SeasonLeaderboardView({
             </div>
           </div>
           {years.length > 1 && (
-            <div className="shrink-0">
+            <div className="sm:shrink-0 sm:ml-4">
               <SeasonSwitcher years={years} currentYear={year} />
             </div>
           )}
         </div>
       </header>
 
+      <ClassJumpBar standings={standings} />
+
       {standings.length === 0 ? (
-        <div className="rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-12 text-center text-sm text-muted-foreground">
-          No season data available for {year}.
+        <div className="flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-12">
+          <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
+          <p className="text-sm text-muted-foreground">
+            No season data available for {year}.
+          </p>
         </div>
       ) : (
         standings.map((section) => (

@@ -24,7 +24,7 @@ export function SeasonSwitcher({ years, currentYear }: SeasonSwitcherProps) {
         if (v) router.push(`/leaderboard/${v}`);
       }}
     >
-      <SelectTrigger className="w-36 bg-background">
+      <SelectTrigger className="w-full sm:w-36 bg-background">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
