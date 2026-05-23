@@ -279,7 +279,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 
 ## Part 3 · Build Plan (Milestones)
 
-**Status (2026-05-21):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, and SmugMug photo album links surfaced on home + event pages. **Next up:** M1.9 — RMR season leaderboard (multi-season nav; M2 MSR OAuth remains blocked pending credentials requested 2026-05-18).
+**Status (2026-05-21):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, and the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav). **Next up:** M2 — MSR OAuth (still blocked pending credentials requested 2026-05-18).
 
 ### M0 — Scaffold ✓ (done 2026-05-18)
 
@@ -355,12 +355,9 @@ A first cut of the "track performance against leaders/rivals visually" post-MVP 
 - **Dark mode:** chart palette pulled from the racing-red CSS variable set so both light and dark modes read correctly (initial deploy had washed-out chart colors in dark mode — fixed before the merge).
 - **Linking:** leaderboard driver names link to `/drivers/[id]`.
 
-**Deferred — test coverage gap (follow-up task, schedule alongside or before M1.9):** `src/lib/driver-history.ts` ships real computation (CLEAN-filter + cone correction in `bestPaxMsForEntry`, per-event ranking, event-leader PAX delta) but has no tests. Add vitest coverage in `apps/web/tests/driver-history.test.ts` for:
-- `bestPaxMsForEntry()` — CLEAN runs only, cone penalty applied, PAX multiplier applied; returns `null` when no CLEAN runs exist.
-- `buildDriverHistory()` — events appear in chronological order; per-event position, raw best, PAX best, leader PAX time, and running best-of-season are correct against a deterministic fixture; driver absent from an event is omitted (not zero-filled).
-- Edge cases: driver with only DNFs at an event, driver tied with event leader (delta = 0), driver who never set a clean time across the season.
+**Test coverage ✓ (done 2026-05-21):** `apps/web/tests/driver-history.test.ts` lands 15 vitest cases against `src/lib/driver-history.ts`. To make the lib cleanly testable, `bestPaxMsForEntry` (and its `EntryForHistory` shape) were exported, and `buildDriverHistory` gained an optional `prismaClient` parameter (defaults to the singleton) — mirroring the pattern in `ingestAxdb` and `buildSeasonLeaderboard`. The test file reuses the existing `season-event-{1..5}.axdb` fixtures (no new fixtures added) and runs against an isolated `file:./test-driver-history.db` so it doesn't collide with the other DB-backed test files in parallel. Coverage: CLEAN-filter, cone penalty, PAX multiplier + rounding, null-rawTimeMs handling, chronological order, absent-event omission, pooled-PAX position ranking (including the case where a CS driver out-PAXes a C1 driver), leader & median delta math, DNF-only event rendered with nulls but still in the array, percentile, and empty-history.
 
-Component-level tests for `ProgressionChart` / `TimeDeltaChart` are out of scope — the M1.9 plan keeps "visual regression / a11y testing for later if the surface grows."
+Component-level tests for `ProgressionChart` / `TimeDeltaChart` remain out of scope — no RTL/jsdom setup exists yet, and the M1.9 line "visual regression / a11y testing for later if the surface grows" still applies.
 
 ### M1.8 — SmugMug event photo links ✓ (done 2026-05-20)
 
@@ -377,7 +374,7 @@ Unplanned feature: surface RMR's existing SmugMug event galleries directly on ev
   - Matching is best-effort; mismatches are silent (no admin UI to confirm or override a fuzzy match).
   - Post-MVP generalization sketch: per-event SmugMug folder override (admin-set), or per-region config keyed off a future `Region` entity. See open question #9 and the post-MVP feature list.
 
-### M1.9 — RMR season leaderboard (target: 2 sessions; next up while M2 is blocked)
+### M1.9 — RMR season leaderboard ✓ (done 2026-05-21)
 
 A season-long points standings page across each car class, plus the navigation shape to support both the current 2026 season and a historical 2025 season (data backfill in scope).
 

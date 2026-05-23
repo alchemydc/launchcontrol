@@ -1,3 +1,4 @@
+import type { PrismaClient } from "@/generated/prisma/client";
 import { CONE_PENALTY_MS } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
 
@@ -20,7 +21,7 @@ export type DriverHistoryRow = {
   diffFromMedianPct: number | null;
 };
 
-type EntryForHistory = {
+export type EntryForHistory = {
   id: number;
   driverId: number;
   carNumber: string;
@@ -33,7 +34,7 @@ type EntryForHistory = {
   }>;
 };
 
-function bestPaxMsForEntry(entry: EntryForHistory): {
+export function bestPaxMsForEntry(entry: EntryForHistory): {
   bestRawMs: number | null;
   bestPaxMs: number | null;
 } {
@@ -48,8 +49,9 @@ function bestPaxMsForEntry(entry: EntryForHistory): {
 
 export async function buildDriverHistory(
   driverId: number,
+  prismaClient: PrismaClient = prisma,
 ): Promise<DriverHistoryRow[]> {
-  const events = await prisma.event.findMany({
+  const events = await prismaClient.event.findMany({
     where: { entries: { some: { driverId } } },
     orderBy: { date: "asc" },
     include: {
