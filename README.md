@@ -64,7 +64,7 @@ SmugMug photo album links are surfaced on the home page event cards and on each 
 
 ## Project status
 
-Milestones tracked in [docs/PRD.md §3](docs/PRD.md). Public preview is live at **[launchcontrol.club](https://launchcontrol.club)** (Vercel + Turso libSQL). M0 through M1.8 shipped: ingest, last-name redaction, styled leaderboards, GitHub Actions CI, per-driver progression page at `/drivers/[id]`, and SmugMug event photo links. M1.9 (RMR season leaderboard with multi-season nav and 2025 backfill) is next up. M2 (MSR OAuth) remains blocked on credentials from MotorsportReg.
+Milestones tracked in [docs/PRD.md §3](docs/PRD.md). Public preview is live at **[launchcontrol.club](https://launchcontrol.club)** (Vercel + Turso libSQL). M0 through M1.10 shipped: ingest, last-name redaction, styled leaderboards, GitHub Actions CI, per-driver progression page at `/drivers/[id]`, SmugMug event photo links, RMR season leaderboard with multi-season nav, and an ingest correctness pass (batched writes, identity-hash driver dedupe, ghost-registration skip — see PRD §M1.10). M2 (MSR OAuth) remains blocked on credentials from MotorsportReg.
 
 ## License
 

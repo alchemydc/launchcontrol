@@ -124,6 +124,12 @@ runs(id, event_id, driver_id, start_at, finish_at, start_tick, finish_tick,
 -- status: 3 = committed (only value observed)
 ```
 
+**Observed real-data quirks (catalogued during the 2025 backfill, 2026-05-23):**
+
+- **`member_num` is family/account-level, NOT a person-unique GUID.** Distinct humans frequently share a `member_num` (PCA family/household memberships). Real 2025 data showed multiple shared-`member_num` cases per event: typically two family members in the same class on a single membership, but also pairs with different surnames sharing one membership. `member_num` alone cannot identify a driver — see §2.6 for the identity-hash strategy ingest uses to cross-link the same human across events without false collapses.
+- **Co-driver pattern** uses a `1`-prefix or `X`-suffix on the car number — e.g. primary `#62` + co-drive `#162`, primary `#34` + co-drive `#34X`, primary `#198` + co-drive `#198X`. The co-driver's `member_num` may be empty (non-member co-driver, observed 2025-07-12) OR may share the primary's (family-co-drive case observed 2025-09-13). Ingest doesn't assume either case.
+- **Ghost registrations:** AxWare leaves the original `drivers` row in place when a driver swaps cars on race day — the abandoned registration has zero `runs` rows. 2026-05-17 had 8 such ghosts (drivers who pre-registered with one car number then drove a different one). Ingest skips zero-run rows (§2.6); PCA Series output ignores them anyway.
+
 Each `.axdb` exported from AxWare so far contains a **single event** (id=1) with ~70-80 drivers and ~600-650 runs.
 
 ### 2.4 Target app schema (Prisma + SQLite)
@@ -145,13 +151,14 @@ model Event {
 }
 
 model Driver {
-  id          Int      @id @default(autoincrement())
-  msrUid      String?  @unique
-  firstName   String
-  lastInitial String                       // single uppercase letter + period, e.g. "K." — never the full last name; enforced at ingest (§2.6)
-  memberNum   String?  @unique
-  entries     Entry[]
-  videos      Video[]
+  id           Int      @id @default(autoincrement())
+  msrUid       String?  @unique
+  firstName    String
+  lastInitial  String                       // single uppercase letter + period, e.g. "K." — never the full last name; enforced at ingest (§2.6)
+  identityHash String   @unique             // SHA-256 of `${memberNum ?? ''}|${firstName.toLowerCase().trim()}|${lastName.toLowerCase().trim()}` — cross-event person identity (§2.6). Full last name is used transiently for the hash and never persisted.
+  memberNum    String?                      // family/account-level in AxWare; NOT person-unique. Stored for display/lookup only — the upsert key is identityHash.
+  entries      Entry[]
+  videos       Video[]
 }
 
 model CarClass {
@@ -242,13 +249,18 @@ Mapping rules:
 | `classes.class_name`, `classes.pax`        | `CarClass.code`, `CarClass.paxIndex` (upsert by `code`)      |
 | `drivers.first_name`                       | `Driver.firstName` (verbatim)                                |
 | `drivers.last_name`                        | `Driver.lastInitial` = `last_name.trim()[0].toUpperCase() + '.'` — **full last name is never persisted** |
-| `drivers.member_num`                       | `Driver.memberNum` (used as the upsert key; matches across events) |
+| `drivers.member_num`                       | `Driver.memberNum` (stored for display; **not** the upsert key — family/account-level, not person-unique) |
+| `drivers.first_name` + `drivers.last_name` + `drivers.member_num` (normalized) | `Driver.identityHash` — SHA-256, the actual cross-event person upsert key. Last name used transiently; never persisted. |
 | `registrations`                            | `Entry` (one row per driver-event)                           |
 | `runs.finish_tick - runs.start_tick`       | `Run.rawTimeMs` (null when disposition='DNF' and no time)    |
 | `runs.cones`                               | `Run.cones`                                                  |
 | `runs.disposition`                         | `Run.disposition` (`''→CLEAN`, `'DNF'→DNF`, `'RRN'→RRN`)     |
 
-Drivers without a `member_num` cannot be reliably deduplicated under redaction (two `John K.` entries are indistinguishable), so the ingest creates a fresh `Driver` row for each name+event in that case. Acceptable for MVP; revisit if it produces visible duplicates on a real-event leaderboard.
+**Driver identity (M1.10):** ingest computes `identityHash = SHA256(${memberNum ?? ''}|${firstName.toLowerCase().trim()}|${lastName.toLowerCase().trim()})` and uses it as the cross-event upsert key. This keeps family members on a shared `member_num` as distinct `Driver` rows while still cross-linking the same human across events. Drivers without a `member_num` are deduplicated by name alone — residual risk of two unrelated people with identical first+last names colliding is small at PCA RMR scale and accepted for MVP. The full last name is used only to compute the hash; nothing beyond the redacted `lastInitial` is ever persisted.
+
+**Ghost registrations:** any source `drivers` row with zero matching `runs` rows is skipped at ingest with a console warning (e.g. `[ingest] University Grad School: skipping 8 ghost driver row(s) with zero runs: First L. #6, …`). These are abandoned pre-registrations from drivers who swapped cars on race day; PCA Series export ignores them and so do we.
+
+**Write strategy (M1.10, closes issue #7):** the inner loops use `createMany` + recovery `findMany` rather than per-row `upsert` calls, collapsing ~200–700 round-trips per event down to ~6–10. This unblocks Turso (HTTP-per-round-trip) without holding interactive transactions open over the network. The previous workaround on `$transaction` (`{ timeout: 60_000, maxWait: 10_000 }`) has been removed; defaults apply.
 
 ### 2.7 Database hosting — local SQLite, Turso (libSQL) in preview/prod
 
@@ -279,7 +291,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 
 ## Part 3 · Build Plan (Milestones)
 
-**Status (2026-05-21):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, and the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav). **Next up:** M2 — MSR OAuth (still blocked pending credentials requested 2026-05-18).
+**Status (2026-05-23):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), and an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — that unblocks the 2025 backfill and the imminent Turso re-ingest. **Next up:** M2 — MSR OAuth (still blocked pending credentials requested 2026-05-18).
 
 ### M0 — Scaffold ✓ (done 2026-05-18)
 
@@ -387,7 +399,7 @@ A season-long points standings page across each car class, plus the navigation s
 **Single season class per driver:**
 - Each driver competes in **one** season class — the class in which they have the most `Entry` rows that season. Ties broken by earliest event date.
 - Entries the driver makes in any other class (e.g. C5 at event 1, C4 at event 2 → season class = whichever has more entries; a tie of 1-1 resolves to C5 since its event came first) are **excluded from season standings entirely**. Those entries still appear normally in per-event leaderboards.
-- **Co-drives** are represented in AxWare as separate `Driver` records (numbered `337` and `337X`); each scores independently. There is no same-driver / same-class / same-event collision case to handle in code.
+- **Co-drives** are represented in AxWare as separate `drivers` rows (numbered `337` + `337X`, or `62` + `162`); each scores independently. The co-driver's `member_num` may or may not match the primary's — identity is the §2.6 hash, not `member_num` alone. Entry recovery uses `(driverId, classId)` as the key; the truly pathological "same human, same class, both with runs" case throws a clear data-anomaly error at ingest rather than silently miscategorizing runs.
 
 **Eligibility:**
 - Minimum **4 scoring events in the driver's season class** (events where the driver had at least one CLEAN run) for an "official" standing.
@@ -427,6 +439,20 @@ A season-long points standings page across each car class, plus the navigation s
 - A driver who attended only 1–2 events appears flagged "Provisional" with that many scoring rows; a driver who attended all 7 in their season class shows 4 counted + 3 dropped.
 - Vitest coverage in `apps/web/tests/` for: class-winner = 1000, fractional scoring math, best-4 selection (verify dropped rows don't contribute to totals but still render), zero-attendance driver excluded, **season-class derivation (most-entered wins; ties resolve to earliest event), off-class entries excluded from season standings**, eligibility flag (driver with <4 in-class scoring events is `Provisional`, ≥4 is official).
 - Header nav renders and the season switcher offers exactly the years present in the DB (no hard-coded `2026`).
+
+### M1.10 — Ingest correctness pass ✓ (done 2026-05-23)
+
+Unblocks the 2025 historical backfill (§M1.9, open question #8 resolution path) and the imminent Turso re-ingest. Five issues landed together:
+
+- **Batched writes (closes issue #7):** `apps/web/src/lib/ingest.ts` replaces inner per-row `upsert`/`create` loops with `createMany` + recovery `findMany`. Round-trips per event collapsed from ~200–700 to ~6–10. Removed the `{ timeout: 60_000, maxWait: 10_000 }` workaround on `$transaction` — back to defaults. (Prisma 7's `prisma-client` generator does not accept `skipDuplicates` on `createMany`; we pre-filter to new rows so the flag isn't needed.)
+- **Driver identity (schema migration `20260524015935_driver_identity_hash`):** dropped `Driver.memberNum @unique` (kept the field, non-unique), added `Driver.identityHash String @unique`. Ingest computes `SHA-256(memberNum, firstName, lastName)` with normalized casing. Fixes the silent data corruption in pre-2026-05-23 ingests, where family members on a shared `member_num` were collapsed into one `Driver` row with last-write-wins names (one family member's runs attributed to another, etc.).
+- **Ghost registration skip:** source `drivers` rows with zero `runs` rows are filtered before any DB write, with a console warning. AxWare leaves pre-registrations in place when a driver swaps cars on race day (2026-05-17 had 8 ghosts where pre-registered car numbers had zero runs).
+- **Entry recovery by `(driverId, classId)`:** defense-in-depth against the multi-class single-human edge case. A collision throws a clear data-anomaly error rather than silently miscategorizing runs.
+- **Landing-page RSC fix:** new `apps/web/src/app/events-year-switcher.tsx` `"use client"` wrapper, mirroring the existing `apps/web/src/app/leaderboard/season-switcher.tsx` pattern. The Server Component at `apps/web/src/app/page.tsx` no longer passes a `buildHref` function across the RSC boundary. Latent bug — gated behind `years.length > 1` and never observed before the 2025 import.
+
+**Test fixture:** added a 6th driver to the synthetic `.axdb` (Andrew Ada sharing `SYN-001` with Alex Ada) for regression coverage of the family-share case. Count assertions bumped (5→6 drivers, 14→17 runs, 12→15 clean).
+
+**Operational note:** locally regenerating the schema can need `DATABASE_URL=file:./dev.db TURSO_DATABASE_URL= pnpm exec prisma migrate dev …` to bypass the libSQL URL when `TURSO_DATABASE_URL` is set in `apps/web/.env`. Prisma's migration engine doesn't speak libSQL.
 
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)
 
@@ -479,10 +505,10 @@ A season-long points standings page across each car class, plus the navigation s
 | 4 | ~~Vercel free tier OK for MVP? Custom domain plan?~~ **Resolved 2026-05-19:** Turso (libSQL) is the hosted DB; Vercel hosts the app on the free tier. Custom domain `launchcontrol.club` registered, to be attached in M1.5b. | Deploy  | DC    |
 | 5 | Admin allowlist: which MSR UIDs / emails bootstrap as admin?                                         | M4      | TBD   |
 | 6 | Series scoring (cumulative across events) — in MVP, or post-MVP? Source CSVs exist in season data.   | Scope   | TBD   |
-| 7 | Drivers without `member_num` produce duplicate rows under redaction. Acceptable for MVP? Real-event smoke shows N collisions: TBD on first real ingest. | Ingest  | DC    |
+| 7 | ~~Drivers without `member_num` produce duplicate rows under redaction. Acceptable for MVP?~~ **Resolved 2026-05-23:** identity-hash strategy (§2.6) dedupes drivers without `member_num` by name; residual cross-event name-collision risk accepted for MVP. | Resolved | DC |
 | 8 | ~~2025 historical `.axdb` files — do we have all 7 events on hand? Any missing or corrupt that would leave gaps in a 2025 season leaderboard?~~ **Resolved 2026-05-21:** Deferred from M1.9. Navigation/season-switcher shape still built so 2025 can slot in later when the data is available. | Post-MVP | DC |
 | 9 | SmugMug integration is single-tenant (hard-coded `rmrpca` / `Autocross` defaults). Acceptable to leave as-is through MVP, or do we need per-event overrides before M5 ships? | Post-MVP | DC |
-| 10 | ~~Same-driver, same-class, same-event co-drives (rare) — score both `Entry` rows independently and show both in season standings, or collapse to the driver's better score?~~ **Resolved 2026-05-21:** Not a real case. Co-drives are represented in AxWare as separate `Driver` records (`337` + `337X`); each scores independently. Single-class-per-driver season rule (see §M1.9) means there's no same-driver/same-class/same-event collision to handle in code. | Resolved | DC |
+| 10 | ~~Same-driver, same-class, same-event co-drives (rare) — score both `Entry` rows independently and show both in season standings, or collapse to the driver's better score?~~ **Resolved 2026-05-21, refined 2026-05-23:** AxWare uses separate `drivers` rows for co-drives (`337` + `337X`, `62` + `162`); each scores independently. Driver identity is the §2.6 hash (not `member_num` — a co-drive pair sharing `member_num` was observed in 2025-09-13 real data). Ingest throws a clear data-anomaly error on the truly pathological "same human, same class, both with runs" case rather than silently miscategorizing. | Resolved | DC |
 
 ---
 

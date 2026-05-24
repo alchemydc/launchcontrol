@@ -52,6 +52,15 @@ function toDisposition(raw: string | null): RunDisposition {
   return RunDisposition.CLEAN;
 }
 
+function computeIdentityHash(
+  memberNum: string | null,
+  firstName: string,
+  lastName: string,
+): string {
+  const key = `${(memberNum ?? "").trim()}|${firstName.toLowerCase().trim()}|${lastName.toLowerCase().trim()}`;
+  return createHash("sha256").update(key).digest("hex");
+}
+
 export async function ingestAxdb(
   path: string,
   client: PrismaClient = defaultClient,
@@ -81,7 +90,7 @@ export async function ingestAxdb(
       .prepare("SELECT id, class_name, pax FROM classes ORDER BY id")
       .all() as SrcClass[];
 
-    const srcDrivers = src
+    let srcDrivers = src
       .prepare(
         `SELECT d.id, d.first_name, d.last_name, d.number, d.class_id, d.paxmult_id,
                 d.car_model, d.member_num
@@ -98,7 +107,24 @@ export async function ingestAxdb(
       )
       .all(srcEvent.id) as SrcRun[];
 
-    const slug = `${srcEvent.event_date}-${slugify(srcEvent.event_name)}`;
+    // Skip ghost registrations: source `drivers` rows with zero `runs` rows.
+    // AxWare keeps a pre-registration row in place when a driver changes cars
+    // on race day (e.g. Dean Williams 2026-05-17 #6 with 0 runs alongside #129
+    // with 7 runs). Including ghosts would collide on (identityHash, classId)
+    // during entry recovery. PCA Series export already ignores zero-run entries.
+    const srcDriverIdsWithRuns = new Set(srcRuns.map((r) => r.driver_id));
+    const ghostDrivers = srcDrivers.filter((d) => !srcDriverIdsWithRuns.has(d.id));
+    if (ghostDrivers.length > 0) {
+      console.warn(
+        `[ingest] ${srcEvent.event_name}: skipping ${ghostDrivers.length} ghost driver row(s) with zero runs:`,
+        ghostDrivers
+          .map((d) => `${d.first_name} ${d.last_name} #${d.number}`)
+          .join(", "),
+      );
+      srcDrivers = srcDrivers.filter((d) => srcDriverIdsWithRuns.has(d.id));
+    }
+
+    const slug =`${srcEvent.event_date}-${slugify(srcEvent.event_name)}`;
     const eventDate = new Date(`${srcEvent.event_date}T00:00:00.000Z`);
 
     return await client.$transaction(async (tx) => {
@@ -132,38 +158,119 @@ export async function ingestAxdb(
         await tx.entry.deleteMany({ where: { eventId: event.id } });
       }
 
+      // CarClass: findMany existing, createMany new, update only paxIndex-changed rows, findMany to map IDs.
+      const srcClassCodes = srcClasses.map((c) => c.class_name);
+      const existingClasses = await tx.carClass.findMany({
+        where: { code: { in: srcClassCodes } },
+      });
+      const existingClassByCode = new Map(existingClasses.map((c) => [c.code, c]));
+
+      const newClassData = srcClasses
+        .filter((c) => !existingClassByCode.has(c.class_name))
+        .map((c) => ({ code: c.class_name, paxIndex: c.pax }));
+      if (newClassData.length > 0) {
+        await tx.carClass.createMany({ data: newClassData });
+      }
+      for (const c of srcClasses) {
+        const cur = existingClassByCode.get(c.class_name);
+        if (cur && Number(cur.paxIndex) !== c.pax) {
+          await tx.carClass.update({ where: { id: cur.id }, data: { paxIndex: c.pax } });
+        }
+      }
+      const allClasses = await tx.carClass.findMany({
+        where: { code: { in: srcClassCodes } },
+      });
+      const classIdByCode = new Map(allClasses.map((c) => [c.code, c.id]));
       const classIdBySrc = new Map<number, number>();
       for (const c of srcClasses) {
-        const appClass = await tx.carClass.upsert({
-          where: { code: c.class_name },
-          create: { code: c.class_name, paxIndex: c.pax },
-          update: { paxIndex: c.pax },
+        const id = classIdByCode.get(c.class_name);
+        if (id == null) throw new Error(`Failed to resolve class id for code '${c.class_name}'`);
+        classIdBySrc.set(c.id, id);
+      }
+
+      // Driver: identity is `(memberNum, firstName, lastName)` hashed. AxWare's member_num
+      // is family/account-level — multiple distinct humans can share one, and co-drivers
+      // may either share the primary's member_num or have an empty member_num. Hashing
+      // the full last_name lets us cross-link the same human across events while still
+      // persisting only the redacted lastInitial (see redactLastName above).
+      const driverHashBySrc = new Map<number, string>();
+      const uniqueDriverIdentities = new Map<string, {
+        identityHash: string;
+        memberNum: string | null;
+        firstName: string;
+        lastInitial: string;
+      }>();
+      for (const d of srcDrivers) {
+        const memberNum = d.member_num?.trim() ? d.member_num.trim() : null;
+        const identityHash = computeIdentityHash(memberNum, d.first_name, d.last_name);
+        driverHashBySrc.set(d.id, identityHash);
+        // Last write wins on duplicate identityHash within one source — mirrors the
+        // original upsert's "update on second sight" behavior.
+        uniqueDriverIdentities.set(identityHash, {
+          identityHash,
+          memberNum,
+          firstName: d.first_name,
+          lastInitial: redactLastName(d.last_name),
         });
-        classIdBySrc.set(c.id, appClass.id);
       }
 
       const driverIdBySrc = new Map<number, number>();
-      for (const d of srcDrivers) {
-        const memberNum = d.member_num?.trim() || null;
-        const lastInitial = redactLastName(d.last_name);
-        const appDriver = memberNum
-          ? await tx.driver.upsert({
-              where: { memberNum },
-              create: {
-                memberNum,
-                firstName: d.first_name,
-                lastInitial,
+
+      if (uniqueDriverIdentities.size > 0) {
+        const identityHashes = Array.from(uniqueDriverIdentities.keys());
+        const existingDrivers = await tx.driver.findMany({
+          where: { identityHash: { in: identityHashes } },
+        });
+        const existingByHash = new Map(existingDrivers.map((d) => [d.identityHash, d]));
+
+        const newDriverData: Array<{
+          identityHash: string;
+          memberNum: string | null;
+          firstName: string;
+          lastInitial: string;
+        }> = [];
+        for (const [hash, info] of uniqueDriverIdentities) {
+          const cur = existingByHash.get(hash);
+          if (!cur) {
+            newDriverData.push(info);
+          } else if (
+            cur.firstName !== info.firstName ||
+            cur.lastInitial !== info.lastInitial ||
+            cur.memberNum !== info.memberNum
+          ) {
+            await tx.driver.update({
+              where: { id: cur.id },
+              data: {
+                firstName: info.firstName,
+                lastInitial: info.lastInitial,
+                memberNum: info.memberNum,
               },
-              update: { firstName: d.first_name, lastInitial },
-            })
-          : await tx.driver.create({
-              data: { firstName: d.first_name, lastInitial },
             });
-        driverIdBySrc.set(d.id, appDriver.id);
+          }
+        }
+        if (newDriverData.length > 0) {
+          await tx.driver.createMany({ data: newDriverData });
+        }
+
+        const allDrivers = await tx.driver.findMany({
+          where: { identityHash: { in: identityHashes } },
+        });
+        const driverIdByHash = new Map(allDrivers.map((d) => [d.identityHash, d.id]));
+        for (const [srcId, hash] of driverHashBySrc) {
+          const id = driverIdByHash.get(hash);
+          if (id == null) {
+            throw new Error(`Failed to resolve driver id for identity hash '${hash.slice(0, 12)}…'`);
+          }
+          driverIdBySrc.set(srcId, id);
+        }
       }
 
-      const entryIdBySrcDriver = new Map<number, number>();
-      for (const d of srcDrivers) {
+      // Entry: bulk createMany, then findMany to map back by (driverId, classId).
+      // AxWare gives each (human, class) pair its own driver row, so two source driver
+      // rows can map to the same app Driver (e.g. one human entered in two classes via
+      // two AxWare rows). The composite (driverId, classId) is unique per event and is
+      // the right recovery key; driverId alone would silently collapse.
+      const entriesData = srcDrivers.map((d) => {
         const classId = classIdBySrc.get(d.class_id);
         const paxClassId = classIdBySrc.get(d.paxmult_id);
         if (classId == null || paxClassId == null) {
@@ -173,20 +280,40 @@ export async function ingestAxdb(
         }
         const driverId = driverIdBySrc.get(d.id);
         if (driverId == null) throw new Error(`Missing driver mapping for source id ${d.id}`);
-
-        const entry = await tx.entry.create({
-          data: {
-            eventId: event.id,
-            driverId,
-            classId,
-            paxClassId,
-            carNumber: d.number,
-            carDescription: d.car_model,
-          },
-        });
-        entryIdBySrcDriver.set(d.id, entry.id);
+        return {
+          eventId: event.id,
+          driverId,
+          classId,
+          paxClassId,
+          carNumber: d.number,
+          carDescription: d.car_model,
+        };
+      });
+      if (entriesData.length > 0) {
+        await tx.entry.createMany({ data: entriesData });
       }
 
+      const newEntries = await tx.entry.findMany({ where: { eventId: event.id } });
+      const entryIdByDriverAndClass = new Map<string, number>();
+      for (const e of newEntries) {
+        const key = `${e.driverId}:${e.classId}`;
+        if (entryIdByDriverAndClass.has(key)) {
+          throw new Error(
+            `Multiple entries for driver ${e.driverId} in class ${e.classId} at event ${event.id} — data anomaly`,
+          );
+        }
+        entryIdByDriverAndClass.set(key, e.id);
+      }
+      const entryIdBySrcDriver = new Map<number, number>();
+      for (const d of srcDrivers) {
+        const driverId = driverIdBySrc.get(d.id)!;
+        const classId = classIdBySrc.get(d.class_id)!;
+        const entryId = entryIdByDriverAndClass.get(`${driverId}:${classId}`);
+        if (entryId == null) throw new Error(`Missing entry for source driver ${d.id}`);
+        entryIdBySrcDriver.set(d.id, entryId);
+      }
+
+      // Run: flatten per-driver source runs into one array, then a single createMany.
       const runsByDriver = new Map<number, SrcRun[]>();
       for (const r of srcRuns) {
         const list = runsByDriver.get(r.driver_id) ?? [];
@@ -194,7 +321,13 @@ export async function ingestAxdb(
         runsByDriver.set(r.driver_id, list);
       }
 
-      let runCount = 0;
+      const runsData: Array<{
+        entryId: number;
+        runNumber: number;
+        rawTimeMs: number | null;
+        cones: number;
+        disposition: RunDisposition;
+      }> = [];
       for (const [srcDriverId, list] of runsByDriver) {
         const entryId = entryIdBySrcDriver.get(srcDriverId);
         if (entryId == null) continue;
@@ -208,18 +341,18 @@ export async function ingestAxdb(
               : r.start_tick != null && r.finish_tick != null
                 ? r.finish_tick - r.start_tick
                 : null;
-          await tx.run.create({
-            data: {
-              entryId,
-              runNumber,
-              rawTimeMs,
-              cones: r.cones ?? 0,
-              disposition,
-            },
+          runsData.push({
+            entryId,
+            runNumber,
+            rawTimeMs,
+            cones: r.cones ?? 0,
+            disposition,
           });
           runNumber += 1;
-          runCount += 1;
         }
+      }
+      if (runsData.length > 0) {
+        await tx.run.createMany({ data: runsData });
       }
 
       return {
@@ -229,10 +362,10 @@ export async function ingestAxdb(
           classes: srcClasses.length,
           drivers: srcDrivers.length,
           entries: srcDrivers.length,
-          runs: runCount,
+          runs: runsData.length,
         },
       };
-    }, { timeout: 60_000, maxWait: 10_000 });
+    });
   } finally {
     src.close();
   }

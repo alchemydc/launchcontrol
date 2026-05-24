@@ -34,7 +34,7 @@ describe("ingestAxdb(synthetic.axdb)", () => {
 
     expect(result.status).toBe("ingested");
     expect(result.event.slug).toBe("2026-01-01-synthetic-fixture-event");
-    expect(result.counts).toEqual({ classes: 3, drivers: 5, entries: 5, runs: 14 });
+    expect(result.counts).toEqual({ classes: 3, drivers: 6, entries: 6, runs: 17 });
 
     const [dnf, rrn, clean] = await Promise.all([
       prisma.run.count({ where: { disposition: RunDisposition.DNF } }),
@@ -43,7 +43,7 @@ describe("ingestAxdb(synthetic.axdb)", () => {
     ]);
     expect(dnf).toBe(1);
     expect(rrn).toBe(1);
-    expect(clean).toBe(12);
+    expect(clean).toBe(15);
 
     const classes = await prisma.carClass.findMany({ orderBy: { code: "asc" } });
     expect(classes.map((c) => c.code)).toEqual(["C1", "CS", "TO"]);
@@ -55,7 +55,7 @@ describe("ingestAxdb(synthetic.axdb)", () => {
   it("is idempotent: a second run reports 'unchanged'", async () => {
     const result = await ingestAxdb(FIXTURE, prisma);
     expect(result.status).toBe("unchanged");
-    expect(result.counts).toEqual({ classes: 3, drivers: 5, entries: 5, runs: 14 });
+    expect(result.counts).toEqual({ classes: 3, drivers: 6, entries: 6, runs: 17 });
   });
 
   it("preserves the DNF run (no rawTimeMs)", async () => {
@@ -74,7 +74,7 @@ describe("ingestAxdb(synthetic.axdb)", () => {
 
   it("redacts driver last names to a single initial + period", async () => {
     const drivers = await prisma.driver.findMany();
-    expect(drivers).toHaveLength(5);
+    expect(drivers).toHaveLength(6);
 
     for (const d of drivers) {
       expect(d.lastInitial).toMatch(/^[A-Z?]\.$/);
@@ -82,7 +82,7 @@ describe("ingestAxdb(synthetic.axdb)", () => {
     }
 
     const initials = drivers.map((d) => d.lastInitial).sort();
-    expect(initials).toEqual(["A.", "B.", "C.", "D.", "E."]);
+    expect(initials).toEqual(["A.", "A.", "B.", "C.", "D.", "E."]);
   });
 
   it("never persists a full source last name anywhere in the Driver table", async () => {

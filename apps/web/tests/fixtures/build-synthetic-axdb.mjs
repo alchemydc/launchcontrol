@@ -163,6 +163,7 @@ db.transaction(() => {
     ["Chen",     "Cam",    "003", 2, 2, "2010 Sample Coupe",     "green",  "SYN-003", "green"],
     ["Diaz",     "Dee",    "004", 2, 2, "1985 Demo 911",         "yellow", "SYN-004", "yellow"],
     ["Eckhart",  "Evan",   "005", 3, 3, "2018 Filler GT",        "black",  "SYN-005", "black"],
+    ["Ada",      "Andrew", "006", 1, 1, "2002 Family Coupe",     "white",  "SYN-001", "white"],
   ];
   for (const [last, first, num, classId, paxId, car, color, memberNum, icon] of drivers) {
     insertDriver.run(
@@ -193,6 +194,9 @@ db.transaction(() => {
     [4,  3, 59210, 0, ""],
     [5,  1, 63010, 0, ""],
     [5,  2, 62540, 0, ""],
+    [6,  1, 53000, 0, ""],
+    [6,  2, 52500, 0, ""],
+    [6,  3, 52000, 0, ""],
   ];
 
   // Each run takes 60s of wall clock. Tick origin is arbitrary.

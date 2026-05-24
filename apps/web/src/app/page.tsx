@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { YearSwitcher } from "@/components/year-switcher";
+import { EventsYearSwitcher } from "./events-year-switcher";
 import { prisma } from "@/lib/prisma";
 import { listSeasonYears } from "@/lib/season-leaderboard";
 import { findSmugmugEventFolder } from "@/lib/smugmug";
@@ -67,10 +67,9 @@ export default async function HomePage({
           </div>
           {years.length > 1 && (
             <div className="sm:shrink-0 sm:ml-4">
-              <YearSwitcher
+              <EventsYearSwitcher
                 years={years}
                 currentYear={year}
-                buildHref={(y) => `/?year=${y}`}
               />
             </div>
           )}
