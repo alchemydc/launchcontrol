@@ -118,13 +118,13 @@ export async function ingestAxdb(
       console.warn(
         `[ingest] ${srcEvent.event_name}: skipping ${ghostDrivers.length} ghost driver row(s) with zero runs:`,
         ghostDrivers
-          .map((d) => `${d.first_name} ${d.last_name} #${d.number}`)
+          .map((d) => `${d.first_name} ${d.last_name.charAt(0)}. #${d.number}`)
           .join(", "),
       );
       srcDrivers = srcDrivers.filter((d) => srcDriverIdsWithRuns.has(d.id));
     }
 
-    const slug =`${srcEvent.event_date}-${slugify(srcEvent.event_name)}`;
+    const slug = `${srcEvent.event_date}-${slugify(srcEvent.event_name)}`;
     const eventDate = new Date(`${srcEvent.event_date}T00:00:00.000Z`);
 
     return await client.$transaction(async (tx) => {
