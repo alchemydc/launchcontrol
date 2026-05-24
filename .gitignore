@@ -5,7 +5,7 @@
 
 # Real PCA RMR season data — may contain member PII (names, emails, member #s).
 # Local dev only. See feedback_sensitive_axdb_fixtures memory.
-2026_season_data/
+real_season_data/
 
 # claude config / scratch
 .claude/
