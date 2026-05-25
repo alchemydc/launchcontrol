@@ -89,7 +89,7 @@ export default async function DriverPage({
           </div>
           <div className="flex items-center gap-3 shrink-0 sm:ml-4">
             <Badge variant="default">
-              {history.length} {history.length === 1 ? "entry" : "entries"}
+              {history.length} {history.length === 1 ? "event" : "events"}
             </Badge>
           </div>
         </div>

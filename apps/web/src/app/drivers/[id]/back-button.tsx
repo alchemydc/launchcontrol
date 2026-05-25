@@ -7,7 +7,12 @@ export function BackButton() {
     <button
       type="button"
       onClick={() => {
-        if (typeof window !== "undefined" && window.history.length > 1) {
+        if (typeof window === "undefined") return;
+        // Next.js App Router sets __NA: true on every in-app history entry.
+        // Checking both __NA and length > 1 prevents router.back() from
+        // escaping to an external site when the user arrived directly.
+        const state = window.history.state as { __NA?: boolean } | null;
+        if (state?.__NA && window.history.length > 1) {
           router.back();
         } else {
           router.push("/leaderboard");

@@ -71,15 +71,20 @@ export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
                     href={`/events/${row.eventSlug}`}
                     className="block text-sm font-medium hover:underline truncate"
                   >
-                    {row.eventName} ↗
+                    {row.eventName}
                   </Link>
                   <p className="text-[11px] text-muted-foreground tabular-nums mt-0.5">
                     {formatDate(row.eventDate)}
                   </p>
                 </div>
-                <Badge variant="outline" className="shrink-0 mt-0.5">
-                  {row.classCode}
-                </Badge>
+                <div className="flex flex-col items-end gap-0.5 shrink-0 mt-0.5">
+                  <Badge variant="outline">{row.classCode}</Badge>
+                  {row.paxClassCode !== row.classCode && (
+                    <span className="text-[10px] text-muted-foreground">
+                      PAX {row.paxClassCode}
+                    </span>
+                  )}
+                </div>
               </div>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs tabular-nums">
                 <div>
