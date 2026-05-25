@@ -27,7 +27,10 @@ async function main(): Promise<void> {
   const indexes = objects.filter((o) => o.type === "index");
 
   const redactedUrl = isTurso
-    ? url.replace(/^(libsql:\/\/[^:@]+).*/, "$1")
+    ? (() => {
+        const u = new URL(url);
+        return `${u.protocol}//${u.hostname}`;
+      })()
     : url;
   console.log(
     `Target: ${redactedUrl} (${isTurso ? "Turso" : "local"})`
