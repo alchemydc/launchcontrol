@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { buildDriverHistory } from "@/lib/driver-history";
 import { ProgressionChart, type ProgressionPoint } from "./progression-chart";
 import { TimeDeltaChart } from "./time-delta-chart";
-import { BackButton } from "./back-button";
+import { BackButton } from "@/components/back-button";
 import { EventHistory } from "./event-history";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +73,7 @@ export default async function DriverPage({
     <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <header className="mb-6 sm:mb-8">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <BackButton />
+          <BackButton fallbackHref="/leaderboard" />
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
             Driver · {driverId}
           </p>

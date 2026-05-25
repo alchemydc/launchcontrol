@@ -1,7 +1,13 @@
 "use client";
 import { useRouter } from "next/navigation";
 
-export function BackButton() {
+export function BackButton({
+  fallbackHref,
+  label = "← Back",
+}: {
+  fallbackHref: string;
+  label?: string;
+}) {
   const router = useRouter();
   return (
     <button
@@ -20,12 +26,12 @@ export function BackButton() {
         if (sameOrigin) {
           router.back();
         } else {
-          router.push("/leaderboard");
+          router.push(fallbackHref);
         }
       }}
       className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
     >
-      ← Back
+      {label}
     </button>
   );
 }
