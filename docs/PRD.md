@@ -129,6 +129,7 @@ runs(id, event_id, driver_id, start_at, finish_at, start_tick, finish_tick,
 - **`member_num` is family/account-level, NOT a person-unique GUID.** Distinct humans frequently share a `member_num` (PCA family/household memberships). Real 2025 data showed multiple shared-`member_num` cases per event: typically two family members in the same class on a single membership, but also pairs with different surnames sharing one membership. `member_num` alone cannot identify a driver — see §2.6 for the identity-hash strategy ingest uses to cross-link the same human across events without false collapses.
 - **Co-driver pattern** uses a `1`-prefix or `X`-suffix on the car number — e.g. primary `#62` + co-drive `#162`, primary `#34` + co-drive `#34X`, primary `#198` + co-drive `#198X`. The co-driver's `member_num` may be empty (non-member co-driver, observed 2025-07-12) OR may share the primary's (family-co-drive case observed 2025-09-13). Ingest doesn't assume either case.
 - **Ghost registrations:** AxWare leaves the original `drivers` row in place when a driver swaps cars on race day — the abandoned registration has zero `runs` rows. 2026-05-17 had 8 such ghosts (drivers who pre-registered with one car number then drove a different one). Ingest skips zero-run rows (§2.6); PCA Series output ignores them anyway.
+- **Multiple `.axdb` per event directory.** AxWare folders can hold a `*Trailer Export*.axdb` (mid-event/trailer snapshot) alongside the canonical post-event export, and very occasionally more than one canonical candidate. The new `apps/web/scripts/ingest.sh` skips any file whose name matches `*Trailer Export*.axdb`, auto-ingests when a directory has exactly one remaining candidate, and prompts the operator to choose (or skip) when multiple remain. Non-interactive runs with multiple candidates fail loudly rather than guess.
 
 Each `.axdb` exported from AxWare so far contains a **single event** (id=1) with ~70-80 drivers and ~600-650 runs.
 
@@ -291,7 +292,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 
 ## Part 3 · Build Plan (Milestones)
 
-**Status (2026-05-23):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), and an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — that unblocks the 2025 backfill and the imminent Turso re-ingest. **Next up:** M2 — MSR OAuth (still blocked pending credentials requested 2026-05-18).
+**Status (2026-05-25):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), and an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — that unblocks the 2025 backfill and the imminent Turso re-ingest, plus a backfill tooling pass — bulk ingest with canonical-axdb selection and a schema-only DB wipe utility that preserves Turso URLs/keys. **Next up:** M2 — MSR OAuth (still blocked pending credentials requested 2026-05-18).
 
 ### M0 — Scaffold ✓ (done 2026-05-18)
 
@@ -453,6 +454,13 @@ Unblocks the 2025 historical backfill (§M1.9, open question #8 resolution path)
 **Test fixture:** added a 6th driver to the synthetic `.axdb` (Andrew Ada sharing `SYN-001` with Alex Ada) for regression coverage of the family-share case. Count assertions bumped (5→6 drivers, 14→17 runs, 12→15 clean).
 
 **Operational note:** locally regenerating the schema can need `DATABASE_URL=file:./dev.db TURSO_DATABASE_URL= pnpm exec prisma migrate dev …` to bypass the libSQL URL when `TURSO_DATABASE_URL` is set in `apps/web/.env`. Prisma's migration engine doesn't speak libSQL.
+
+### M1.11 — Backfill tooling ✓ (done 2026-05-25)
+
+Operator-facing tooling to support the 2025 backfill and Turso re-ingests without surprises.
+
+- **`apps/web/scripts/ingest.sh`** — walks a directory tree, finds one canonical `.axdb` per event folder, and runs `pnpm run ingest` on each. Skips `*Trailer Export*.axdb` (trailer snapshots, not canonical results). When multiple non-trailer files exist in a single event folder, prompts the operator to choose or skip; non-interactive runs error out rather than guess. Closes the silent-wrong-file risk surfaced while staging the 2025 backfill (§2.3 quirks).
+- **`apps/web/scripts/wipe-db.ts` (`pnpm --filter web wipe:db`)** — drops every table/view/trigger/index in the target DB (local `file:` or Turso libSQL) but **does not delete the database itself**. Rationale: a full Turso "destroy + recreate" rotates the DB URL + auth token, which would require updating Vercel env vars on preview and prod on every re-ingest cycle. Wiping the schema only keeps those credentials stable. Safety rails: prints the redacted target URL and an itemized drop plan; supports `--dry-run`; for Turso, requires typing the exact hostname to confirm; for local DBs, defaults to a `[y/N]` prompt unless `--yes` is passed. After wipe, prints the next step: `pnpm --filter web migrate:turso`.
 
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)
 

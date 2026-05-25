@@ -41,6 +41,16 @@ pnpm --filter web exec prisma generate
 
 # regenerate the synthetic test fixture
 node apps/web/tests/fixtures/build-synthetic-axdb.mjs
+
+# bulk-ingest every event folder under a tree (skips *Trailer Export*.axdb,
+# prompts when multiple canonical candidates are present)
+apps/web/scripts/ingest.sh 2026_season_data/
+
+# drop all schema objects from the configured DB (local or Turso) without
+# deleting the DB itself — handy for clean re-ingests on Turso without
+# rotating credentials. Then re-apply migrations with migrate:turso.
+pnpm --filter web wipe:db            # interactive
+pnpm --filter web wipe:db -- --dry-run
 ```
 
 The dev SQLite file lives at `apps/web/dev.db` and is gitignored.
@@ -64,7 +74,7 @@ SmugMug photo album links are surfaced on the home page event cards and on each 
 
 ## Project status
 
-Milestones tracked in [docs/PRD.md §3](docs/PRD.md). Public preview is live at **[launchcontrol.club](https://launchcontrol.club)** (Vercel + Turso libSQL). M0 through M1.10 shipped: ingest, last-name redaction, styled leaderboards, GitHub Actions CI, per-driver progression page at `/drivers/[id]`, SmugMug event photo links, RMR season leaderboard with multi-season nav, and an ingest correctness pass (batched writes, identity-hash driver dedupe, ghost-registration skip — see PRD §M1.10). M2 (MSR OAuth) remains blocked on credentials from MotorsportReg.
+Milestones tracked in [docs/PRD.md §3](docs/PRD.md). Public preview is live at **[launchcontrol.club](https://launchcontrol.club)** (Vercel + Turso libSQL). M0 through M1.10 shipped: ingest, last-name redaction, styled leaderboards, GitHub Actions CI, per-driver progression page at `/drivers/[id]`, SmugMug event photo links, RMR season leaderboard with multi-season nav, and an ingest correctness pass (batched writes, identity-hash driver dedupe, ghost-registration skip — see PRD §M1.10). M2 (MSR OAuth) remains blocked on credentials from MotorsportReg. M1.11 added backfill tooling: a bulk ingest script that handles multi-`.axdb` event folders (skipping Trailer Export snapshots), and a schema-only DB wipe utility for clean Turso re-ingests without rotating credentials.
 
 ## License
 
