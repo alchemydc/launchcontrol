@@ -14,9 +14,9 @@ import {
 } from "recharts";
 import type { ProgressionPoint } from "./progression-chart";
 
-const LEADER_COLOR = "#3b82f6";
-const MEDIAN_COLOR = "#d4a017";
-const ZERO_LINE_COLOR = "#dc2626";
+const LEADER_COLOR = "var(--chart-4)";
+const MEDIAN_COLOR = "var(--chart-1)";
+const ZERO_LINE_COLOR = "var(--destructive)";
 
 function formatTooltipValue(value: unknown, name: unknown): [string, string] {
   const n = typeof name === "string" ? name : "";
@@ -58,10 +58,12 @@ export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
           <XAxis
             dataKey="label"
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 11 }}
             angle={-30}
             textAnchor="end"
             height={50}
+            interval="preserveStartEnd"
+            minTickGap={24}
             className="fill-muted-foreground"
           />
           <YAxis
@@ -93,9 +95,14 @@ export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
             }}
           />
           <Tooltip
+            labelFormatter={(label, payload) => {
+              const p = payload?.[0]?.payload as ProgressionPoint | undefined;
+              return p ? `${label} · ${p.eventName}` : label;
+            }}
             formatter={formatTooltipValue}
             contentStyle={{
               background: "var(--popover)",
+              color: "var(--popover-foreground)",
               border: "1px solid var(--border)",
               borderRadius: 8,
               fontSize: 12,
@@ -122,7 +129,8 @@ export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
             name="vs. event leader"
             stroke={LEADER_COLOR}
             strokeWidth={2}
-            dot={{ r: 4 }}
+            dot={data.length > 10 ? false : { r: 3 }}
+            activeDot={{ r: 5 }}
             connectNulls
             isAnimationActive={false}
           />
@@ -133,7 +141,8 @@ export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
             name="vs. event median"
             stroke={MEDIAN_COLOR}
             strokeWidth={2}
-            dot={{ r: 4 }}
+            dot={data.length > 10 ? false : { r: 3 }}
+            activeDot={{ r: 5 }}
             connectNulls
             isAnimationActive={false}
           />
@@ -142,7 +151,7 @@ export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
               dataKey="label"
               height={24}
               travellerWidth={8}
-              stroke={LEADER_COLOR}
+              stroke="var(--muted-foreground)"
               className="fill-muted"
             />
           )}

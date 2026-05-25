@@ -163,3 +163,7 @@
     @apply font-sans;
   }
 }
+
+.recharts-brush-texts text {
+  font-size: 10px;
+}
