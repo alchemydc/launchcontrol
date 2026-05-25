@@ -1,25 +1,11 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
 import { buildDriverHistory } from "@/lib/driver-history";
-import { formatMs } from "@/lib/leaderboard";
 import { ProgressionChart, type ProgressionPoint } from "./progression-chart";
 import { TimeDeltaChart } from "./time-delta-chart";
+import { BackButton } from "@/components/back-button";
+import { EventHistory } from "./event-history";
 
 export const dynamic = "force-dynamic";
 
@@ -37,11 +23,6 @@ function formatPercent(value: number | null, fractionDigits = 1): string {
   return `${(value * 100).toFixed(fractionDigits)}%`;
 }
 
-function formatSignedPercent(value: number | null): string {
-  if (value == null) return "—";
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}${(value * 100).toFixed(2)}%`;
-}
 
 export default async function DriverPage({
   params,
@@ -81,6 +62,7 @@ export default async function DriverPage({
   const chartData: ProgressionPoint[] = history.map((row) => ({
     date: row.eventDate.toISOString(),
     label: formatDate(row.eventDate),
+    eventName: row.eventName,
     position: row.position,
     percentile: row.percentile,
     diffFromLeaderPct: row.diffFromLeaderPct,
@@ -88,203 +70,108 @@ export default async function DriverPage({
   }));
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-6">
-        <Link
-          href="/"
-          className="text-muted-foreground hover:text-foreground text-sm"
-        >
-          ← All events
-        </Link>
-        <div className="mt-2 flex items-baseline justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              {driverName}
-            </h1>
+    <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
+      <header className="mb-6 sm:mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <BackButton fallbackHref="/leaderboard" />
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
+            Driver · {driverId}
+          </p>
+        </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+                {driverName}
+              </h1>
+            </div>
           </div>
-          <Badge variant="secondary">
-            {history.length} {history.length === 1 ? "event" : "events"}
-          </Badge>
+          <div className="flex items-center gap-3 shrink-0 sm:ml-4">
+            <Badge variant="default">
+              {history.length} {history.length === 1 ? "event" : "events"}
+            </Badge>
+          </div>
         </div>
       </header>
 
-      <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+      <div className="mb-6 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+        <div className="bg-muted/40 px-4 py-3 border-b border-border/60">
+          <h2 className="text-sm font-semibold tracking-wide uppercase text-foreground">
+            Summary
+          </h2>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 p-4">
+          <div className="rounded-md bg-background px-3 py-2">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase mb-1">
               Events
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            </p>
             <div className="text-2xl font-semibold tabular-nums">
               {history.length}
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          </div>
+          <div className="rounded-md bg-background px-3 py-2">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase mb-1">
               Best finish
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            </p>
             <div className="text-2xl font-semibold tabular-nums">
               {bestPosition ?? "—"}
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          </div>
+          <div className="rounded-md bg-background px-3 py-2">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase mb-1">
               Avg finish
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            </p>
             <div className="text-2xl font-semibold tabular-nums">
               {avgPosition == null ? "—" : avgPosition.toFixed(1)}
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          </div>
+          <div className="rounded-md bg-background px-3 py-2">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase mb-1">
               Best percentile
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            </p>
             <div className="text-2xl font-semibold tabular-nums">
               {formatPercent(bestPercentile)}
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          </div>
+          <div className="rounded-md bg-background px-3 py-2">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase mb-1">
               Avg percentile
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            </p>
             <div className="text-2xl font-semibold tabular-nums">
               {formatPercent(avgPercentile)}
             </div>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        </div>
+      </div>
 
-      {history.length === 0 ? (
-        <Card>
-          <CardContent className="text-muted-foreground py-8 text-center text-sm">
-            No event results yet for this driver.
-          </CardContent>
-        </Card>
-      ) : (
+      {history.length > 0 && (
         <>
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="text-base">Progression</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm mb-6">
+            <div className="bg-muted/40 px-4 py-3 border-b border-border/60">
+              <h2 className="text-sm font-semibold tracking-wide uppercase text-foreground">
+                Progression
+              </h2>
+            </div>
+            <div className="p-4">
               <ProgressionChart data={chartData} />
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="text-base">Time differential</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm mb-6">
+            <div className="bg-muted/40 px-4 py-3 border-b border-border/60">
+              <h2 className="text-sm font-semibold tracking-wide uppercase text-foreground">
+                Time differential
+              </h2>
+            </div>
+            <div className="p-4">
               <TimeDeltaChart data={chartData} />
-            </CardContent>
-          </Card>
-
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Event</TableHead>
-                  <TableHead title="Your entered car class. If your PAX-scored class differs (rare), it appears as a secondary tag.">
-                    Class
-                  </TableHead>
-                  <TableHead
-                    className="text-right"
-                    title="Your best PAX-adjusted time at the event. Lower is faster."
-                  >
-                    Best PAX
-                  </TableHead>
-                  <TableHead
-                    className="text-right"
-                    title="The fastest PAX-adjusted time of any driver at the event."
-                  >
-                    Leader PAX
-                  </TableHead>
-                  <TableHead className="text-right">Position</TableHead>
-                  <TableHead className="text-right">Percentile</TableHead>
-                  <TableHead
-                    className="text-right"
-                    title="How much slower your PAX time was than the event leader's. 0% = tied with the leader; larger = further behind."
-                  >
-                    vs. event leader
-                  </TableHead>
-                  <TableHead
-                    className="text-right"
-                    title="How your PAX time compared to the median PAX time across all entrants at the event. 0% = matched the middle of the field; negative = beat it."
-                  >
-                    vs. event median
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.map((row) => (
-                  <TableRow key={row.eventId}>
-                    <TableCell className="whitespace-nowrap">
-                      {formatDate(row.eventDate)}
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/events/${row.eventSlug}`}
-                        className="hover:underline"
-                      >
-                        {row.eventName}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline">{row.classCode}</Badge>
-                        {row.paxClassCode !== row.classCode && (
-                          <span className="text-muted-foreground text-xs">
-                            PAX {row.paxClassCode}
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatMs(row.bestPaxMs)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-right tabular-nums">
-                      {formatMs(row.leaderPaxMs)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {row.position == null
-                        ? "—"
-                        : `${row.position} / ${row.entrantCount}`}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatPercent(row.percentile)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatSignedPercent(row.diffFromLeaderPct)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatSignedPercent(row.diffFromMedianPct)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            </div>
           </div>
         </>
       )}
+
+      <EventHistory history={history} />
     </main>
   );
 }

@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
+import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
 import { buildLeaderboard } from "@/lib/leaderboard";
 import { findSmugmugEventFolder } from "@/lib/smugmug";
@@ -48,12 +48,7 @@ export default async function EventPage({
     <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <header className="mb-6 sm:mb-8">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <Link
-            href="/"
-            className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
-          >
-            ← All events
-          </Link>
+          <BackButton fallbackHref="/leaderboard" />
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
             {formatDate(event.date)}
           </p>

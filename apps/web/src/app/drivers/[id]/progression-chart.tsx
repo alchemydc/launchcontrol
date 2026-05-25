@@ -15,14 +15,15 @@ import {
 export type ProgressionPoint = {
   date: string;
   label: string;
+  eventName: string;
   position: number | null;
   percentile: number | null;
   diffFromLeaderPct: number | null;
   diffFromMedianPct: number | null;
 };
 
-const POSITION_COLOR = "#d4a017";
-const PERCENTILE_COLOR = "#3b82f6";
+const POSITION_COLOR = "var(--chart-1)";
+const PERCENTILE_COLOR = "var(--chart-4)";
 
 function formatTooltipValue(value: unknown, name: unknown): [string, string] {
   const n = typeof name === "string" ? name : "";
@@ -63,10 +64,12 @@ export function ProgressionChart({ data }: { data: ProgressionPoint[] }) {
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
           <XAxis
             dataKey="label"
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 11 }}
             angle={-30}
             textAnchor="end"
             height={50}
+            interval="preserveStartEnd"
+            minTickGap={24}
             className="fill-muted-foreground"
           />
           <YAxis
@@ -98,9 +101,14 @@ export function ProgressionChart({ data }: { data: ProgressionPoint[] }) {
             }}
           />
           <Tooltip
+            labelFormatter={(label, payload) => {
+              const p = payload?.[0]?.payload as ProgressionPoint | undefined;
+              return p ? `${label} · ${p.eventName}` : label;
+            }}
             formatter={formatTooltipValue}
             contentStyle={{
               background: "var(--popover)",
+              color: "var(--popover-foreground)",
               border: "1px solid var(--border)",
               borderRadius: 8,
               fontSize: 12,
@@ -114,7 +122,8 @@ export function ProgressionChart({ data }: { data: ProgressionPoint[] }) {
             name="PAX position"
             stroke={POSITION_COLOR}
             strokeWidth={2}
-            dot={{ r: 4 }}
+            dot={data.length > 10 ? false : { r: 3 }}
+            activeDot={{ r: 5 }}
             connectNulls
             isAnimationActive={false}
           />
@@ -125,7 +134,8 @@ export function ProgressionChart({ data }: { data: ProgressionPoint[] }) {
             name="Percentile"
             stroke={PERCENTILE_COLOR}
             strokeWidth={2}
-            dot={{ r: 4 }}
+            dot={data.length > 10 ? false : { r: 3 }}
+            activeDot={{ r: 5 }}
             connectNulls
             isAnimationActive={false}
           />
@@ -134,7 +144,7 @@ export function ProgressionChart({ data }: { data: ProgressionPoint[] }) {
               dataKey="label"
               height={24}
               travellerWidth={8}
-              stroke={PERCENTILE_COLOR}
+              stroke="var(--muted-foreground)"
               className="fill-muted"
             />
           )}
