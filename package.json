@@ -2,5 +2,12 @@
   "name": "launchcontrol",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "packageManager": "pnpm@10.25.0"
+  "packageManager": "pnpm@10.25.0",
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5"
+  },
+  "scripts": {
+    "prepare": "husky"
+  }
 }
