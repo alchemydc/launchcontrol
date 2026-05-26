@@ -1,4 +1,4 @@
-import { RunDisposition } from "@/generated/prisma/client";
+import type { RunDisposition } from "@/generated/prisma/client";
 import { CONE_PENALTY_MS } from "@/lib/constants";
 
 export type RunForBest = {
@@ -23,7 +23,7 @@ export function bestCorrectedMsForEntry(entry: EntryForBest): number | null {
     // post-M1.12 because status=3 runs always persist) or the run had no time.
   }
   const cleanCorrected = entry.runs
-    .filter((r) => r.disposition === RunDisposition.CLEAN && r.rawTimeMs != null)
+    .filter((r) => r.disposition === "CLEAN" && r.rawTimeMs != null)
     .map((r) => (r.rawTimeMs as number) + r.cones * CONE_PENALTY_MS);
   return cleanCorrected.length > 0 ? Math.min(...cleanCorrected) : null;
 }
