@@ -120,8 +120,12 @@ registrations(driver_id, event_id, bestcommittedrun_id, bestcommittedrun_no,
 runs(id, event_id, driver_id, start_at, finish_at, start_tick, finish_tick,
      cones, disposition, status)
 -- raw_time_ms = finish_tick - start_tick  (millisecond ticks)
--- disposition: '' (clean), 'DNF', 'RRN' (re-run)
--- status: 3 = committed (only value observed)
+-- status: 0=pre-start queue, 1=on course, 2=post-finish queue,
+--         3=committed, 4=cancelled (left pre-start without crossing line)
+--         Ingest reads only status=3; other states are queue/lifecycle
+--         artifacts and never represent a scoreable run.
+-- disposition: '' (clean), 'DNF', 'RRN' (re-run), 'OFF' (off-course),
+--              'DSQ' (disqualified). OFF/DSQ are rare but real.
 ```
 
 **Observed real-data quirks (catalogued during the 2025 backfill, 2026-05-23):**
@@ -130,6 +134,7 @@ runs(id, event_id, driver_id, start_at, finish_at, start_tick, finish_tick,
 - **Co-driver pattern** uses a `1`-prefix or `X`-suffix on the car number — e.g. primary `#62` + co-drive `#162`, primary `#34` + co-drive `#34X`, primary `#198` + co-drive `#198X`. The co-driver's `member_num` may be empty (non-member co-driver, observed 2025-07-12) OR may share the primary's (family-co-drive case observed 2025-09-13). Ingest doesn't assume either case.
 - **Ghost registrations:** AxWare leaves the original `drivers` row in place when a driver swaps cars on race day — the abandoned registration has zero `runs` rows. 2026-05-17 had 8 such ghosts (drivers who pre-registered with one car number then drove a different one). Ingest skips zero-run rows (§2.6); PCA Series output ignores them anyway.
 - **Multiple `.axdb` per event directory.** AxWare folders can hold a `*Trailer Export*.axdb` (mid-event/trailer snapshot) alongside the canonical post-event export, and very occasionally more than one canonical candidate. The new `apps/web/scripts/ingest.sh` skips any file whose name matches `*Trailer Export*.axdb`, auto-ingests when a directory has exactly one remaining candidate, and prompts the operator to choose (or skip) when multiple remain. Non-interactive runs with multiple candidates fail loudly rather than guess.
+- **`registrations.bestcommittedrun_id` is authoritative.** When the timing chief commits a specific run as the official best (typically post-hoc, occasionally overriding the raw-fastest CLEAN run), AxWare records the chosen `runs.id` here. Confirmed by RMR's timing chair on 2026-05-26. Pre-2025-09-23 events can show this field disagreeing with the raw-fastest CLEAN run due to an AxWare bug fixed on that date; in every observed case the field still represents the club's official rendering, so ingest treats it as ground truth and falls back to "fastest CLEAN, cone-corrected" only when null.
 
 Each `.axdb` exported from AxWare so far contains a **single event** (id=1) with ~70-80 drivers and ~600-650 runs.
 
@@ -182,6 +187,7 @@ model Entry {
   class         CarClass  @relation("EnteredClass",    fields: [classId],    references: [id])
   paxClass      CarClass  @relation("PaxClass",        fields: [paxClassId], references: [id])
   runs          Run[]
+  bestCommittedRunNumber Int?   // AxWare-authoritative best-run pointer; resolved from registrations.bestcommittedrun_id by looking up its position in the driver's sorted-by-id source runs. Null when AxWare emits no committed best.
 
   // No @@unique on (eventId, driverId): a person can enter the same event
   // multiple times via co-drives or multi-class entries.
@@ -189,7 +195,8 @@ model Entry {
   @@index([driverId])
 }
 
-enum RunDisposition { CLEAN  DNF  RRN }
+// CLEAN is the only disposition counted toward best-time; the rest are persisted for auditing only.
+enum RunDisposition { CLEAN  DNF  RRN  OFF  DSQ }
 
 model Run {
   id           Int             @id @default(autoincrement())
@@ -220,6 +227,7 @@ Derived values (computed, not stored):
 
 - `corrected_time_ms = raw_time_ms + cones * CONE_PENALTY_MS` where `CONE_PENALTY_MS = 2000` (PCA AX standard; lives as a constant in code until a region overrides it).
 - `pax_time_ms = corrected_time_ms * paxClass.paxIndex`.
+- `best_corrected_time_ms` = if `entry.bestCommittedRunNumber != null` and that run is persisted with `rawTimeMs != null`, return `rawTimeMs + cones * CONE_PENALTY_MS` for that run; **else** `min(rawTimeMs + cones * CONE_PENALTY_MS)` across the entry's CLEAN runs. Null when no qualifying run exists.
 
 ### 2.5 UI components (shadcn/ui)
 
@@ -256,12 +264,19 @@ Mapping rules:
 | `runs.finish_tick - runs.start_tick`       | `Run.rawTimeMs` (null when disposition='DNF' and no time)    |
 | `runs.cones`                               | `Run.cones`                                                  |
 | `runs.disposition`                         | `Run.disposition` (`''→CLEAN`, `'DNF'→DNF`, `'RRN'→RRN`)     |
+| `runs.status` | filtered at ingest — rows with `status != 3` are skipped (queue/cancelled artifacts) |
+| `runs.disposition` `'OFF'` / `'DSQ'` | `Run.disposition = OFF` / `DSQ`; persisted but excluded from best-time |
+| `registrations.bestcommittedrun_id` | `Entry.bestCommittedRunNumber` — resolved by finding the FK's position in the driver's sorted-by-id source runs (1-indexed). AxWare's sibling `bestcommittedrun_no` field is unreliable because it skips voided RRN slots while our `Run.runNumber` numbers them sequentially. Nullable; takes precedence over fastest-CLEAN at compute time. |
 
 **Driver identity (M1.10):** ingest computes `identityHash = SHA256(${memberNum ?? ''}|${firstName.toLowerCase().trim()}|${lastName.toLowerCase().trim()})` and uses it as the cross-event upsert key. This keeps family members on a shared `member_num` as distinct `Driver` rows while still cross-linking the same human across events. Drivers without a `member_num` are deduplicated by name alone — residual risk of two unrelated people with identical first+last names colliding is small at PCA RMR scale and accepted for MVP. The full last name is used only to compute the hash; nothing beyond the redacted `lastInitial` is ever persisted.
 
 **Ghost registrations:** any source `drivers` row with zero matching `runs` rows is skipped at ingest with a console warning (e.g. `[ingest] University Grad School: skipping 8 ghost driver row(s) with zero runs: First L. #6, …`). These are abandoned pre-registrations from drivers who swapped cars on race day; PCA Series export ignores them and so do we.
 
 **Write strategy (M1.10, closes issue #7):** the inner loops use `createMany` + recovery `findMany` rather than per-row `upsert` calls, collapsing ~200–700 round-trips per event down to ~6–10. This unblocks Turso (HTTP-per-round-trip) without holding interactive transactions open over the network. The previous workaround on `$transaction` (`{ timeout: 60_000, maxWait: 10_000 }`) has been removed; defaults apply.
+
+**Best-time preference (M1.12):** All best-time consumers (per-event leaderboard, driver progression, season standings) call `bestCorrectedMsForEntry()` in `apps/web/src/lib/entry-best.ts`. That helper prefers `Entry.bestCommittedRunNumber` when set and the referenced run has a `rawTimeMs`, falling back to `min(rawTimeMs + cones * CONE_PENALTY_MS)` over CLEAN runs only. The fallback path is what the codebase did pre-M1.12; honoring `bestCommittedRunNumber` aligns us with the club's official ByClass exports (see §M1.12 and `docs/private/ellen_bestcommittedrun_anomaly.md`).
+
+**Unknown dispositions throw.** `toDisposition()` recognizes exactly `''`/`'DNF'`/`'RRN'`/`'OFF'`/`'DSQ'` and throws on anything else, so a future AxWare disposition can't silently fall through to CLEAN.
 
 ### 2.7 Database hosting — local SQLite, Turso (libSQL) in preview/prod
 
@@ -292,7 +307,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 
 ## Part 3 · Build Plan (Milestones)
 
-**Status (2026-05-25):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), and an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — that unblocks the 2025 backfill and the imminent Turso re-ingest, plus a backfill tooling pass — bulk ingest with canonical-axdb selection and a schema-only DB wipe utility that preserves Turso URLs/keys. **Next up:** M2 — MSR OAuth (still blocked pending credentials requested 2026-05-18).
+**Status (2026-05-26):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), and an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — that unblocks the 2025 backfill and the imminent Turso re-ingest, plus a backfill tooling pass — bulk ingest with canonical-axdb selection and a schema-only DB wipe utility that preserves Turso URLs/keys. **Next up:** M2 — MSR OAuth (still blocked pending credentials requested 2026-05-18).
 
 ### M0 — Scaffold ✓ (done 2026-05-18)
 
@@ -462,6 +477,16 @@ Operator-facing tooling to support the 2025 backfill and Turso re-ingests withou
 - **`apps/web/scripts/ingest.sh`** — walks a directory tree, finds one canonical `.axdb` per event folder, and runs `pnpm run ingest` on each. Skips `*Trailer Export*.axdb` (trailer snapshots, not canonical results). When multiple non-trailer files exist in a single event folder, prompts the operator to choose or skip; non-interactive runs error out rather than guess. Closes the silent-wrong-file risk surfaced while staging the 2025 backfill (§2.3 quirks).
 - **`apps/web/scripts/wipe-db.ts` (`pnpm --filter web wipe:db`)** — drops every table/view/trigger/index in the target DB (local `file:` or Turso libSQL) but **does not delete the database itself**. Rationale: a full Turso "destroy + recreate" rotates the DB URL + auth token, which would require updating Vercel env vars on preview and prod on every re-ingest cycle. Wiping the schema only keeps those credentials stable. Safety rails: prints the redacted target URL and an itemized drop plan; supports `--dry-run`; for Turso, requires typing the exact hostname to confirm; for local DBs, defaults to a `[y/N]` prompt unless `--yes` is passed. After wipe, prints the next step: `pnpm --filter web migrate:turso`.
 
+### M1.12 — Honor `bestcommittedrun_id` + tighten status/disposition filters (target: 1 session)
+
+Closes the CS P3/P4 anomaly surfaced during the 2025 backfill (`docs/private/ellen_bestcommittedrun_anomaly.md`). Three changes land together because all three are required to match the club's official renderings.
+
+- **Authoritative committed-best:** `apps/web/src/lib/ingest.ts` reads `registrations.bestcommittedrun_id` (FK → `runs.id`) and resolves it to a 1-indexed position in the driver's sorted-by-id source runs, storing that in a new nullable `Entry.bestCommittedRunNumber`. AxWare's sibling `bestcommittedrun_no` is unreliable for this lookup because it skips voided RRN slots while our `Run.runNumber` numbers them sequentially — the FK is the only stable reference. A new `apps/web/src/lib/entry-best.ts` exports `bestCorrectedMsForEntry()`, which prefers that pointer and falls back to fastest CLEAN cone-corrected. `leaderboard.ts`, `driver-history.ts`, `season-leaderboard.ts` all route through the helper.
+- **Status filter at ingest:** the source `runs` SELECT adds `WHERE status = 3`. Rows in queue/cancelled states (0/1/2/4) never reach the app DB. Confirmed defense-in-depth — all observed real-event exports already had status=3 only, but the chair confirmed the lifecycle semantics on 2026-05-26.
+- **`OFF` / `DSQ` dispositions:** `RunDisposition` enum extended; `toDisposition()` recognizes them and now **throws** on any unrecognized string (replaces today's silent fallback to CLEAN — the exact class of bug this milestone closes). OFF/DSQ runs persist for auditing but are excluded from best-time.
+
+Backfill: wipe local + Turso schema via `pnpm --filter web wipe:db`, re-migrate, bulk re-ingest 2025+2026 via `apps/web/scripts/ingest.sh`. Verify Ellen G. → CS P4 (2894) and Mike P. → CS P3 (2908) on `/leaderboard/2025`. Verify `docs/private/compare-official.ts` reports `Total mismatches: 0`.
+
 ### M2 — MSR OAuth (target: 1 session once credentials land — BLOCKED on credentials)
 
 - Route handlers: `app/api/auth/msr/login`, `app/api/auth/msr/callback`.
@@ -517,6 +542,7 @@ Operator-facing tooling to support the 2025 backfill and Turso re-ingests withou
 | 8 | ~~2025 historical `.axdb` files — do we have all 7 events on hand? Any missing or corrupt that would leave gaps in a 2025 season leaderboard?~~ **Resolved 2026-05-21:** Deferred from M1.9. Navigation/season-switcher shape still built so 2025 can slot in later when the data is available. | Post-MVP | DC |
 | 9 | SmugMug integration is single-tenant (hard-coded `rmrpca` / `Autocross` defaults). Acceptable to leave as-is through MVP, or do we need per-event overrides before M5 ships? | Post-MVP | DC |
 | 10 | ~~Same-driver, same-class, same-event co-drives (rare) — score both `Entry` rows independently and show both in season standings, or collapse to the driver's better score?~~ **Resolved 2026-05-21, refined 2026-05-23:** AxWare uses separate `drivers` rows for co-drives (`337` + `337X`, `62` + `162`); each scores independently. Driver identity is the §2.6 hash (not `member_num` — a co-drive pair sharing `member_num` was observed in 2025-09-13 real data). Ingest throws a clear data-anomaly error on the truly pathological "same human, same class, both with runs" case rather than silently miscategorizing. | Resolved | DC |
+| 11 | ~~`bestcommittedrun_id` semantics — authoritative override, UI cache, or one-off bug?~~ **Resolved 2026-05-26:** chair confirmed authoritative; honor when present. 2025-08-16 case traces to an AxWare bug fixed 2025-09-23. Status values 0–4 enumerated; only `3=committed` should be ingested. `OFF`/`DSQ` dispositions exist and must be excluded from best-time. See M1.12. | Resolved | DC |
 
 ---
 

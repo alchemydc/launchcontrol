@@ -123,15 +123,15 @@ const insertDriver = db.prepare(`
 `);
 
 const insertReg = db.prepare(`
-  INSERT INTO registrations (driver_id, event_id, run_timestamp)
-  VALUES (?, ?, ?)
+  INSERT INTO registrations (driver_id, event_id, bestcommittedrun_id, bestcommittedrun_no, run_timestamp)
+  VALUES (?, ?, ?, ?, ?)
 `);
 
 const insertRun = db.prepare(`
   INSERT INTO runs (
     event_id, driver_id, start_at, finish_at,
     start_tick, finish_tick, cones, disposition, status
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 3)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const eventTs = 1767258000; // 2026-01-01 09:00:00 UTC
@@ -172,38 +172,47 @@ db.transaction(() => {
     );
   }
 
-  for (let driverId = 1; driverId <= drivers.length; driverId++) {
-    insertReg.run(driverId, 1, eventTs);
-  }
-
-  // (driverId, runNumberLabel, deltaMs, cones, disposition)
-  // disposition: '' (clean) | 'DNF' | 'RRN'
-  // 14 runs total, 5 drivers, 1 DNF, 1 RRN, 3 distinct classes covered above.
+  // Runs are inserted in this exact order; their auto-increment IDs are:
+  //   Driver 1 (Alex Ada):    R1=id1, R2=id2 (committed), R3=id3 (fastest clean)
+  //   Driver 2 (Bea Brook):   R1=id4, R2=id5, R3=id6 (fastest clean)
+  //   Driver 3 (Cam Chen):    R1=id7, R2=id8 (DNF), R3=id9 (fastest clean), R4=id18 (OFF)
+  //   Driver 4 (Dee Diaz):    R1=id10, R2=id11 (RRN), R3=id12 (fastest clean), R4=id19 (DSQ)
+  //   Driver 5 (Evan Eckhart):R1=id13, R2=id14 (fastest clean), R3=id20 (status=4, cancelled)
+  //   Driver 6 (Andrew Ada):  R1=id15, R2=id16, R3=id17 (fastest clean)
+  //
+  // Driver 1 override: bestcommittedrun_no=2 (R2, corrected 51902+2000=53902ms),
+  //   but fastest clean is R3 (51488ms). This exercises the bestcommittedrun override path.
+  // disposition: '' (clean) | 'DNF' | 'RRN' | 'OFF' | 'DSQ'
+  // status: 3=committed (ingested), 4=cancelled (must NOT be ingested)
   const runs = [
-    [1,  1, 52341, 0, ""],
-    [1,  2, 51902, 1, ""],
-    [1,  3, 51488, 0, ""],
-    [2,  1, 55120, 0, ""],
-    [2,  2, 54732, 0, ""],
-    [2,  3, 54201, 0, ""],
-    [3,  1, 58440, 0, ""],
-    [3,  2, 70000, 0, "DNF"],
-    [3,  3, 57990, 0, ""],
-    [4,  1, 60511, 0, ""],
-    [4,  2, 59880, 0, "RRN"],
-    [4,  3, 59210, 0, ""],
-    [5,  1, 63010, 0, ""],
-    [5,  2, 62540, 0, ""],
-    [6,  1, 53000, 0, ""],
-    [6,  2, 52500, 0, ""],
-    [6,  3, 52000, 0, ""],
+    // [driverId, deltaMs, cones, disposition, status]
+    [1, 52341, 0, "",    3],
+    [1, 51902, 1, "",    3],  // ← committed best for driver 1 (R2, corrected 53902ms)
+    [1, 51488, 0, "",    3],  // ← fastest clean for driver 1 (should be overridden by committed)
+    [2, 55120, 0, "",    3],
+    [2, 54732, 0, "",    3],
+    [2, 54201, 0, "",    3],
+    [3, 58440, 0, "",    3],
+    [3, 70000, 0, "DNF", 3],
+    [3, 57990, 0, "",    3],
+    [4, 60511, 0, "",    3],
+    [4, 59880, 0, "RRN", 3],
+    [4, 59210, 0, "",    3],
+    [5, 63010, 0, "",    3],
+    [5, 62540, 0, "",    3],
+    [6, 53000, 0, "",    3],
+    [6, 52500, 0, "",    3],
+    [6, 52000, 0, "",    3],
+    [3, 59000, 0, "OFF", 3],  // OFF run for driver 3 — persisted, excluded from best-time
+    [4, 61000, 0, "DSQ", 3],  // DSQ run for driver 4 — persisted, excluded from best-time
+    [5, 64000, 0, "",    4],  // cancelled run (status=4) for driver 5 — must NOT be ingested
   ];
 
   // Each run takes 60s of wall clock. Tick origin is arbitrary.
   let wallSec = eventTs + 1800; // start runs 30 min into the event
   let tick = 5_000_000;
 
-  for (const [driverId, , deltaMs, cones, disposition] of runs) {
+  for (const [driverId, deltaMs, cones, disposition, status] of runs) {
     insertRun.run(
       1,                        // event_id
       driverId,
@@ -213,9 +222,26 @@ db.transaction(() => {
       tick + deltaMs,           // finish_tick (ms)
       cones,
       disposition,
+      status,
     );
     wallSec += 60;
     tick    += 90_000; // 90s between car starts including return
+  }
+
+  // Registrations with bestcommittedrun_id and bestcommittedrun_no.
+  // Run IDs match insertion order above (auto-increment from 1).
+  // Driver 1 override: committed=R2 (id=2, no=2), fastest clean=R3 (id=3, no=3).
+  const registrations = [
+    // [driverId, bestcommittedrun_id, bestcommittedrun_no]
+    [1, 2,  2],  // override: R2 committed (53902ms corrected), R3 fastest clean (51488ms)
+    [2, 6,  3],  // R3 fastest clean (54201ms)
+    [3, 9,  3],  // R3 fastest clean (57990ms)
+    [4, 12, 3],  // R3 fastest clean (59210ms)
+    [5, 14, 2],  // R2 fastest clean (62540ms); R3(status=4) not ingested
+    [6, 17, 3],  // R3 fastest clean (52000ms)
+  ];
+  for (const [driverId, commitId, commitNo] of registrations) {
+    insertReg.run(driverId, 1, commitId, commitNo, eventTs);
   }
 })();
 
@@ -225,11 +251,17 @@ const counts = {
   drivers:       db.prepare("SELECT COUNT(*) AS n FROM drivers").get().n,
   registrations: db.prepare("SELECT COUNT(*) AS n FROM registrations").get().n,
   runs:          db.prepare("SELECT COUNT(*) AS n FROM runs").get().n,
+  runs_status3:  db.prepare("SELECT COUNT(*) AS n FROM runs WHERE status=3").get().n,
+  runs_status4:  db.prepare("SELECT COUNT(*) AS n FROM runs WHERE status=4").get().n,
   dnf:           db.prepare("SELECT COUNT(*) AS n FROM runs WHERE disposition='DNF'").get().n,
   rrn:           db.prepare("SELECT COUNT(*) AS n FROM runs WHERE disposition='RRN'").get().n,
+  off:           db.prepare("SELECT COUNT(*) AS n FROM runs WHERE disposition='OFF'").get().n,
+  dsq:           db.prepare("SELECT COUNT(*) AS n FROM runs WHERE disposition='DSQ'").get().n,
 };
 
 db.close();
 
 console.log("Wrote", out);
 console.log(counts);
+// Expected: events=1, classes=3, drivers=6, registrations=6, runs=20,
+//           runs_status3=19, runs_status4=1, dnf=1, rrn=1, off=1, dsq=1

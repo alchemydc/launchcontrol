@@ -29,6 +29,11 @@ type SrcRun = {
   finish_tick: number | null;
   cones: number | null;
   disposition: string | null;
+  status: number;
+};
+type SrcRegistration = {
+  driver_id: number;
+  bestcommittedrun_id: number | null;
 };
 
 const REQUIRED_TABLES = ["events", "classes", "drivers", "registrations", "runs"] as const;
@@ -47,9 +52,15 @@ function slugify(s: string): string {
 }
 
 function toDisposition(raw: string | null): RunDisposition {
-  if (raw === "DNF") return RunDisposition.DNF;
-  if (raw === "RRN") return RunDisposition.RRN;
-  return RunDisposition.CLEAN;
+  switch ((raw ?? "").trim().toUpperCase()) {
+    case "":    return RunDisposition.CLEAN;
+    case "DNF": return RunDisposition.DNF;
+    case "RRN": return RunDisposition.RRN;
+    case "OFF": return RunDisposition.OFF;
+    case "DSQ": return RunDisposition.DSQ;
+    default:
+      throw new Error(`[ingest] unrecognized run disposition: ${JSON.stringify(raw)} — add to RunDisposition enum or investigate.`);
+  }
 }
 
 function computeIdentityHash(
@@ -100,18 +111,32 @@ export async function ingestAxdb(
       )
       .all(srcEvent.id) as SrcDriver[];
 
+    // Only status=3 (committed) runs represent scoreable results — see PRD §2.3 for
+    // the full status lifecycle (0=pre-start queue, 1=on course, 2=post-finish queue,
+    // 3=committed, 4=cancelled).
     const srcRuns = src
       .prepare(
-        `SELECT id, driver_id, start_tick, finish_tick, cones, disposition
-         FROM runs WHERE event_id = ? ORDER BY id`,
+        `SELECT id, driver_id, start_tick, finish_tick, cones, disposition, status
+         FROM runs WHERE event_id = ? AND status = 3 ORDER BY id`,
       )
       .all(srcEvent.id) as SrcRun[];
 
+    // Use bestcommittedrun_id (FK → runs.id) rather than bestcommittedrun_no because
+    // AxWare's run_no skips voided RRN slots while our sequential run numbering includes
+    // them — making run_no unreliable as a lookup key.
+    const srcRegistrations = src
+      .prepare(`SELECT driver_id, bestcommittedrun_id FROM registrations WHERE event_id = ?`)
+      .all(srcEvent.id) as SrcRegistration[];
+    const committedRunIdByDriver = new Map<number, number | null>(
+      srcRegistrations.map((r) => [r.driver_id, r.bestcommittedrun_id]),
+    );
+
     // Skip ghost registrations: source `drivers` rows with zero `runs` rows.
-    // AxWare keeps a pre-registration row in place when a driver changes cars
-    // on race day (e.g. Dean Williams 2026-05-17 #6 with 0 runs alongside #129
-    // with 7 runs). Including ghosts would collide on (identityHash, classId)
-    // during entry recovery. PCA Series export already ignores zero-run entries.
+    // AxWare keeps a pre-registration row in place when a driver changes cars on race
+    // day. Including ghosts would collide on (identityHash, classId) during entry
+    // recovery. PCA Series export already ignores zero-run entries.
+    // Note: ghost detection runs over the status=3-filtered set, so a driver whose
+    // only runs were cancelled (status=4) is correctly classified as a ghost.
     const srcDriverIdsWithRuns = new Set(srcRuns.map((r) => r.driver_id));
     const ghostDrivers = srcDrivers.filter((d) => !srcDriverIdsWithRuns.has(d.id));
     if (ghostDrivers.length > 0) {
@@ -280,6 +305,19 @@ export async function ingestAxdb(
         }
         const driverId = driverIdBySrc.get(d.id);
         if (driverId == null) throw new Error(`Missing driver mapping for source id ${d.id}`);
+        // Resolve the committed run ID to an app run number.
+        // AxWare's bestcommittedrun_no skips voided RRN slots; we use the FK (run id)
+        // to find the sequential position in our sorted-by-id run numbering instead.
+        const committedSrcRunId = committedRunIdByDriver.get(d.id) ?? null;
+        const driverRunIds = srcRuns
+          .filter((r) => r.driver_id === d.id)
+          .sort((a, b) => a.id - b.id)
+          .map((r) => r.id);
+        const committedIdx = committedSrcRunId != null
+          ? driverRunIds.indexOf(committedSrcRunId)
+          : -1;
+        const bestCommittedRunNumber = committedIdx >= 0 ? committedIdx + 1 : null;
+
         return {
           eventId: event.id,
           driverId,
@@ -287,6 +325,7 @@ export async function ingestAxdb(
           paxClassId,
           carNumber: d.number,
           carDescription: d.car_model,
+          bestCommittedRunNumber,
         };
       });
       if (entriesData.length > 0) {
@@ -336,7 +375,7 @@ export async function ingestAxdb(
         for (const r of list) {
           const disposition = toDisposition(r.disposition);
           const rawTimeMs =
-            disposition === RunDisposition.DNF
+            disposition === RunDisposition.DNF || disposition === RunDisposition.OFF
               ? null
               : r.start_tick != null && r.finish_tick != null
                 ? r.finish_tick - r.start_tick

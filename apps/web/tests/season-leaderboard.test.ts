@@ -9,6 +9,7 @@ import {
   buildSeasonLeaderboard,
   listSeasonYears,
 } from "@/lib/season-leaderboard";
+import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-season.db");
 const TEST_DB_URL = "file:./test-season.db";
@@ -23,6 +24,7 @@ const SEASON_EVENTS = [
 ];
 
 let prisma: PrismaClient;
+let camId: number;
 
 beforeAll(async () => {
   rmSync(TEST_DB_PATH, { force: true });
@@ -39,6 +41,9 @@ beforeAll(async () => {
     const path = resolve(FIXTURES_DIR, filename);
     await ingestAxdb(path, prisma);
   }
+
+  const cam = await prisma.driver.findFirst({ where: { memberNum: "MES-003" } });
+  camId = cam!.id;
 });
 
 afterAll(async () => {
@@ -206,6 +211,36 @@ describe("buildSeasonLeaderboard(2026)", () => {
     expect(cam.scores).toHaveLength(3);
     expect(cam.scores.find((s) => s.eventName === "Season Event 5")).toBeUndefined();
     expect(cam.totalPoints).toBe(3000);
+  });
+
+  // Assertion: bestCommittedRunNumber is honored at ingest and at best-time computation.
+  // Event 3: Cam has two runs — R1=59000ms (bestCommittedRunNumber=1), R2=57000ms (faster clean).
+  // bestCorrectedMsForEntry must return 59000ms (committed), not 57000ms (unconstrained fastest).
+  it("honors bestCommittedRunNumber: Cam event 3 uses committed R1 (59000ms), not faster R2 (57000ms)", async () => {
+    const event3 = await prisma.event.findFirst({
+      where: { name: "Season Event 3" },
+      include: {
+        entries: {
+          where: { driverId: camId },
+          include: {
+            runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
+          },
+        },
+      },
+    });
+    expect(event3).not.toBeNull();
+    const camEntry = event3!.entries[0];
+    expect(camEntry).toBeDefined();
+    // Fixture sets bestCommittedRunNumber=1 (R1=59000ms)
+    expect(camEntry!.bestCommittedRunNumber).toBe(1);
+    // Cam has 2 runs: R1=59000ms, R2=57000ms
+    expect(camEntry!.runs).toHaveLength(2);
+    // bestCorrectedMsForEntry honors the committed pointer → 59000ms
+    const best = bestCorrectedMsForEntry(camEntry!);
+    expect(best).toBe(59000);
+    // Without the override the fastest clean would be 57000ms (R2)
+    const r2 = camEntry!.runs.find((r) => r.runNumber === 2);
+    expect(r2!.rawTimeMs).toBe(57000);
   });
 });
 

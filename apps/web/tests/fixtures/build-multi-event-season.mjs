@@ -22,6 +22,11 @@
 // Cone math uses CONE_PENALTY_MS = 2000 (raw times stored as finish_tick - start_tick).
 // Alex's event 5 run: raw=54000ms + 1 cone → corrected=56000ms (only C1 scorer → 1000 pts).
 //
+// bestcommittedrun override (M1.12): event 3, Cam has two runs:
+//   R1=59000ms (committed), R2=57000ms (faster clean).
+//   ingest should honor R1=59000ms as Cam's best at event 3.
+//   All other driver-events: bestcommittedrun_no points to their single (and fastest) run.
+//
 // Scoring assertions (documented in season-leaderboard.test.ts):
 //
 //  Event 1 / C1  fastest = 50000ms (Alex) → 1000 pts
@@ -37,8 +42,10 @@
 //
 //  Event 3 / C1  fastest = 52000ms (Alex) → 1000 pts
 //             Bea   54000ms → round(1000 * 52000 / 54000) = 963
-//  Event 3 / CS  fastest = 59000ms (Cam)  → 1000 pts
-//             Dee   61000ms → round(1000 * 59000 / 61000) = 967 (off-class for Dee; excluded)
+//  Event 3 / CS  Cam committed=59000ms (R1), Dee=61000ms
+//             fastest = 59000ms (Cam) → 1000 pts
+//             Dee   61000ms → round(1000 * 59000 / 61000) = 967
+//             (without override, Cam's faster R2=57000ms would give Dee 934 pts instead)
 //
 //  Event 4 / C1  fastest = 53000ms (Alex) → 1000 pts
 //             Bea   57000ms → round(1000 * 53000 / 57000) = 930
@@ -149,9 +156,12 @@ const SCHEMA = `
  * @param {number} eventTs    - Unix timestamp for event
  * @param {Array}  classes    - [{id, name, paxed, pax}]
  * @param {Array}  drivers    - [{id, last, first, num, classId, paxId, memberNum}]
- * @param {Array}  runs       - [{driverId, deltaMs, cones, disposition}]  (one run per entry)
+ * @param {Array}  runs       - [{driverId, deltaMs, cones, disposition}]
+ * @param {Map|null} overrides - Map<driverId, bestcommittedrun_no> for committed-run overrides.
+ *                               Drivers not in the map get bestcommittedrun_no pointing to
+ *                               run #1 (the only run for most drivers in this fixture).
  */
-function buildEventAxdb(filename, eventName, eventDate, eventTs, classes, drivers, runs) {
+function buildEventAxdb(filename, eventName, eventDate, eventTs, classes, drivers, runs, overrides = null) {
   const out = join(here, filename);
   rmSync(out, { force: true });
 
@@ -169,11 +179,15 @@ function buildEventAxdb(filename, eventName, eventDate, eventTs, classes, driver
     INSERT INTO drivers (last_name, first_name, number, class_id, paxmult_id, car_model, car_color, member_num, sponsor, tire, email, cellphone, member, registered, icon_color)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '', 1, 1, 'red')
   `);
-  const insertReg = db.prepare(`INSERT INTO registrations (driver_id, event_id, run_timestamp) VALUES (?, 1, ?)`);
+  const insertReg = db.prepare(`
+    INSERT INTO registrations (driver_id, event_id, bestcommittedrun_id, bestcommittedrun_no, run_timestamp)
+    VALUES (?, 1, ?, ?, ?)
+  `);
   const insertRun = db.prepare(`
     INSERT INTO runs (event_id, driver_id, start_at, finish_at, start_tick, finish_tick, cones, disposition, status)
     VALUES (1, ?, ?, ?, ?, ?, ?, ?, 3)
   `);
+  const lastRowId = db.prepare("SELECT last_insert_rowid() AS id");
 
   db.transaction(() => {
     insertEvent.run(eventName, eventDate, 6, "RMR Synthetic", 55.0, eventTs);
@@ -186,10 +200,8 @@ function buildEventAxdb(filename, eventName, eventDate, eventTs, classes, driver
       insertDriver.run(d.last, d.first, d.num, d.classId, d.paxId, d.car ?? null, d.color ?? null, d.memberNum ?? null);
     }
 
-    for (const d of drivers) {
-      insertReg.run(d.id, eventTs);
-    }
-
+    // Insert runs and track (driverId → [{runId, runNo}]) for registration population.
+    const runsByDriver = new Map();
     let wallSec = eventTs + 1800;
     let tick = 5_000_000;
 
@@ -200,12 +212,28 @@ function buildEventAxdb(filename, eventName, eventDate, eventTs, classes, driver
         wallSec,
         wallSec + (isClean ? Math.ceil(r.deltaMs / 1000) : 1),
         tick,
-        isClean ? tick + r.deltaMs : tick + 1,  // DNF: finish_tick - start_tick = 1 (will be null after ingest)
+        isClean ? tick + r.deltaMs : tick + 1,
         r.cones ?? 0,
         r.disposition ?? "",
       );
+      const runId = lastRowId.get().id;
+      const list = runsByDriver.get(r.driverId) ?? [];
+      list.push({ runId, runNo: list.length + 1 });
+      runsByDriver.set(r.driverId, list);
       wallSec += 60;
       tick += 90_000;
+    }
+
+    // Insert registrations with bestcommittedrun_id and bestcommittedrun_no.
+    // For drivers in overrides map, use the specified run number.
+    // For all others, point to run #1 (default — all single-run drivers).
+    for (const d of drivers) {
+      const driverRuns = runsByDriver.get(d.id) ?? [];
+      const overrideNo = overrides?.get(d.id) ?? null;
+      const commitNo = overrideNo ?? (driverRuns.length > 0 ? 1 : null);
+      const commitEntry = driverRuns.find((r) => r.runNo === commitNo);
+      const commitId = commitEntry?.runId ?? null;
+      insertReg.run(d.id, commitId, commitNo, eventTs);
     }
   })();
 
@@ -274,7 +302,9 @@ buildEventAxdb(
 
 // ─── Event 3: 2026-05-10 ─────────────────────────────────────────────────────
 // C1: Alex=52000, Bea=54000
-// CS: Cam=59000, Dee=61000  ← Dee switches to CS at this event
+// CS: Cam has two runs — R1=59000ms (committed), R2=57000ms (faster clean)
+//     bestcommittedrun override: Cam's committed best is R1 (59000ms), not R2 (57000ms).
+//     Dee=61000ms (single run, no override)
 buildEventAxdb(
   "season-event-3.axdb",
   "Season Event 3",
@@ -290,9 +320,12 @@ buildEventAxdb(
   [
     { driverId: 1, deltaMs: 52000, cones: 0 },
     { driverId: 2, deltaMs: 54000, cones: 0 },
-    { driverId: 3, deltaMs: 59000, cones: 0 },
+    { driverId: 3, deltaMs: 59000, cones: 0 }, // R1: committed best (slower)
+    { driverId: 3, deltaMs: 57000, cones: 0 }, // R2: faster clean (should be overridden)
     { driverId: 4, deltaMs: 61000, cones: 0 },
   ],
+  // Override: Cam's committed run is R1 (59000ms), not R2 (57000ms, faster clean).
+  new Map([[3, 1]]),
 );
 
 // ─── Event 4: 2026-06-14 ─────────────────────────────────────────────────────

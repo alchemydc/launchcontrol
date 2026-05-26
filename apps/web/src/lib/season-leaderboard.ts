@@ -1,5 +1,5 @@
 import { PrismaClient } from "@/generated/prisma/client";
-import { CONE_PENALTY_MS } from "@/lib/constants";
+import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 // RMR PCA 2026 season rules (region-specific constants)
@@ -35,19 +35,6 @@ export type SeasonStandingsByClass = {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Compute the best clean cone-corrected time for a set of runs (no PAX). */
-function bestCorrectedMs(
-  runs: Array<{
-    rawTimeMs: number | null;
-    cones: number;
-    disposition: string;
-  }>,
-): number | null {
-  const cleanCorrected = runs
-    .filter((r) => r.disposition === "CLEAN" && r.rawTimeMs != null)
-    .map((r) => (r.rawTimeMs as number) + r.cones * CONE_PENALTY_MS);
-  return cleanCorrected.length > 0 ? Math.min(...cleanCorrected) : null;
-}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -90,7 +77,7 @@ export async function buildSeasonLeaderboard(
         include: {
           class: { select: { code: true } },
           driver: { select: { id: true, firstName: true, lastInitial: true } },
-          runs: { select: { rawTimeMs: true, cones: true, disposition: true } },
+          runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
         },
       },
     },
@@ -116,8 +103,8 @@ export async function buildSeasonLeaderboard(
 
     for (const entry of event.entries) {
       const code = entry.class.code;
-      const best = bestCorrectedMs(entry.runs);
-      if (best == null) continue; // no CLEAN run — excluded from event scoring
+      const best = bestCorrectedMsForEntry(entry);
+      if (best == null) continue; // no CLEAN run or committed best — excluded from event scoring
 
       let arr = byClass.get(code);
       if (arr == null) {
