@@ -16,11 +16,12 @@ export type EntryForBest = {
 export function bestCorrectedMsForEntry(entry: EntryForBest): number | null {
   if (entry.bestCommittedRunNumber != null) {
     const committed = entry.runs.find((r) => r.runNumber === entry.bestCommittedRunNumber);
-    if (committed?.rawTimeMs != null) {
+    if (committed?.disposition === "CLEAN" && committed.rawTimeMs != null) {
       return committed.rawTimeMs + committed.cones * CONE_PENALTY_MS;
     }
-    // Fall through if AxWare points at a run we didn't persist (shouldn't happen
-    // post-M1.12 because status=3 runs always persist) or the run had no time.
+    // Fall through if AxWare points at a non-CLEAN run (data anomaly — DSQ/RRN/
+    // DNF/OFF should never be committed-best per club policy), at a run we didn't
+    // persist, or at a run without rawTimeMs.
   }
   const cleanCorrected = entry.runs
     .filter((r) => r.disposition === "CLEAN" && r.rawTimeMs != null)

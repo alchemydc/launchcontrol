@@ -53,7 +53,7 @@ model Entry {
   paxClassId     Int
   carNumber              String
   carDescription         String?
-  bestCommittedRunNumber Int?    // AxWare-authoritative best-run pointer (registrations.bestcommittedrun_no); null when AxWare emits no committed best.
+  bestCommittedRunNumber Int?    // AxWare-authoritative best-run pointer; resolved from registrations.bestcommittedrun_id by finding the FK's position in the driver's sorted-by-id source runs (1-indexed). Null when AxWare emits no committed best.
 
   event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   driver   Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
