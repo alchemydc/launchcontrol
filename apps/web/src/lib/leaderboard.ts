@@ -1,13 +1,15 @@
+import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { CONE_PENALTY_MS } from "@/lib/constants";
 
 // Mirrors the Prisma enum but as a string-literal union so this module stays
 // browser-safe (the client leaderboard component imports types from here).
-export type RunDisposition = "CLEAN" | "DNF" | "RRN";
+export type RunDisposition = "CLEAN" | "DNF" | "RRN" | "OFF" | "DSQ";
 
 type EntryWithRelations = {
   id: number;
   carNumber: string;
   carDescription: string | null;
+  bestCommittedRunNumber: number | null;
   driver: { id: number; firstName: string; lastInitial: string };
   class: { code: string };
   paxClass: { code: string; paxIndex: { toString(): string } };
@@ -55,11 +57,7 @@ export function buildLeaderboard(entries: EntryWithRelations[]): LeaderboardRow[
           : null,
     }));
 
-    const cleanCorrected = runs
-      .filter((r) => r.disposition === "CLEAN" && r.correctedMs != null)
-      .map((r) => r.correctedMs as number);
-
-    const bestRawMs = cleanCorrected.length > 0 ? Math.min(...cleanCorrected) : null;
+    const bestRawMs = bestCorrectedMsForEntry(entry);
     const bestPaxMs = bestRawMs == null ? null : Math.round(bestRawMs * paxIndex);
 
     return {

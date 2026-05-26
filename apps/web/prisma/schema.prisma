@@ -51,8 +51,9 @@ model Entry {
   driverId       Int
   classId        Int
   paxClassId     Int
-  carNumber      String
-  carDescription String?
+  carNumber              String
+  carDescription         String?
+  bestCommittedRunNumber Int?    // AxWare-authoritative best-run pointer (registrations.bestcommittedrun_no); null when AxWare emits no committed best.
 
   event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   driver   Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
@@ -70,6 +71,8 @@ enum RunDisposition {
   CLEAN
   DNF
   RRN
+  OFF
+  DSQ
 }
 
 model Run {

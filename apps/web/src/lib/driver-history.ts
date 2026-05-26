@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import { CONE_PENALTY_MS } from "@/lib/constants";
+import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { prisma } from "@/lib/prisma";
 
 export type DriverHistoryRow = {
@@ -25,12 +25,14 @@ export type EntryForHistory = {
   id: number;
   driverId: number;
   carNumber: string;
+  bestCommittedRunNumber: number | null;
   class: { code: string };
   paxClass: { code: string; paxIndex: { toString(): string } };
   runs: Array<{
+    runNumber: number;
     rawTimeMs: number | null;
     cones: number;
-    disposition: "CLEAN" | "DNF" | "RRN";
+    disposition: "CLEAN" | "DNF" | "RRN" | "OFF" | "DSQ";
   }>;
 };
 
@@ -38,11 +40,8 @@ export function bestPaxMsForEntry(entry: EntryForHistory): {
   bestRawMs: number | null;
   bestPaxMs: number | null;
 } {
-  const corrected = entry.runs
-    .filter((r) => r.disposition === "CLEAN" && r.rawTimeMs != null)
-    .map((r) => (r.rawTimeMs as number) + r.cones * CONE_PENALTY_MS);
-  if (corrected.length === 0) return { bestRawMs: null, bestPaxMs: null };
-  const bestRawMs = Math.min(...corrected);
+  const bestRawMs = bestCorrectedMsForEntry(entry);
+  if (bestRawMs == null) return { bestRawMs: null, bestPaxMs: null };
   const paxIndex = Number(entry.paxClass.paxIndex.toString());
   return { bestRawMs, bestPaxMs: Math.round(bestRawMs * paxIndex) };
 }
@@ -60,7 +59,7 @@ export async function buildDriverHistory(
           class: { select: { code: true } },
           paxClass: { select: { code: true, paxIndex: true } },
           runs: {
-            select: { rawTimeMs: true, cones: true, disposition: true },
+            select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true },
           },
         },
       },

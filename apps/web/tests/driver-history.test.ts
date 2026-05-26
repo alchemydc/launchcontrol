@@ -68,16 +68,19 @@ function entry(
   runs: Array<{
     rawTimeMs: number | null;
     cones?: number;
-    disposition?: "CLEAN" | "DNF" | "RRN";
+    disposition?: "CLEAN" | "DNF" | "RRN" | "OFF" | "DSQ";
   }>,
+  bestCommittedRunNumber: number | null = null,
 ): EntryForHistory {
   return {
     id: 1,
     driverId: 1,
     carNumber: "1",
+    bestCommittedRunNumber,
     class: { code: "C1" },
     paxClass: { code: "C1", paxIndex: { toString: () => String(paxIndex) } },
-    runs: runs.map((r) => ({
+    runs: runs.map((r, i) => ({
+      runNumber: i + 1,
       rawTimeMs: r.rawTimeMs,
       cones: r.cones ?? 0,
       disposition: r.disposition ?? "CLEAN",
@@ -144,6 +147,52 @@ describe("bestPaxMsForEntry", () => {
       entry(1.0, [{ rawTimeMs: null, disposition: "CLEAN" }]),
     );
     expect(result).toEqual({ bestRawMs: null, bestPaxMs: null });
+  });
+
+  it("honors bestCommittedRunNumber over the fastest CLEAN run", () => {
+    // R1=58436ms (committed), R2=57534ms (faster clean) — mirrors Ellen G. at 2025-08-16.
+    // bestCommittedRunNumber=1 → should use R1 (58436ms), not R2 (57534ms).
+    const result = bestPaxMsForEntry(
+      entry(
+        1.0,
+        [
+          { rawTimeMs: 58436, cones: 0 }, // R1: committed best (slower)
+          { rawTimeMs: 57534, cones: 0 }, // R2: faster clean (should be ignored)
+        ],
+        1, // bestCommittedRunNumber = 1 (R1)
+      ),
+    );
+    expect(result.bestRawMs).toBe(58436);
+    expect(result.bestPaxMs).toBe(58436);
+  });
+
+  it("falls back to fastest CLEAN when bestCommittedRunNumber is null", () => {
+    const result = bestPaxMsForEntry(
+      entry(
+        1.0,
+        [
+          { rawTimeMs: 58436, cones: 0 },
+          { rawTimeMs: 57534, cones: 0 },
+        ],
+        null, // no committed pointer → fallback
+      ),
+    );
+    expect(result.bestRawMs).toBe(57534);
+  });
+
+  it("falls back to fastest CLEAN when committed run has null rawTimeMs", () => {
+    // bestCommittedRunNumber points to a DNF (null rawTimeMs) → fall through to CLEAN
+    const result = bestPaxMsForEntry(
+      entry(
+        1.0,
+        [
+          { rawTimeMs: null, disposition: "DNF" }, // R1: committed but DNF
+          { rawTimeMs: 57534, cones: 0 },           // R2: fastest CLEAN
+        ],
+        1, // committed = R1 (DNF, null rawTimeMs)
+      ),
+    );
+    expect(result.bestRawMs).toBe(57534);
   });
 });
 
