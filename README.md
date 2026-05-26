@@ -1,3 +1,6 @@
+<img width="1280" height="640" alt="launchcontrol_gh" src="https://github.com/user-attachments/assets/23b59229-f785-4e02-b6e8-25a5834578c3" />
+
+
 # PCA Launch Control
 
 A streamlined web platform for the Porsche Club of America Rocky Mountain Region. The MVP unifies member identity via MotorsportReg, auto-publishes 2026 AX/track event results from AxWare `.axdb` files, and centralizes community media links.
