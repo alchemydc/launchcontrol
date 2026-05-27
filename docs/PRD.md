@@ -5,7 +5,7 @@
 ### Glossary
 
 - **MSR** — [MotorsportReg.com](https://www.motorsportreg.com), the registration and identity system used by PCA regions (including RMR). Source of truth for member identity.
-- **VisualAX** — desktop timing software used at-event by RMR, created and maintained by RMR member Doug Bartlett. Emits a SQLite database file with the extension `.axdb` after each event. Real season exports live in the gitignored `real_season_data/` directory locally; they contain member PII and must never be committed or used as CI fixtures. Each exported `.axdb` typically contains a single event; the file format supports multiple events (VisualAX's season-points feature) but RMR has not used it.
+- **VisualAX** — desktop timing software used at-event by RMR, created and maintained by RMR member Doug Bartlett. Emits a SQLite database file with the extension `.axdb` after each event. Real season exports live in the gitignored `2026_season_data/` directory locally; they contain member PII and must never be committed or used as CI fixtures. Each exported `.axdb` typically contains a single event; the file format supports multiple events (VisualAX's season-points feature) but RMR has not used it.
 - **PAX** — class index multiplier applied to raw time to produce a normalized "PAX time" for cross-class comparison. Not used by RMR PCA presently.
 - **Run group** — the on-event run order grouping (e.g., green/yellow). Tracked per-event by VisualAX.
 
