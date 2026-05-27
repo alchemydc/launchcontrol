@@ -24,12 +24,18 @@ list_candidates() {
 
 ingest_file() {
   local file="$1"
+  local status=0
 
   echo "Ingesting: $file"
   (
     cd "$app_dir"
     pnpm run ingest "$file"
-  )
+  ) || status=$?
+
+  if [ "$status" -ne 0 ]; then
+    echo "Error: ingest failed for $file (pnpm exit $status)" >&2
+    exit "$status"
+  fi
 }
 
 choose_candidate() {
