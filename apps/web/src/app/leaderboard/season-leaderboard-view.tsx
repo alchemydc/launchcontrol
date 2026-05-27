@@ -13,13 +13,14 @@ import type {
   SeasonStandingsByClass,
   SeasonStandingsRow,
 } from "@/lib/season-leaderboard";
-import { MIN_EVENTS_FOR_ELIGIBILITY } from "@/lib/season-leaderboard";
 import { SeasonSwitcher } from "./season-switcher";
 
 interface SeasonLeaderboardViewProps {
   year: number;
   years: number[];
   standings: SeasonStandingsByClass[];
+  totalEvents: number;
+  qualifyingEvents: number;
 }
 
 type EventScore = SeasonStandingsRow["scores"][number];
@@ -89,10 +90,15 @@ function DriverCard({
           >
             {driver.driverName}
           </Link>
+          {driver.primaryCar?.carDescription && (
+            <p className="text-xs text-muted-foreground truncate">
+              {driver.primaryCar.carDescription}
+            </p>
+          )}
           {!driver.eligible && (
             <Badge variant="outline" className="mt-1 text-[10px]">
               Provisional · {driver.eventsCountedInClass}/
-              {MIN_EVENTS_FOR_ELIGIBILITY}
+              {driver.qualifyingEvents}
             </Badge>
           )}
         </div>
@@ -140,10 +146,15 @@ function DriverTableRow({
           >
             {driver.driverName}
           </Link>
+          {driver.primaryCar?.carDescription && (
+            <p className="text-xs text-muted-foreground truncate">
+              {driver.primaryCar.carDescription}
+            </p>
+          )}
           {!driver.eligible && (
             <Badge variant="outline" className="text-xs">
               Provisional · {driver.eventsCountedInClass}/
-              {MIN_EVENTS_FOR_ELIGIBILITY}
+              {driver.qualifyingEvents}
             </Badge>
           )}
         </div>
@@ -162,7 +173,15 @@ function classAnchorId(classCode: string): string {
   return `class-${classCode.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 }
 
-function ClassSection({ section }: { section: SeasonStandingsByClass }) {
+function ClassSection({
+  section,
+  totalEvents,
+  qualifyingEvents,
+}: {
+  section: SeasonStandingsByClass;
+  totalEvents: number;
+  qualifyingEvents: number;
+}) {
   if (section.drivers.length === 0) return null;
   const leader = section.drivers[0];
   const driverCount = section.drivers.length;
@@ -218,7 +237,7 @@ function ClassSection({ section }: { section: SeasonStandingsByClass }) {
               </TableHead>
               <TableHead
                 className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
-                title="Best 4 scores count toward season total. Dashed border = dropped score."
+                title={`Best ${qualifyingEvents} of ${totalEvents} scores count toward season total. Dashed border = dropped score.`}
               >
                 Event scores
               </TableHead>
@@ -267,6 +286,8 @@ export function SeasonLeaderboardView({
   year,
   years,
   standings,
+  totalEvents,
+  qualifyingEvents,
 }: SeasonLeaderboardViewProps) {
   return (
     <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
@@ -283,8 +304,9 @@ export function SeasonLeaderboardView({
               </h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Points are awarded per event: 1000 to the class winner, others
-                proportional. Best 4 scores count toward the season total.
-                Drivers with fewer than 4 scoring events are marked Provisional.
+                proportional. Best {qualifyingEvents} scores count toward the
+                season total. Drivers with fewer than {qualifyingEvents} scoring
+                events are marked Provisional.
               </p>
             </div>
           </div>
@@ -307,7 +329,12 @@ export function SeasonLeaderboardView({
         </div>
       ) : (
         standings.map((section) => (
-          <ClassSection key={section.classCode} section={section} />
+          <ClassSection
+            key={section.classCode}
+            section={section}
+            totalEvents={totalEvents}
+            qualifyingEvents={qualifyingEvents}
+          />
         ))
       )}
     </main>

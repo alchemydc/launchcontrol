@@ -6,13 +6,15 @@ export const dynamic = "force-dynamic";
 export default async function LeaderboardPage() {
   const years = await listSeasonYears();
   const currentYear = years[0] ?? new Date().getUTCFullYear();
-  const standings = await buildSeasonLeaderboard(currentYear);
+  const result = await buildSeasonLeaderboard(currentYear);
 
   return (
     <SeasonLeaderboardView
       year={currentYear}
       years={years}
-      standings={standings}
+      standings={result.sections}
+      totalEvents={result.totalEvents}
+      qualifyingEvents={result.qualifyingEvents}
     />
   );
 }

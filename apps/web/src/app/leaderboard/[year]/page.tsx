@@ -18,9 +18,15 @@ export default async function LeaderboardYearPage({
   }
 
   const years = await listSeasonYears();
-  const standings = await buildSeasonLeaderboard(year);
+  const result = await buildSeasonLeaderboard(year);
 
   return (
-    <SeasonLeaderboardView year={year} years={years} standings={standings} />
+    <SeasonLeaderboardView
+      year={year}
+      years={years}
+      standings={result.sections}
+      totalEvents={result.totalEvents}
+      qualifyingEvents={result.qualifyingEvents}
+    />
   );
 }
