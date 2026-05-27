@@ -366,13 +366,6 @@ describe("qualifyingEventCount formula", () => {
     expect(result.totalEvents).toBe(6);
     expect(result.qualifyingEvents).toBe(4);
   });
-
-  // For the formula: N=7→4, N=8→5 — we verify the arithmetic directly.
-  it("formula floor(N/2)+1: N=7→4, N=8→5", () => {
-    // Direct arithmetic check (the function is not exported, but we verify the math)
-    expect(Math.floor(7 / 2) + 1).toBe(4);
-    expect(Math.floor(8 / 2) + 1).toBe(5);
-  });
 });
 
 // ---------------------------------------------------------------------------
