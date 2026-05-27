@@ -2,9 +2,27 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { prisma as defaultClient } from "@/lib/prisma";
 
-// RMR PCA 2026 season rules (region-specific constants)
-export const MIN_EVENTS_FOR_ELIGIBILITY = 4; // fewer than this = "Provisional"
-const COUNTED_SCORES_PER_DRIVER = 4; // best-4-of-N toward season total
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Dynamic qualifying threshold: "clear 51% of the season".
+ * floor(N/2) + 1 where N = total events in the season.
+ * N=6→4, N=7→4, N=8→5.
+ */
+function qualifyingEventCount(totalEventsInSeason: number): number {
+  return Math.floor(totalEventsInSeason / 2) + 1;
+}
+
+/**
+ * Normalize a car description for grouping purposes.
+ * Keys on description only (not car number), because car numbers float
+ * per-event for drivers without permanent numbers.
+ */
+function normalizeCarKey(description: string | null): string {
+  return (description ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -14,8 +32,10 @@ export type SeasonStandingsRow = {
   driverId: number;
   driverName: string; // "First L." — lastInitial only, never full last name
   totalPoints: number;
-  eligible: boolean; // false when driver has < MIN_EVENTS_FOR_ELIGIBILITY in their season class
+  eligible: boolean; // false when driver has fewer than qualifyingEvents in their season class
   eventsCountedInClass: number;
+  qualifyingEvents: number; // threshold for this season (duplicated for per-driver badge rendering)
+  primaryCar: { carDescription: string | null } | null; // null only when driver has no scoring entries
   scores: Array<{
     eventId: number;
     eventSlug: string;
@@ -31,9 +51,11 @@ export type SeasonStandingsByClass = {
   drivers: SeasonStandingsRow[]; // sorted by totalPoints desc, then driverName asc
 };
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
+export type SeasonLeaderboardResult = {
+  totalEvents: number;
+  qualifyingEvents: number;
+  sections: SeasonStandingsByClass[];
+};
 
 
 // ---------------------------------------------------------------------------
@@ -58,11 +80,13 @@ export async function listSeasonYears(
  * Each class section contains all drivers whose season class is that class,
  * sorted by totalPoints desc, then driverName asc.  Classes with no eligible
  * or provisional drivers are omitted.
+ *
+ * Returns total event count and computed qualifying threshold alongside sections.
  */
 export async function buildSeasonLeaderboard(
   year: number,
   client: PrismaClient = defaultClient,
-): Promise<SeasonStandingsByClass[]> {
+): Promise<SeasonLeaderboardResult> {
   // 1. Load all events + entries + runs for the season in chronological order.
   const events = await client.event.findMany({
     where: {
@@ -83,23 +107,27 @@ export async function buildSeasonLeaderboard(
     },
   });
 
-  if (events.length === 0) return [];
+  if (events.length === 0) return { totalEvents: 0, qualifyingEvents: 0, sections: [] };
+
+  const totalEvents = events.length;
+  const qualifyingEvents = qualifyingEventCount(totalEvents);
 
   // 2. Score each (event, class) group.
   //
   //    eventClassPoints[eventId][classCode][driverId] = best points that driver
   //    earned for this event in this class (taking the higher score if a driver
   //    somehow has multiple entries — vanishingly rare, documented by schema).
+  //    carKey is stored alongside so the primary-car filter can consult it.
   const eventClassPoints: Map<
     number, // eventId
     Map<
       string, // classCode
-      Map<number, { points: number; eventSlug: string; eventName: string; eventDate: Date }>
+      Map<number, { points: number; eventSlug: string; eventName: string; eventDate: Date; carKey: string }>
     >
   > = new Map();
 
   for (const event of events) {
-    const byClass = new Map<string, Array<{ driverId: number; bestMs: number }>>();
+    const byClass = new Map<string, Array<{ driverId: number; bestMs: number; carKey: string }>>();
 
     for (const entry of event.entries) {
       const code = entry.class.code;
@@ -111,32 +139,34 @@ export async function buildSeasonLeaderboard(
         arr = [];
         byClass.set(code, arr);
       }
-      arr.push({ driverId: entry.driver.id, bestMs: best });
+      arr.push({ driverId: entry.driver.id, bestMs: best, carKey: normalizeCarKey(entry.carDescription) });
     }
 
     const classMap = new Map<
       string,
-      Map<number, { points: number; eventSlug: string; eventName: string; eventDate: Date }>
+      Map<number, { points: number; eventSlug: string; eventName: string; eventDate: Date; carKey: string }>
     >();
 
     for (const [classCode, scorers] of byClass) {
       const fastest = Math.min(...scorers.map((s) => s.bestMs));
       const driverMap = new Map<
         number,
-        { points: number; eventSlug: string; eventName: string; eventDate: Date }
+        { points: number; eventSlug: string; eventName: string; eventDate: Date; carKey: string }
       >();
 
-      for (const { driverId, bestMs } of scorers) {
+      for (const { driverId, bestMs, carKey } of scorers) {
         const pts = Math.round((1000 * fastest) / bestMs);
         const existing = driverMap.get(driverId);
         // Per-event collapse: if a driver has multiple entries in the same class
         // at the same event (co-drive edge case), keep the higher score.
+        // The winning entry's carKey is retained.
         if (existing == null || pts > existing.points) {
           driverMap.set(driverId, {
             points: pts,
             eventSlug: event.slug,
             eventName: event.name,
             eventDate: event.date,
+            carKey,
           });
         }
       }
@@ -220,8 +250,87 @@ export async function buildSeasonLeaderboard(
     }
   }
 
-  // 4. Build per-driver season scores (filtered to season class only).
-  //    Collect raw event scores, then sort desc, mark best-4 as counted.
+  // 4. Derive each driver's primary car within their season class.
+  //    Group entries (in chronological event order) by normalizeCarKey(carDescription).
+  //    Primary car = max entryCount; tiebreak = max cumulative points; final tiebreak = earliest event date.
+  //    The displayDescription uses the chronologically-latest original-cased carDescription in the group.
+  const driverPrimaryCar = new Map<number, { carKey: string; displayDescription: string | null }>();
+
+  for (const driverId of driverSeasonClass.keys()) {
+    const seasonClass = driverSeasonClass.get(driverId)!;
+
+    // Per-carKey stats for this driver in their season class.
+    const carStats = new Map<string, {
+      entryCount: number;
+      cumulativePoints: number;
+      earliestEventDate: Date | null;
+      latestDescription: string | null; // original-cased, from chronologically latest entry
+    }>();
+
+    for (const event of events) {
+      const eventPoints = eventClassPoints.get(event.id)?.get(seasonClass)?.get(driverId);
+      if (eventPoints == null) continue; // driver didn't score in this event+class
+
+      const carKey = eventPoints.carKey;
+      const existing = carStats.get(carKey);
+      if (existing == null) {
+        // Find the original-cased description from the entry for this event.
+        // We look it up from the events entries directly.
+        const entry = event.entries.find(
+          (e) => e.driver.id === driverId && e.class.code === seasonClass
+        );
+        const origDesc = entry?.carDescription ?? null;
+        carStats.set(carKey, {
+          entryCount: 1,
+          cumulativePoints: eventPoints.points,
+          earliestEventDate: event.date,
+          latestDescription: origDesc,
+        });
+      } else {
+        existing.entryCount += 1;
+        existing.cumulativePoints += eventPoints.points;
+        // Update latestDescription to the most recent event's value (events sorted asc)
+        const entry = event.entries.find(
+          (e) => e.driver.id === driverId && e.class.code === seasonClass
+        );
+        existing.latestDescription = entry?.carDescription ?? existing.latestDescription;
+      }
+    }
+
+    if (carStats.size === 0) continue;
+
+    // Pick primary car: max entryCount → max cumulativePoints → earliest date.
+    let primaryKey: string | null = null;
+    let primaryDisplay: string | null = null;
+    let bestCount = -1;
+    let bestPoints = -1;
+    let bestDate: Date | null = null;
+
+    for (const [carKey, stats] of carStats) {
+      const wins =
+        stats.entryCount > bestCount ||
+        (stats.entryCount === bestCount && stats.cumulativePoints > bestPoints) ||
+        (stats.entryCount === bestCount &&
+          stats.cumulativePoints === bestPoints &&
+          bestDate != null &&
+          stats.earliestEventDate != null &&
+          stats.earliestEventDate < bestDate);
+      if (wins) {
+        primaryKey = carKey;
+        primaryDisplay = stats.latestDescription;
+        bestCount = stats.entryCount;
+        bestPoints = stats.cumulativePoints;
+        bestDate = stats.earliestEventDate;
+      }
+    }
+
+    if (primaryKey != null) {
+      driverPrimaryCar.set(driverId, { carKey: primaryKey, displayDescription: primaryDisplay });
+    }
+  }
+
+  // 5. Build per-driver season scores (filtered to season class AND primary car only).
+  //    Collect raw event scores, then sort desc, mark best-N as counted.
   type RawScore = {
     eventId: number;
     eventSlug: string;
@@ -237,6 +346,10 @@ export async function buildSeasonLeaderboard(
       for (const [driverId, info] of driverMap) {
         const seasonClass = driverSeasonClass.get(driverId);
         if (seasonClass !== classCode) continue; // off-class — excluded
+
+        // Single-car constraint: exclude entries not in the driver's primary car.
+        const primary = driverPrimaryCar.get(driverId);
+        if (primary == null || info.carKey !== primary.carKey) continue;
 
         let arr = driverRawScores.get(driverId);
         if (arr == null) {
@@ -254,8 +367,8 @@ export async function buildSeasonLeaderboard(
     }
   }
 
-  // 5. Assemble final rows per class.
-  //    Group by season class, compute totalPoints from top-COUNTED_SCORES_PER_DRIVER.
+  // 6. Assemble final rows per class.
+  //    Group by season class, compute totalPoints from top-qualifyingEvents scores.
   const classBuckets = new Map<string, SeasonStandingsRow[]>();
 
   for (const [driverId, rawScores] of driverRawScores) {
@@ -265,9 +378,14 @@ export async function buildSeasonLeaderboard(
     const info = driverInfo.get(driverId);
     if (info == null) continue;
 
+    const primary = driverPrimaryCar.get(driverId);
+    const primaryCar = primary != null
+      ? { carDescription: primary.displayDescription }
+      : null;
+
     // Sort desc by points to determine which are counted vs dropped
     const sorted = [...rawScores].sort((a, b) => b.points - a.points);
-    const counted = sorted.slice(0, COUNTED_SCORES_PER_DRIVER);
+    const counted = sorted.slice(0, qualifyingEvents);
     const totalPoints = counted.reduce((sum, s) => sum + s.points, 0);
     const countedSet = new Set(counted.map((s) => s.eventId));
 
@@ -284,8 +402,8 @@ export async function buildSeasonLeaderboard(
         dropped: !countedSet.has(s.eventId),
       }));
 
-    const eventsCountedInClass = scores.length; // total events scored in season class
-    const eligible = eventsCountedInClass >= MIN_EVENTS_FOR_ELIGIBILITY;
+    const eventsCountedInClass = scores.length; // total events scored in season class (primary car only)
+    const eligible = eventsCountedInClass >= qualifyingEvents;
 
     const row: SeasonStandingsRow = {
       driverId,
@@ -293,6 +411,8 @@ export async function buildSeasonLeaderboard(
       totalPoints,
       eligible,
       eventsCountedInClass,
+      qualifyingEvents,
+      primaryCar,
       scores,
     };
 
@@ -304,17 +424,17 @@ export async function buildSeasonLeaderboard(
     bucket.push(row);
   }
 
-  // 6. Sort each class bucket: totalPoints desc, then driverName asc.
+  // 7. Sort each class bucket: totalPoints desc, then driverName asc.
   //    Then sort class sections alphabetically for rendering stability.
-  const result: SeasonStandingsByClass[] = [];
+  const sections: SeasonStandingsByClass[] = [];
   for (const [classCode, drivers] of classBuckets) {
     drivers.sort((a, b) => {
       if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
       return a.driverName.localeCompare(b.driverName);
     });
-    result.push({ classCode, drivers });
+    sections.push({ classCode, drivers });
   }
 
-  result.sort((a, b) => a.classCode.localeCompare(b.classCode));
-  return result;
+  sections.sort((a, b) => a.classCode.localeCompare(b.classCode));
+  return { totalEvents, qualifyingEvents, sections };
 }

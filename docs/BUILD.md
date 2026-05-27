@@ -432,7 +432,7 @@ Closes the CS P3/P4 anomaly surfaced during the 2025 backfill (`docs/private/ell
 
 Backfill: wipe local + Turso schema via `pnpm --filter web wipe:db`, re-migrate, bulk re-ingest 2025+2026 via `apps/web/scripts/ingest.sh`. Verify Ellen G. → CS P4 (2894) and Mike P. → CS P3 (2908) on `/leaderboard/2025`. Verify `docs/private/compare-official.ts` reports `Total mismatches: 0`.
 
-### M1.13 — Dynamic qualifying threshold + single-car constraint (planned)
+### M1.13 — Dynamic qualifying threshold + single-car constraint ✓ (done 2026-05-27)
 
 RMR chair feedback on 2026-05-27 identified two scoring rules in M1.9 that were wrong. The 2026 season is 6 events (not 7 — a June date was lost), so the hardcoded "best 4 of 7" constant was doubly wrong: the total was off by one, and the threshold must come from the data rather than code. The chair also clarified that championship points are car-specific: only events a driver ran in their primary car count.
 
@@ -442,16 +442,17 @@ RMR chair feedback on 2026-05-27 identified two scoring rules in M1.9 that were 
 - Only the driver's top `qualifyingEvents` scores count toward season total; the rest are rendered but visually muted (same treatment as today's "dropped" scores).
 
 **Single-car constraint:**
-- Within a driver's season-class entries, group by car key = `(Entry.carNumber, Entry.carDescription)`. `Entry.carDescription` may be null; treat as empty string in the key.
+- Within a driver's season-class entries, group by normalized `Entry.carDescription` only (trim, lowercase, collapse whitespace). `carNumber` is intentionally excluded because it floats per-event for drivers without permanent numbers.
 - Primary car = the group with the most events. Tiebreak by highest cumulative points across events in that group; final tiebreak (extremely unlikely) by earliest event date for determinism.
 - Entries in the driver's non-primary car groups are excluded from season standings entirely. They still appear in per-event leaderboards.
+- Wording-drift risk accepted: `"Boxster S"` vs `"Porsche Boxster S"` would split incorrectly — a registration-data problem, not a scoring-code problem.
 
 **Scope notes:**
 - No schema change. `Entry.carNumber` (from `drivers.number`) and `Entry.carDescription` (from `drivers.car_model`) are already populated at ingest.
 - No re-ingest needed. Re-running the scoring pass against the existing DB is sufficient.
 - The chair confirmed 2025 official PCA Series exports did not enforce the single-car rule either, so `docs/private/compare-official.ts` will newly report mismatches for affected 2025 drivers after M1.13 lands. This is correct — not a regression. Re-run it after the change to catalog drift.
 
-**Files to be changed:** `apps/web/src/lib/season-leaderboard.ts`, `apps/web/src/app/leaderboard/season-leaderboard-view.tsx`, `apps/web/tests/season-leaderboard.test.ts`.
+**Files changed:** `apps/web/src/lib/season-leaderboard.ts`, `apps/web/src/app/leaderboard/season-leaderboard-view.tsx`, `apps/web/src/app/leaderboard/page.tsx`, `apps/web/src/app/leaderboard/[year]/page.tsx`, `apps/web/tests/season-leaderboard.test.ts`, `apps/web/tests/driver-history.test.ts`, `apps/web/tests/fixtures/build-multi-event-season.mjs`.
 
 ### M2 — MSR OAuth (target: 1–2 sessions; credentials received 2026-05-27)
 
@@ -554,7 +555,7 @@ Resolved open questions from PRD development — preserved here as context for f
 | 10 | Same-driver, same-class, same-event co-drives — score both `Entry` rows independently or collapse to better score? | VisualAX uses separate `drivers` rows for co-drives (`337` + `337X`, `62` + `162`); each scores independently. Driver identity is the identity hash (not `member_num` — a co-drive pair sharing `member_num` was observed in 2025-09-13 real data). Ingest throws on the truly pathological "same human, same class, both with runs" case. | 2026-05-23 | M1.10 |
 | 11 | `bestcommittedrun_id` semantics — authoritative override, UI cache, or one-off bug? | Chair confirmed authoritative; honor when present. 2025-08-16 case traces to an VisualAX bug fixed 2025-09-23. Status values 0–4 enumerated; only `3=committed` should be ingested. `OFF`/`DSQ` dispositions exist and must be excluded from best-time. | 2026-05-26 | M1.12 |
 | 12 | Multi-event `.axdb` support. | VisualAX format permits multiple events per file (unused by RMR). Ingest enforces single-event with a fail-loud guard; full multi-event support deferred to post-MVP if a region adopts the season-points feature. | 2026-05-27 | post-M1.12 |
-| 13 | Season qualifying threshold and single-car-per-season rule. | Threshold dynamic per season: `floor(N/2) + 1` (above 51%). Qualifying scores must all be in one car (primary = most events, tiebreak by cumulative points). Chair confirmed prior season PCA Series exports did not enforce the single-car rule. | 2026-05-27 | M1.13 |
+| 13 | Season qualifying threshold and single-car-per-season rule. | Threshold dynamic per season: `floor(N/2) + 1` (above 51%). Qualifying scores must all be in one car (primary = most events, tiebreak by cumulative points). Chair confirmed prior season PCA Series exports did not enforce the single-car rule. Car key is normalized `carDescription` only (numbers float per-event for non-permanent-number drivers). | 2026-05-27 | M1.13 |
 
 ---
 

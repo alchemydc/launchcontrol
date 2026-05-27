@@ -27,7 +27,6 @@ let prisma: PrismaClient;
 let alexId: number;
 let beaId: number;
 let camId: number;
-let deeId: number;
 let evanId: number;
 
 beforeAll(async () => {
@@ -45,13 +44,12 @@ beforeAll(async () => {
   }
 
   const drivers = await prisma.driver.findMany({
-    where: { memberNum: { in: ["MES-001", "MES-002", "MES-003", "MES-004", "MES-005"] } },
+    where: { memberNum: { in: ["MES-001", "MES-002", "MES-003", "MES-005"] } },
   });
   const byMember = new Map(drivers.map((d) => [d.memberNum!, d.id]));
   alexId = byMember.get("MES-001")!;
   beaId = byMember.get("MES-002")!;
   camId = byMember.get("MES-003")!;
-  deeId = byMember.get("MES-004")!;
   evanId = byMember.get("MES-005")!;
 });
 
@@ -238,11 +236,12 @@ describe("buildDriverHistory", () => {
     const history = await buildDriverHistory(alexId, prisma);
 
     // Event 1: Alex is pooled leader → pos=1, delta=0
+    // 7 entrants: Alex(C1), Cam(CS), Gina(CS), Bea(C1), Fred(CS), Dee(C1), Evan(C1)
     expect(history[0]!.bestRawMs).toBe(50000);
     expect(history[0]!.bestPaxMs).toBe(50000);
     expect(history[0]!.leaderPaxMs).toBe(50000);
     expect(history[0]!.position).toBe(1);
-    expect(history[0]!.entrantCount).toBe(5);
+    expect(history[0]!.entrantCount).toBe(7);
     expect(history[0]!.diffFromLeaderPct).toBe(0);
 
     // Events 2-4: Alex remains pooled PAX leader
@@ -253,22 +252,25 @@ describe("buildDriverHistory", () => {
 
     // Event 5: Bea (CS) is PAX-faster, so Alex is pos=2.
     // Alex raw = 54000 + 1*2000 = 56000; Bea PAX = round(60000 * 0.92) = 55200.
+    // 4 valid entrants: Bea=55200, Alex=56000, Fred=60720, Gina=74520.
     expect(history[4]!.bestRawMs).toBe(56000);
     expect(history[4]!.bestPaxMs).toBe(56000);
     expect(history[4]!.leaderPaxMs).toBe(55200);
     expect(history[4]!.position).toBe(2);
-    expect(history[4]!.entrantCount).toBe(2);
+    expect(history[4]!.entrantCount).toBe(4);
     expect(history[4]!.diffFromLeaderPct).toBeCloseTo((56000 - 55200) / 55200, 6);
   });
 
   it("computes Bea's leader-delta at event 1", async () => {
     const history = await buildDriverHistory(beaId, prisma);
     const e1 = history.find((h) => h.eventName === "Season Event 1")!;
+    // PAX order at event 1: Alex=50000(1), Cam=52440(2), Gina=53360(3), Bea=55000(4), ...
+    // Adding Fred and Gina to event 1 pushes Bea from pos=3 to pos=4.
     expect(e1.bestPaxMs).toBe(55000);
     expect(e1.leaderPaxMs).toBe(50000);
     expect(e1.diffFromLeaderPct).toBeCloseTo(0.1, 6); // (55000-50000)/50000
-    expect(e1.position).toBe(3);
-    expect(e1.entrantCount).toBe(5);
+    expect(e1.position).toBe(4);
+    expect(e1.entrantCount).toBe(7);
   });
 
   it("renders Cam's DNF-only event 5 with nulls but still includes the row", async () => {
@@ -281,9 +283,10 @@ describe("buildDriverHistory", () => {
     expect(e5.percentile).toBeNull();
     expect(e5.diffFromLeaderPct).toBeNull();
     expect(e5.diffFromMedianPct).toBeNull();
-    // Leader/median computed from the other entrants; entrantCount excludes Cam.
+    // Leader/median computed from the other entrants; entrantCount excludes Cam (DNF).
+    // Event 5 now has 4 valid entrants: Bea(CS,55200), Alex(C1,56000), Fred(CS,60720), Gina(CS,74520).
     expect(e5.leaderPaxMs).toBe(55200);
-    expect(e5.entrantCount).toBe(2);
+    expect(e5.entrantCount).toBe(4);
     // Display fields still populated from Cam's CS entry.
     expect(e5.classCode).toBe("CS");
     expect(e5.paxClassCode).toBe("CS");
@@ -292,11 +295,11 @@ describe("buildDriverHistory", () => {
 
   it("computes entrantCount and percentile correctly", async () => {
     const history = await buildDriverHistory(evanId, prisma);
-    // Evan only attended event 1 (5 entrants), placed 5th.
+    // Evan only attended event 1 (7 entrants: original 5 + Fred + Gina), placed 7th (slowest PAX).
     expect(history).toHaveLength(1);
-    expect(history[0]!.entrantCount).toBe(5);
-    expect(history[0]!.position).toBe(5);
-    expect(history[0]!.percentile).toBe(1); // 5/5
+    expect(history[0]!.entrantCount).toBe(7);
+    expect(history[0]!.position).toBe(7);
+    expect(history[0]!.percentile).toBe(1); // 7/7 = 1 (last place)
   });
 
   it("computes median PAX correctly at event 1 (odd count)", async () => {
@@ -308,11 +311,12 @@ describe("buildDriverHistory", () => {
   });
 
   it("computes median PAX correctly at event 5 (even count)", async () => {
-    // Sorted PAX at event 5: [55200, 56000] → median = round((55200+56000)/2) = 55600.
+    // Sorted PAX at event 5: [Bea=55200, Alex=56000, Fred=60720, Gina=74520]
+    // Even count (4): median = round((56000 + 60720) / 2) = 58360.
     const history = await buildDriverHistory(alexId, prisma);
     const e5 = history.find((h) => h.eventName === "Season Event 5")!;
-    expect(e5.medianPaxMs).toBe(55600);
-    expect(e5.diffFromMedianPct).toBeCloseTo((56000 - 55600) / 55600, 6);
+    expect(e5.medianPaxMs).toBe(58360);
+    expect(e5.diffFromMedianPct).toBeCloseTo((56000 - 58360) / 58360, 6);
   });
 
   it("returns [] for a driver with no entries", async () => {
