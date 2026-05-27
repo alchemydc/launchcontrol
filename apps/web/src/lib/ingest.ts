@@ -92,6 +92,11 @@ export async function ingestAxdb(
       }
     }
 
+    const eventCount = (src.prepare("SELECT COUNT(*) AS c FROM events").get() as { c: number }).c;
+    if (eventCount > 1) {
+      throw new Error(`Source .axdb contains ${eventCount} events; ingest supports single-event files only.`);
+    }
+
     const srcEvent = src
       .prepare("SELECT id, event_name, event_date FROM events ORDER BY id LIMIT 1")
       .get() as SrcEvent | undefined;

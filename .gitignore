@@ -22,6 +22,7 @@ node_modules/
 
 # generated test fixtures (rebuilt by `pnpm --filter web pretest`)
 apps/web/tests/fixtures/season-event-*.axdb
+apps/web/tests/fixtures/multi-event-rejection.axdb
 apps/web/tests/fixtures/synthetic.axdb
 
 # local docs (private, not for public consumption)

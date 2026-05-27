@@ -68,9 +68,16 @@ Observed by running `.schema` and sample `SELECT`s against the gitignored `2026_
 ```sql
 events(id, event_name, event_date, num_runs, mirrored, unique_numbers,
        org_name, timing_mode, typical_time, web_active, run_timestamp)
+-- num_runs: configured runs-per-driver cap. Excess runs are flagged "X" in VisualAX
+--           reports and excluded from registrations.bestcommittedrun_id.
+-- unique_numbers: configures whether car numbers must be unique across all classes
+--                 (RMR-style) or unique within each class only (SCCA-style). Our
+--                 ingest doesn't depend on car-number uniqueness either way.
 
 classes(id, class_name, paxed_class, pax, run_timestamp)
 -- pax: float multiplier. class_name examples seen: C1..C5, CS, TO
+-- paxed_class: flags region-specific PAX-adjusted classes (eXpert, Novice). RMR
+--              doesn't use this feature and our CarClass model doesn't represent it.
 
 drivers(id, last_name, first_name, number, class_id, paxmult_id,
         car_model, car_color, member_num, sponsor, tire, email,
@@ -95,12 +102,13 @@ runs(id, event_id, driver_id, start_at, finish_at, start_tick, finish_tick,
 **Observed real-data quirks (catalogued during the 2025 backfill, 2026-05-23):**
 
 - **`member_num` is family/account-level, NOT a person-unique GUID.** Distinct humans frequently share a `member_num` (PCA family/household memberships). Real 2025 data showed multiple shared-`member_num` cases per event: typically two family members in the same class on a single membership, but also pairs with different surnames sharing one membership. `member_num` alone cannot identify a driver — see the Ingestion Strategy section for the identity-hash strategy ingest uses to cross-link the same human across events without false collapses.
-- **Co-driver pattern** uses a `1`-prefix or `X`-suffix on the car number — e.g. primary `#62` + co-drive `#162`, primary `#34` + co-drive `#34X`, primary `#198` + co-drive `#198X`. The co-driver's `member_num` may be empty (non-member co-driver, observed 2025-07-12) OR may share the primary's (family-co-drive case observed 2025-09-13). Ingest doesn't assume either case.
+- **Co-driver pattern** — in RMR practice usually uses a `1`-prefix or `X`-suffix on the car number — e.g. primary `#62` + co-drive `#162`, primary `#34` + co-drive `#34X`, primary `#198` + co-drive `#198X`. VisualAX itself imposes no co-driver numbering rule; ingest does not pattern-match on car numbers (driver identity is identity-hash-based, not number-based). The co-driver's `member_num` may be empty (non-member co-driver, observed 2025-07-12) OR may share the primary's (family-co-drive case observed 2025-09-13). Ingest doesn't assume either case.
 - **Ghost registrations:** VisualAX leaves the original `drivers` row in place when a driver swaps cars on race day — the abandoned registration has zero `runs` rows. 2026-05-17 had 8 such ghosts (drivers who pre-registered with one car number then drove a different one). Ingest skips zero-run rows (see Ingestion Strategy); PCA Series output ignores them anyway.
 - **Multiple `.axdb` per event directory.** VisualAX folders can hold a `*Trailer Export*.axdb` (mid-event/trailer snapshot) alongside the canonical post-event export, and very occasionally more than one canonical candidate. The new `apps/web/scripts/ingest.sh` skips any file whose name matches `*Trailer Export*.axdb`, auto-ingests when a directory has exactly one remaining candidate, and prompts the operator to choose (or skip) when multiple remain. Non-interactive runs with multiple candidates fail loudly rather than guess.
-- **`registrations.bestcommittedrun_id` is authoritative.** When the timing chief commits a specific run as the official best (typically post-hoc, occasionally overriding the raw-fastest CLEAN run), VisualAX records the chosen `runs.id` here. Confirmed by RMR's timing chair on 2026-05-26. Pre-2025-09-23 events can show this field disagreeing with the raw-fastest CLEAN run due to an VisualAX bug fixed on that date; in every observed case the field still represents the club's official rendering, so ingest treats it as ground truth and falls back to "fastest CLEAN, cone-corrected" only when null.
+- **`registrations.bestcommittedrun_id` is authoritative.** When the timing chief commits a specific run as the official best (typically post-hoc, occasionally overriding the raw-fastest CLEAN run), VisualAX records the chosen `runs.id` here. Confirmed by RMR's timing chair on 2026-05-26. Pre-2025-09-23 events can show this field disagreeing with the raw-fastest CLEAN run due to a VisualAX bug fixed on that date; in every observed case the field still represents the club's official rendering, so ingest treats it as ground truth and falls back to "fastest CLEAN, cone-corrected" only when null.
+- **Excessive runs.** When a driver takes more than `events.num_runs` (e.g. 9 runs at an 8-run event), VisualAX flags the excess runs with an "X" column in detailed reports and `registrations.bestcommittedrun_id` / `bestcommittedrun_no` already exclude them. Our `Entry.bestCommittedRunNumber` path inherits this correctness automatically. Residual gap: when `bestCommittedRunNumber` is null, `bestCorrectedMsForEntry()`'s fallback to `min(rawTimeMs + cones * CONE_PENALTY_MS)` over CLEAN runs does not filter on `num_runs` — an excessive run could in principle become the fallback best. Low risk in practice (`bestcommittedrun_id` is reliably populated post-event; fastest CLEAN typically lands within the first N runs). Logged for future hardening.
 
-Each `.axdb` exported from VisualAX so far contains a **single event** (id=1) with ~70-80 drivers and ~600-650 runs.
+The `.axdb` format supports **multiple events per file** — VisualAX's season-points feature — and also supports cross-file merging via a manual CSV export/import roundtrip inside VisualAX. Every RMR export observed to date has been single-event (id=1) with ~70–80 drivers and ~600–650 runs. Ingest enforces single-event with a fail-loud guard (see Ingestion Strategy → Single-event assumption below) to prevent silent partial ingest if that ever changes.
 
 ### Target App Schema (Prisma + SQLite)
 
@@ -212,6 +220,9 @@ Dark mode is in scope for M0 (Tailwind `class` strategy + a small theme toggle).
 Library: **`better-sqlite3`** (synchronous, fast, no async overhead). It builds natively on macOS/Linux dev machines.
 
 - **M1 (local CLI):** `pnpm ingest <path-to-axdb>` opens the source with `new Database(path, { readonly: true })`, reads `events` / `classes` / `drivers` / `registrations` / `runs`, and upserts into Prisma inside a single transaction. Idempotent on re-run (keyed by `(eventId, driverId)` and `(entryId, runNumber)`).
+
+**Single-event assumption:** ingest reads exactly one `events` row from the source file and throws a clear error if the source contains more than one. The `.axdb` format permits multi-event files (VisualAX's season-points feature) but RMR has never used it; the guard prevents silent partial ingest if that ever changes. Full multi-event support is deferred to post-MVP.
+
 - **M4 (admin upload):** accepts a multipart `.axdb`, writes it to a tmp file, and runs the same code path. **Vercel constraint:** the function must use the Node.js runtime (not Edge) and may need a higher memory tier; `better-sqlite3` ships native bindings that require Vercel's Node 20 runtime.
 
 Mapping rules:
@@ -500,8 +511,8 @@ Backfill: wipe local + Turso schema via `pnpm --filter web wipe:db`, re-migrate,
 
 ### M5 — Media hub (target: 1 session)
 
-- SmugMug: render an embed by event date once we know RMR's gallery URL pattern.
 - Video submission form: authenticated only. URL allowlist: youtube.com / youtu.be / vimeo.com.
+- No comments at this point as this introduces moderation concerns. 
 
 ---
 
@@ -519,6 +530,7 @@ Resolved open questions from PRD development — preserved here as context for f
 | 9 | SmugMug multi-club generalization. | Deferred to post-MVP. M1.8's single-tenant env-var config is sufficient for RMR-only MVP; promote to per-club entity when a second club adopts the platform. | 2026-05-27 | Future scope |
 | 10 | Same-driver, same-class, same-event co-drives — score both `Entry` rows independently or collapse to better score? | VisualAX uses separate `drivers` rows for co-drives (`337` + `337X`, `62` + `162`); each scores independently. Driver identity is the identity hash (not `member_num` — a co-drive pair sharing `member_num` was observed in 2025-09-13 real data). Ingest throws on the truly pathological "same human, same class, both with runs" case. | 2026-05-23 | M1.10 |
 | 11 | `bestcommittedrun_id` semantics — authoritative override, UI cache, or one-off bug? | Chair confirmed authoritative; honor when present. 2025-08-16 case traces to an VisualAX bug fixed 2025-09-23. Status values 0–4 enumerated; only `3=committed` should be ingested. `OFF`/`DSQ` dispositions exist and must be excluded from best-time. | 2026-05-26 | M1.12 |
+| 12 | Multi-event `.axdb` support. | VisualAX format permits multiple events per file (unused by RMR). Ingest enforces single-event with a fail-loud guard; full multi-event support deferred to post-MVP if a region adopts the season-points feature. | 2026-05-27 | post-M1.12 |
 
 ---
 
@@ -538,3 +550,4 @@ Out of scope for the MVP but noted to keep prior thinking discoverable:
 - [x] If using SQLite, the Turso library is great to have local/remote duality
 - [x] For OAuth (or authentication in general), I recommend Better Auth, so you don't have to build your own auth manually
 - [x] For Calendars and scheduling you can use cal.com (they have an open source version)
+- [x] VisualAX author review of PRD (2026-05-27) — clarifications on co-driver numbering, multi-event `.axdb` format, `unique_numbers` / `paxed_class` fields, and excessive-run handling; incorporated into BUILD.md.

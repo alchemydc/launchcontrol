@@ -5,9 +5,9 @@
 ### Glossary
 
 - **MSR** — [MotorsportReg.com](https://www.motorsportreg.com), the registration and identity system used by PCA regions (including RMR). Source of truth for member identity.
-- **VisualAX** — desktop timing software used at-event by RMR, created and maintained by RMR member Doug Bartlett. Emits a SQLite database file with the extension `.axdb` after each event. Real season exports live in the gitignored `2026_season_data/` directory locally; they contain member PII and must never be committed or used as CI fixtures.
-- **PAX** — class index multiplier applied to raw time to produce a normalized "PAX time" for cross-class comparison.
-- **Run group** — the on-event run order grouping (e.g., morning/afternoon). Tracked per-event by VisualAX.
+- **VisualAX** — desktop timing software used at-event by RMR, created and maintained by RMR member Doug Bartlett. Emits a SQLite database file with the extension `.axdb` after each event. Real season exports live in the gitignored `2026_season_data/` directory locally; they contain member PII and must never be committed or used as CI fixtures. Each exported `.axdb` typically contains a single event; the file format supports multiple events (VisualAX's season-points feature) but RMR has not used it.
+- **PAX** — class index multiplier applied to raw time to produce a normalized "PAX time" for cross-class comparison. Not used by RMR PCA presently.
+- **Run group** — the on-event run order grouping (e.g., green/yellow). Tracked per-event by VisualAX.
 
 ---
 
@@ -28,7 +28,7 @@ MVP targets PCA RMR specifically, but design choices that don't add cost should 
 
 #### 1.3.1 Auth & Identity (MSR)
 
-- **MSR OAuth 1.0a login** — authenticate users against their MSR profile.
+- **MSR OAuth 1.0a login** — authenticate users against their MSR profile. Chosen because RMR PCA AX drivers must already have an MSR account to register for events.
 - **Signed session cookie** — HttpOnly, SameSite=Lax, signed, keyed on the MSR user UID returned by `/rest/me`.
 - **Dynamic public calendar** — `/calendar` fetches the RMR org's MSR event calendar server-side and caches it for 5 minutes.
 
@@ -55,7 +55,7 @@ Driver-submitted YouTube/Vimeo links remain a Future scope item, not shipped.
 - **Ingestion correctness:** integration test ingests the synthetic `apps/web/tests/fixtures/synthetic.axdb` (committed) and asserts driver counts, run counts, class PAX multipliers, and that every persisted `Driver.lastInitial` matches `/^[A-Z?]\./`. A regex sweep on the dumped DB confirms no full last name beyond the first character appears in any Driver, Entry, or Run row.
 - **PII rule:** the full last name of any driver is used only transiently to compute the identity hash and must never be persisted to the app DB or appear in any leaderboard rendering.
 - **Auth boundary:** every route under `/api/admin/*` returns 401 unless the session is present and the MSR UID is in the admin allowlist.
-- **Public reads** of completed event leaderboards do **not** require auth (matches the Driver/Competitor persona).
+- **Public reads** of completed event leaderboards do **not** presently require auth.
 - **Vercel:** preview deploy for every PR; main deploys to production on merge.
 
 ---
@@ -70,9 +70,11 @@ Driver-submitted YouTube/Vimeo links remain a Future scope item, not shipped.
 
 ## Part 4 · Future Scope
 
-- Allow driver to add tunes, tires, setup changes to a "vehicle timeline" which should expose performance impact of changes made.
+- Allow driver to add tunes, tires, setup changes to a "vehicle timeline" which should expose and help analyze performance impact of changes made.
 - ~~Allow driver to track performance against leaders or specific rivals visually.~~ **Shipped in M1.7** for "vs. event leader." Specific-rival comparison still open.
 - Generalize SmugMug integration beyond RMR/Autocross: per-event folder overrides (admin-set), or per-region config keyed off a future `Region` entity. Optional admin UI to confirm/override fuzzy matches.
 - Add explicit `Event.seasonYear Int` column (migration + ingest update) so season is decoupled from calendar year and indexed for fast season queries.
 - Series scoring rules as data: RMR's 7-events / best-4-of-7 rule lives in code today (M1.9). Future regions or rule changes would want a per-season `RuleSet` (events-counted, points formula, drop-week count, tiebreakers).
 - Driver-submitted YouTube/Vimeo video links tied to event + driver + run group + car class.
+- Multi-event `.axdb` ingest support. Current ingest enforces single-event with a fail-loud guard (BUILD.md → Ingestion Strategy → Single-event assumption). VisualAX's format supports multiple events per file via its season-points feature; relevant only if another region adopts the platform and uses that workflow.
+- `classes.paxed_class` (PAX-adjusted classes like eXpert / Novice). VisualAX supports a class-level PAX overlay on top of per-class PAX. RMR doesn't use this and our `CarClass` model doesn't represent it. A blocker for any future region that does.

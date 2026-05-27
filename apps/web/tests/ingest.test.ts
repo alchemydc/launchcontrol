@@ -200,3 +200,13 @@ describe("ingestAxdb throws on unknown disposition", () => {
     }
   });
 });
+
+describe("ingestAxdb throws on multi-event source", () => {
+  it("rejects a .axdb with more than one event row", async () => {
+    const fixture = resolve(__dirname, "fixtures", "multi-event-rejection.axdb");
+    // Throw occurs before any Prisma op, so reusing the outer client is safe.
+    await expect(ingestAxdb(fixture, prisma)).rejects.toThrow(
+      /Source \.axdb contains 2 events; ingest supports single-event files only\./,
+    );
+  });
+});
