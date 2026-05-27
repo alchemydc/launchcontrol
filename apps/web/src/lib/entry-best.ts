@@ -19,7 +19,7 @@ export function bestCorrectedMsForEntry(entry: EntryForBest): number | null {
     if (committed?.disposition === "CLEAN" && committed.rawTimeMs != null) {
       return committed.rawTimeMs + committed.cones * CONE_PENALTY_MS;
     }
-    // Fall through if AxWare points at a non-CLEAN run (data anomaly — DSQ/RRN/
+    // Fall through if VisualAX points at a non-CLEAN run (data anomaly — DSQ/RRN/
     // DNF/OFF should never be committed-best per club policy), at a run we didn't
     // persist, or at a run without rawTimeMs.
   }

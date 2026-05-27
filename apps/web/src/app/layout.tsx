@@ -57,7 +57,7 @@ export default function RootLayout({
         {children}
 
         <footer className="mt-auto border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
-          Built for PCA Rocky Mountain Region · Autocross results from AxWare
+          Built for PCA Rocky Mountain Region · Autocross results from VisualAX
         </footer>
       </body>
     </html>

@@ -1,11 +1,11 @@
-// Regenerate the synthetic AxWare .axdb fixture used by ingestion tests.
+// Regenerate the synthetic VisualAX .axdb fixture used by ingestion tests.
 //
 // Run from apps/web:
 //   node tests/fixtures/build-synthetic-axdb.mjs
 //
 // Output: tests/fixtures/synthetic.axdb (committed)
 //
-// The schema mirrors a real AxWare .axdb. The data is entirely fake —
+// The schema mirrors a real VisualAX .axdb. The data is entirely fake —
 // see feedback_sensitive_axdb_fixtures memory for why we never use real data here.
 
 import { fileURLToPath } from "node:url";
