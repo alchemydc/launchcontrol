@@ -26,3 +26,6 @@ apps/web/tests/fixtures/synthetic.axdb
 
 # local docs (private, not for public consumption)
 docs/private/
+
+# logos etc
+assets/

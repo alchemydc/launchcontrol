@@ -88,7 +88,7 @@ export async function ingestAxdb(
     );
     for (const t of REQUIRED_TABLES) {
       if (!presentTables.has(t)) {
-        throw new Error(`Source DB is missing required table '${t}' — not an AxWare .axdb`);
+        throw new Error(`Source DB is missing required table '${t}' — not an VisualAX .axdb`);
       }
     }
 
@@ -122,7 +122,7 @@ export async function ingestAxdb(
       .all(srcEvent.id) as SrcRun[];
 
     // Use bestcommittedrun_id (FK → runs.id) rather than bestcommittedrun_no because
-    // AxWare's run_no skips voided RRN slots while our sequential run numbering includes
+    // VisualAX's run_no skips voided RRN slots while our sequential run numbering includes
     // them — making run_no unreliable as a lookup key.
     const srcRegistrations = src
       .prepare(`SELECT driver_id, bestcommittedrun_id FROM registrations WHERE event_id = ?`)
@@ -132,7 +132,7 @@ export async function ingestAxdb(
     );
 
     // Skip ghost registrations: source `drivers` rows with zero `runs` rows.
-    // AxWare keeps a pre-registration row in place when a driver changes cars on race
+    // VisualAX keeps a pre-registration row in place when a driver changes cars on race
     // day. Including ghosts would collide on (identityHash, classId) during entry
     // recovery. PCA Series export already ignores zero-run entries.
     // Note: ghost detection runs over the status=3-filtered set, so a driver whose
@@ -213,7 +213,7 @@ export async function ingestAxdb(
         classIdBySrc.set(c.id, id);
       }
 
-      // Driver: identity is `(memberNum, firstName, lastName)` hashed. AxWare's member_num
+      // Driver: identity is `(memberNum, firstName, lastName)` hashed. VisualAX's member_num
       // is family/account-level — multiple distinct humans can share one, and co-drivers
       // may either share the primary's member_num or have an empty member_num. Hashing
       // the full last_name lets us cross-link the same human across events while still
@@ -291,9 +291,9 @@ export async function ingestAxdb(
       }
 
       // Entry: bulk createMany, then findMany to map back by (driverId, classId).
-      // AxWare gives each (human, class) pair its own driver row, so two source driver
+      // VisualAX gives each (human, class) pair its own driver row, so two source driver
       // rows can map to the same app Driver (e.g. one human entered in two classes via
-      // two AxWare rows). The composite (driverId, classId) is unique per event and is
+      // two VisualAX rows). The composite (driverId, classId) is unique per event and is
       // the right recovery key; driverId alone would silently collapse.
       const entriesData = srcDrivers.map((d) => {
         const classId = classIdBySrc.get(d.class_id);
@@ -306,7 +306,7 @@ export async function ingestAxdb(
         const driverId = driverIdBySrc.get(d.id);
         if (driverId == null) throw new Error(`Missing driver mapping for source id ${d.id}`);
         // Resolve the committed run ID to an app run number.
-        // AxWare's bestcommittedrun_no skips voided RRN slots; we use the FK (run id)
+        // VisualAX's bestcommittedrun_no skips voided RRN slots; we use the FK (run id)
         // to find the sequential position in our sorted-by-id run numbering instead.
         const committedSrcRunId = committedRunIdByDriver.get(d.id) ?? null;
         const driverRunIds = srcRuns
