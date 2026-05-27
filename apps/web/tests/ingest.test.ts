@@ -202,40 +202,11 @@ describe("ingestAxdb throws on unknown disposition", () => {
 });
 
 describe("ingestAxdb throws on multi-event source", () => {
-  it("throws when the source .axdb contains more than one event", async () => {
-    const tmpPath = join(tmpdir(), `ingest-test-multi-event-${randomUUID()}.axdb`);
-    try {
-      const src = new Database(tmpPath);
-      src.pragma("foreign_keys = OFF");
-      src.exec(`
-        CREATE TABLE events (id INTEGER PRIMARY KEY, event_name TEXT NOT NULL, event_date TEXT NOT NULL,
-          num_runs INTEGER NOT NULL, mirrored INTEGER NOT NULL, unique_numbers INTEGER NOT NULL,
-          org_name TEXT NOT NULL, timing_mode INTEGER NOT NULL, typical_time REAL NOT NULL,
-          web_active INTEGER NOT NULL, run_timestamp INTEGER);
-        CREATE TABLE classes (id INTEGER PRIMARY KEY, class_name TEXT NOT NULL UNIQUE,
-          paxed_class INTEGER NOT NULL DEFAULT 0, pax REAL NOT NULL DEFAULT 1.0, run_timestamp INTEGER);
-        CREATE TABLE drivers (id INTEGER PRIMARY KEY, last_name TEXT NOT NULL, first_name TEXT NOT NULL,
-          number TEXT NOT NULL, class_id INTEGER NOT NULL, paxmult_id INTEGER NOT NULL,
-          car_model TEXT, car_color TEXT, member_num TEXT, sponsor TEXT, tire TEXT,
-          email TEXT, cellphone TEXT, member INTEGER, registered INTEGER, icon_color TEXT);
-        CREATE TABLE registrations (driver_id INTEGER NOT NULL, event_id INTEGER NOT NULL,
-          bestcommittedrun_id INTEGER, bestcommittedrun_no INTEGER,
-          bestpendingrun_id INTEGER, run_timestamp INTEGER);
-        CREATE TABLE runs (id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL,
-          driver_id INTEGER NOT NULL, start_at INTEGER, finish_at INTEGER,
-          start_tick INTEGER, finish_tick INTEGER, cones INTEGER,
-          disposition TEXT, status INTEGER NOT NULL);
-      `);
-      src.prepare("INSERT INTO events VALUES (1,'Event One','2026-01-01',1,0,0,'T',0,55,1,0)").run();
-      src.prepare("INSERT INTO events VALUES (2,'Event Two','2026-01-08',1,0,0,'T',0,55,1,0)").run();
-      src.close();
-
-      // Throw occurs before any Prisma ops, so reuse the outer prisma client.
-      await expect(ingestAxdb(tmpPath, prisma)).rejects.toThrow(
-        /Source \.axdb contains 2 events; ingest supports single-event files only\./,
-      );
-    } finally {
-      rmSync(tmpPath, { force: true });
-    }
+  it("rejects a .axdb with more than one event row", async () => {
+    const fixture = resolve(__dirname, "fixtures", "multi-event-rejection.axdb");
+    // Throw occurs before any Prisma op, so reusing the outer client is safe.
+    await expect(ingestAxdb(fixture, prisma)).rejects.toThrow(
+      /Source \.axdb contains 2 events; ingest supports single-event files only\./,
+    );
   });
 });
