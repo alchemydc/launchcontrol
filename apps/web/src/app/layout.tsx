@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { HeaderNav } from "@/components/header-nav";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,20 +38,7 @@ export default function RootLayout({
                 Launch Control
               </span>
             </Link>
-            <nav className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Events
-              </Link>
-              <Link
-                href="/leaderboard"
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Leaderboard
-              </Link>
-            </nav>
+            <HeaderNav />
           </div>
         </header>
 

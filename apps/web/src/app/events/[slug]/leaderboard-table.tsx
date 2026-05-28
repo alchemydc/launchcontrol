@@ -303,6 +303,10 @@ export function LeaderboardTable({
     [],
   );
 
+  // React Compiler can't safely memoize TanStack Table's returned functions;
+  // we accept that limitation here because the table state lives in this
+  // component and isn't passed to other memoized consumers.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: filteredRows,
     columns,

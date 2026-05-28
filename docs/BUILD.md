@@ -6,7 +6,7 @@ Implementation reference and build history for [Launch Control](https://launchco
 
 ## Current Status
 
-**Status (2026-05-26):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), and an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — that unblocks the 2025 backfill and the imminent Turso re-ingest, plus a backfill tooling pass — bulk ingest with canonical-axdb selection and a schema-only DB wipe utility that preserves Turso URLs/keys. **Next up:** M2 — MSR OAuth (credentials received 2026-05-27, untested in app; ready to execute).
+**Status (2026-05-28):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M2 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus a dynamic qualifying threshold (M1.13). Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
 
 ---
 
@@ -59,7 +59,7 @@ Verified against MSR's developer page at `api.motorsportreg.com` (May 2026).
 
 **Library:** `oauth-1.0a` (npm) + Node `crypto` for HMAC-SHA1. Avoid heavyweight passport plugins; the flow is small enough to implement directly inside Route Handlers.
 
-**Credentials:** request via MSR's [REST API integration page](https://info.motorsportreg.com/rest-api-integration). Requires admin access on the PCA RMR MSR organization. **Credentials received 2026-05-27 (untested in app).**
+**Credentials:** request via MSR's [REST API integration page](https://info.motorsportreg.com/rest-api-integration). Requires admin access on the PCA RMR MSR organization. **Credentials verified end-to-end via M2 sign-in flow on 2026-05-28.**
 
 ### VisualAX Source Schema (observed)
 
@@ -454,73 +454,61 @@ RMR chair feedback on 2026-05-27 identified two scoring rules in M1.9 that were 
 
 **Files changed:** `apps/web/src/lib/season-leaderboard.ts`, `apps/web/src/app/leaderboard/season-leaderboard-view.tsx`, `apps/web/src/app/leaderboard/page.tsx`, `apps/web/src/app/leaderboard/[year]/page.tsx`, `apps/web/tests/season-leaderboard.test.ts`, `apps/web/tests/driver-history.test.ts`, `apps/web/tests/fixtures/build-multi-event-season.mjs`.
 
-### M2 — MSR OAuth (target: 1–2 sessions; credentials received 2026-05-27)
+### M2 — MSR OAuth ✓ (done 2026-05-28)
 
-**Library choices (decided 2026-05-27):**
-- `oauth-1.0a` (npm) + Node `crypto` for HMAC-SHA1 request signing.
-- `iron-session` for encrypted session cookies (App Router-native, stateless, AES-256-GCM).
-- Not NextAuth/Auth.js: v5 explicitly deprioritizes OAuth 1.0a, and a single-provider MVP doesn't earn back the dep weight or upgrade tax.
+M2 ships full MSR OAuth 1.0a sign-in end-to-end: a three-legged OAuth handshake against `api.motorsportreg.com`, an encrypted session cookie persisting the user's MSR identity, a `/me` page showing `firstName lastInitial` + monospace MSR UID + RMR-membership badge, and login state reflected in the site header nav. The flow was verified against live MSR in a 2026-05-28 smoke test.
 
-**Token storage (decided 2026-05-27):** cookie-only encrypted session. No `User` Prisma model in MVP — admin allowlist stays env-var-backed (`ADMIN_MSR_UIDS`) per open question #5's existing direction.
+**Libraries:**
+- `oauth-1.0a` (npm) + Node `crypto` for HMAC-SHA1 request signing per RFC 5849.
+- `iron-session` for encrypted session cookies (App Router-native, stateless, AES-256-GCM). No NextAuth/Auth.js — v5 explicitly deprioritizes OAuth 1.0a, and a single-provider MVP doesn't earn back the dep weight or upgrade tax.
 
-**Env vars** (add to `apps/web/.env.example` + Vercel preview/prod):
-- `MSR_CONSUMER_KEY`, `MSR_CONSUMER_SECRET` — OAuth consumer creds.
-- `MSR_RMR_ORG_ID` — used in `X-Organization-Id` header and `/rest/calendars/organization/{org_id}`.
-- `SESSION_SECRET` — 32+ random bytes for iron-session AES-256-GCM key.
-- `MSR_OAUTH_CALLBACK_URL` — fully-qualified callback. Production: `https://launchcontrol.club/api/auth/msr/callback`. Preview deploys: derive from request `Host` at runtime so each preview URL works without per-deploy reconfig.
+**Session shape (`apps/web/src/lib/session.ts`):** `SessionData` has six fields: `msrUid`, `firstName`, `lastInitial`, `accessToken`, `accessTokenSecret`, `isRmrMember`. Note: `profileId` from the original M2 plan was dropped — `msrUid` (the `id` field from `/rest/me.json`) is the authoritative user identifier; the speculative `tokenData["memberid"]` parsing was removed.
 
-**Three-legged flow:**
+**Two cookies:**
+- `lc_session` — 30-day sliding window, HttpOnly + Secure(prod) + SameSite=Lax. Carries the full session (MSR UID, name initials, tokens, membership flag).
+- `lc_msr_req` — 10-minute cookie, scoped to `path: "/api/auth/msr/callback"`, holds only the request-token secret during the handshake. Destroyed after callback completes.
 
-1. `GET /api/auth/msr/login` (Node runtime Route Handler):
-   - POST `https://api.motorsportreg.com/rest/tokens/request` with `oauth_callback={MSR_OAUTH_CALLBACK_URL}`, signed with consumer key/secret.
-   - Parse www-form-urlencoded response → `oauth_token`, `oauth_token_secret`.
-   - Stash `oauth_token_secret` in a short-lived signed cookie scoped to `/api/auth/msr/callback`. HttpOnly + Secure (prod) + SameSite=Lax, 10-minute Max-Age.
-   - 302 to `https://www.motorsportreg.com/index.cfm/event/oauth?oauth_token={token}`.
+**`SESSION_SECRET`** is checked lazily via a `getSessionSecret()` helper on first use (not at module load), so `next build` runs without the secret being present in the build environment.
 
-2. `GET /api/auth/msr/callback` (Node runtime Route Handler):
-   - Read `oauth_token` + `oauth_verifier` from query string.
-   - Read `oauth_token_secret` from the short-lived cookie; delete it after read.
-   - POST `https://api.motorsportreg.com/rest/tokens/access` signed with consumer + request tokens + verifier.
-   - Parse www-form-urlencoded response → access token, access secret, profile id.
-   - Fetch `GET /rest/me` signed with the new access token; parse JSON → `msrUid`, `firstName`, `lastName`, `organizations[]`.
-   - Apply PII rule: redact `lastName` → `lastInitial` (single uppercase letter + period) before storing.
-   - Set iron-session cookie: `{ msrUid, firstName, lastInitial, accessToken, accessTokenSecret, profileId, isRmrMember }` where `isRmrMember = organizations.some(o => o.id === MSR_RMR_ORG_ID)`. HttpOnly + Secure (prod) + SameSite=Lax, 30-day sliding Max-Age.
-   - 302 to `/me`.
+**Env vars (added to `apps/web/.env.example`):** `MSR_CONSUMER_KEY`, `MSR_CONSUMER_SECRET`, `MSR_RMR_ORG_ID`, `MSR_OAUTH_CALLBACK_URL`, `SESSION_SECRET`. `MSR_OAUTH_CALLBACK_URL` is a static per-Vercel-environment env var (not derived from request `Host` at runtime as the original plan considered) — MSR accepts any URL passed via `oauth_callback`, so per-deploy config works fine without a server-side allowlist. The callback route throws if `MSR_RMR_ORG_ID` is unset (no fallback).
 
-3. `POST /api/auth/logout`: clear the iron-session cookie; 302 to `/`.
+**Endpoints centralized in `apps/web/src/lib/msr-endpoints.ts`:** `MSR_REQUEST_TOKEN_URL`, `MSR_ACCESS_TOKEN_URL`, `MSR_ME_URL` (note `.json` extension required — MSR ignores `Accept` headers), `MSR_AUTHORIZE_URL_BASE`.
+
+**Signing helpers in `apps/web/src/lib/msr.ts`:** lazy-singleton OAuth client; `signRequest()` (OAuth protocol params flow through the `data` field so they land in both the signature base string and the `Authorization` header); `parseFormEncoded()`; and `signedMsrFetch<T = MsrMeResponse>()`.
+
+**Three-legged flow routes (Node runtime):**
+
+1. `GET /api/auth/msr/login` — POST `/rest/tokens/request` → stash secret in `lc_msr_req` → 302 to `${MSR_AUTHORIZE_URL_BASE}?oauth_token=…`.
+2. `GET /api/auth/msr/callback` — read `oauth_token` + `oauth_verifier` → read+destroy `lc_msr_req` → POST `/rest/tokens/access` (verifier via `data`) → GET `/rest/me.json` → redact `lastName` via `redactLastName()` from `@/lib/ingest` → compute `isRmrMember = profile.organizations.some(o => o.id === MSR_RMR_ORG_ID)` → persist session → 302 to `/me`.
+3. `POST /api/auth/logout` — destroy session → 302 to `/` (POST-only to avoid CSRF-style prefetch).
+
+**Error redirects from callback:** no `oauth_verifier` or missing `lc_msr_req` → `/login?error=denied`; `/rest/tokens/access` non-2xx → `/login?error=token-exchange`; `/rest/me.json` fetch fails → `/login?error=profile-fetch`.
+
+**`/rest/me.json` shape pinned as `MsrMeResponse` in `apps/web/src/lib/msr.ts`:** double-wrapped `{ response: { profile: { id, firstName, lastName, email, avatar, organizations: [{ id, memberId, name }] } } }`. `id` and `organizations[].id` are uppercase-hex UUIDs with dashes.
 
 **Pages:**
-- `/login` — public. "Sign in with MotorsportReg" button → `/api/auth/msr/login`.
-- `/me` — server component, reads the iron-session cookie, renders `First L.` + RMR-membership badge from cookie data (no MSR re-fetch in MVP).
+- `/login` — public; renders an error message from `?error=`; "Sign in with MotorsportReg" is a `<Link>` to `/api/auth/msr/login`.
+- `/me` — server component; redirects to `/login` if `msrUid` is missing; renders `firstName lastInitial` + monospace MSR UID + RMR-membership badge + logout form.
 
-**New library code** (small):
-- `apps/web/src/lib/session.ts` — `getSession()` wrapping `getIronSession` with the typed `SessionData` shape.
-- `apps/web/src/lib/msr.ts` — `signedMsrFetch(url, accessToken, accessTokenSecret)` for any authenticated MSR API call. Reused by M3 (calendar) and any future authenticated MSR read.
+**Header nav (`apps/web/src/components/header-nav.tsx`):** server component reading `getSession()`; signed-in users see their display name as a `<Link>` to `/me`; signed-out users see a "Sign in" link. Integrated into `apps/web/src/app/layout.tsx`.
 
-**Error paths:**
-- User denies on MSR's authorize page → callback receives no `oauth_verifier` (or an error param) → redirect to `/login?error=denied`.
-- `/rest/tokens/access` non-2xx → log + redirect to `/login?error=token-exchange`.
-- `/rest/me` non-2xx → log + redirect to `/login?error=profile-fetch`.
-- Future protected route with missing/expired session → redirect to `/login`.
+**Probe script (`apps/web/scripts/msr-oauth-probe.ts`):** manual one-shot tool that runs the full three-legged flow against live MSR and writes the raw `/rest/me.json` to `docs/private/rest_me_sample.json` (gitignored — contains PII). Not wired into CI. Run via `pnpm --filter web tsx --env-file=.env scripts/msr-oauth-probe.ts`.
+
+**Signing tests (`apps/web/tests/msr-signing.test.ts`):** pin HMAC-SHA1 signatures deterministically by injecting fixed `oauth_timestamp` and `oauth_nonce`, with snapshot tests for both `/rest/tokens/request` (no token, with `oauth_callback`) and `/rest/tokens/access` (request token + `oauth_verifier`) Authorization headers, plus round-trip coverage for `parseFormEncoded()`. Snapshots committed under `apps/web/tests/__snapshots__/`.
 
 **Security:**
-- OAuth's `oauth_token` query param on the callback is bound to the cookie-stored `oauth_token_secret` — together they provide callback authenticity (no separate CSRF state token needed).
-- All cookies HttpOnly + Secure (prod) + SameSite=Lax.
-- Request-token cookie scoped to the callback path only; cleared after callback completes.
-- Post-login redirect is hard-coded to `/me` — no open-redirect risk from accepting a user-supplied target.
-- `MSR_CONSUMER_SECRET` and `SESSION_SECRET` live only in Vercel env vars; never logged, never sent to the client.
+- OAuth's `oauth_token` query param on the callback is bound to the cookie-stored `oauth_token_secret` (callback authenticity without a separate CSRF token).
+- All cookies HttpOnly + Secure(prod) + SameSite=Lax.
+- `MSR_CONSUMER_SECRET` and `SESSION_SECRET` live only in env, never logged, never sent to the client.
+- Full last name is used transiently for `redactLastName()` and never persisted to the session.
 
-**Open implementation questions (surface during M2, not blocking):**
-- Does MSR require the callback URL to match a pre-registered URI, or accept any URL passed via `oauth_callback`? Verify with the first preview-deploy test.
-- Does MSR invalidate access tokens after some duration (e.g. when user revokes app authorization in their MSR account)? Detect at fetch time → redirect to re-auth.
-- Exact JSON shape of `/rest/me`, specifically the `organizations` field — confirm against the live endpoint and pin the TS interface.
-- Sign-in policy: do we *require* RMR membership to sign in, or just record it on the session and gate admin features via the existing allowlist? **Tentative default: record only, don't gate.** Revisit if M4 surfaces a reason to lock down.
+**Resolved during M2:**
+- **Callback URL pre-registration with MSR?** No — MSR accepts any URL passed via `oauth_callback`. Confirmed during the 2026-05-28 sign-in smoke test.
+- **Access-token lifetime / revocation behaviour?** Still unknown — no expiry observed during M2 testing. Future work: on a `signedMsrFetch` 401 in any authenticated route, clear the session and redirect to `/login?error=session-expired`. Not implemented in M2; sessions effectively last for the 30-day cookie sliding window.
+- **Exact `/rest/me.json` shape?** Confirmed and pinned in TS as `MsrMeResponse` (see above).
+- **Sign-in policy: require RMR membership?** **No — record only.** `isRmrMember` is stored on the session for UI affordances but does not gate sign-in. Admin features gate via the existing env-backed allowlist (`ADMIN_MSR_UIDS`). Push to future scope when the app expands beyond a single club.
 
-**Definition of Done additions:**
-- A signed-in user lands on `/me` after a real OAuth handshake against live MSR endpoints.
-- Session cookie roundtrips and survives a page refresh; logout clears it; subsequent `/me` hits redirect to `/login`.
-- `oauth_token_secret`, `accessTokenSecret`, and consumer secret never appear in DB, logs, or any client-side payload.
-- Smoke against at least one non-RMR-member MSR user to confirm `isRmrMember = false` lands correctly in the session.
+**Definition of Done met:** signed-in user lands on `/me` after a real OAuth handshake against live MSR; session cookie roundtrips and survives page refresh; logout clears it and subsequent `/me` hits redirect to `/login`; secrets never appear in DB, logs, or client payloads. (Non-RMR-member smoke deferred — only RMR-member accounts tested in this session.)
 
 ### M3 — Public calendar (target: 0.5 session, after M2)
 
@@ -546,8 +534,8 @@ Resolved open questions from PRD development — preserved here as context for f
 
 | # | Question | Resolution | Date | Milestone |
 |---|----------|------------|------|-----------|
-| 1 | MSR OAuth credentials. | Received 2026-05-27 (untested). Stored in Vercel env as `MSR_CONSUMER_KEY` / `MSR_CONSUMER_SECRET`. | 2026-05-27 | M2 (pending) |
-| 2 | RMR's MSR organization ID. | Received 2026-05-27. Stored in env as `MSR_RMR_ORG_ID`. | 2026-05-27 | M3 (pending) |
+| 1 | MSR OAuth credentials. | Received 2026-05-27; verified working end-to-end via M2 sign-in flow on 2026-05-28. Stored in Vercel env as `MSR_CONSUMER_KEY` / `MSR_CONSUMER_SECRET`. | 2026-05-28 | M2 ✓ |
+| 2 | RMR's MSR organization ID. | Received 2026-05-27; verified working in the M2 callback's `isRmrMember` computation on 2026-05-28. Stored in env as `MSR_RMR_ORG_ID`. | 2026-05-28 | M2 ✓ |
 | 4 | Vercel free tier OK for MVP? Custom domain plan? | Turso (libSQL) is the hosted DB; Vercel hosts the app on the free tier. Custom domain `launchcontrol.club` registered and attached. | 2026-05-19 | M1.5b |
 | 7 | Drivers without `member_num` produce duplicate rows under redaction. Acceptable for MVP? | Identity-hash strategy dedupes drivers without `member_num` by name; residual cross-event name-collision risk accepted for MVP. | 2026-05-23 | M1.10 |
 | 8 | 2025 historical `.axdb` files — do we have all 7 events on hand? | Deferred from M1.9. Navigation/season-switcher shape still built so 2025 can slot in later when the data is available. | 2026-05-21 | M1.9 |
@@ -556,6 +544,7 @@ Resolved open questions from PRD development — preserved here as context for f
 | 11 | `bestcommittedrun_id` semantics — authoritative override, UI cache, or one-off bug? | Chair confirmed authoritative; honor when present. 2025-08-16 case traces to an VisualAX bug fixed 2025-09-23. Status values 0–4 enumerated; only `3=committed` should be ingested. `OFF`/`DSQ` dispositions exist and must be excluded from best-time. | 2026-05-26 | M1.12 |
 | 12 | Multi-event `.axdb` support. | VisualAX format permits multiple events per file (unused by RMR). Ingest enforces single-event with a fail-loud guard; full multi-event support deferred to post-MVP if a region adopts the season-points feature. | 2026-05-27 | post-M1.12 |
 | 13 | Season qualifying threshold and single-car-per-season rule. | Threshold dynamic per season: `floor(N/2) + 1` (above 51%). Qualifying scores must all be in one car (primary = most events, tiebreak by cumulative points). Chair confirmed prior season PCA Series exports did not enforce the single-car rule. Car key is normalized `carDescription` only (numbers float per-event for non-permanent-number drivers). | 2026-05-27 | M1.13 |
+| 14 | M2 open implementation questions. | Callback URL not pre-registered with MSR (accepts any `oauth_callback`); `/rest/me.json` shape pinned as `MsrMeResponse`; sign-in policy is record-only (no RMR-gate, admin via `ADMIN_MSR_UIDS`); token revocation behaviour still untested. See M2 section for details. | 2026-05-28 | M2 |
 
 ---
 

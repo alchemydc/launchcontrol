@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
+import { redactLastName } from "./pii";
+export { redactLastName };
 
 export type IngestSummary = {
   status: "ingested" | "unchanged";
@@ -38,11 +40,6 @@ type SrcRegistration = {
 
 const REQUIRED_TABLES = ["events", "classes", "drivers", "registrations", "runs"] as const;
 
-function redactLastName(name: string): string {
-  const trimmed = name.trim();
-  if (trimmed.length === 0) return "?.";
-  return trimmed[0]!.toUpperCase() + ".";
-}
 
 function slugify(s: string): string {
   return s
