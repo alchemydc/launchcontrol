@@ -139,8 +139,10 @@ async function main() {
   const requestTokenSecret = requestTokens["oauth_token_secret"];
 
   if (!requestToken || !requestTokenSecret) {
-    console.error("ERROR: Could not parse request token. Response was:");
-    console.error(requestTokenBody);
+    const keys = Object.keys(requestTokens).join(", ");
+    console.error(
+      `ERROR: Could not parse request token. Got keys: ${keys || "(none)"}`
+    );
     process.exit(1);
   }
 
@@ -180,7 +182,7 @@ async function main() {
   }
   if (tokenBack && tokenBack !== requestToken) {
     console.warn(
-      `WARN: oauth_token in redirect (${tokenBack}) differs from request token (${requestToken})`
+      `WARN: oauth_token in redirect (${tokenBack.slice(0, 8)}…) differs from request token (${requestToken.slice(0, 8)}…)`
     );
   }
 
@@ -231,7 +233,17 @@ async function main() {
   console.log("\n--- Redacted summary (no PII) ---");
   console.log("Top-level keys:", Object.keys(parsed).join(", "));
 
-  const orgs = parsed["organizations"];
+  // MSR returns { response: { profile: { organizations: [...] } } }
+  const response = (parsed as { response?: unknown }).response;
+  const profile =
+    response && typeof response === "object"
+      ? (response as { profile?: unknown }).profile
+      : undefined;
+  const orgs =
+    profile && typeof profile === "object"
+      ? (profile as { organizations?: unknown }).organizations
+      : undefined;
+
   if (Array.isArray(orgs)) {
     console.log(`organizations[].length: ${orgs.length}`);
     if (orgs.length > 0) {

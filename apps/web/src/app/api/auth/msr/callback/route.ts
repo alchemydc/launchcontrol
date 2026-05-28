@@ -22,7 +22,7 @@ import { MSR_ACCESS_TOKEN_URL, MSR_ME_URL } from "@/lib/msr-endpoints";
 import { parseFormEncoded, signRequest, signedMsrFetch } from "@/lib/msr";
 import type { MsrMeResponse } from "@/lib/msr";
 import { getRequestTokenSession, getSession } from "@/lib/session";
-import { redactLastName } from "@/lib/ingest";
+import { redactLastName } from "@/lib/pii";
 
 export const runtime = "nodejs";
 
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
   const profile = me.response.profile;
 
   // 6. PII rule: compute lastInitial from lastName; discard full lastName immediately.
-  //    redactLastName is imported from lib/ingest (not redefined here).
+  //    redactLastName is imported from lib/pii (not redefined here).
   const lastInitial = redactLastName(profile.lastName);
 
   // 7. Determine RMR membership.

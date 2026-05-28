@@ -39,9 +39,8 @@ export async function GET() {
   });
 
   if (!res.ok) {
-    const body = await res.text();
     throw new Error(
-      `MSR request token failed: ${res.status} ${res.statusText}\n${body}`
+      `MSR request token failed: ${res.status} ${res.statusText}`
     );
   }
 
@@ -53,7 +52,7 @@ export async function GET() {
 
   if (!oauthToken || !oauthTokenSecret) {
     throw new Error(
-      `MSR request token response missing expected fields. Body: ${body}`
+      `MSR request token response missing expected fields. Got keys: ${Object.keys(tokens).join(", ")}`
     );
   }
 

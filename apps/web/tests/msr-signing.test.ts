@@ -16,6 +16,7 @@ import { parseFormEncoded, signRequest } from "@/lib/msr";
 // ---------------------------------------------------------------------------
 
 const ORIGINAL_ENV = { ...process.env };
+const OVERRIDDEN_KEYS = ["MSR_CONSUMER_KEY", "MSR_CONSUMER_SECRET"] as const;
 
 beforeAll(() => {
   // Provide deterministic consumer credentials for signing tests.
@@ -24,8 +25,15 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  // Restore original environment.
-  Object.assign(process.env, ORIGINAL_ENV);
+  // Restore original environment: re-assign preexisting values, delete any
+  // keys we added that were absent originally so they don't leak into later tests.
+  for (const key of OVERRIDDEN_KEYS) {
+    if (key in ORIGINAL_ENV) {
+      process.env[key] = ORIGINAL_ENV[key];
+    } else {
+      delete process.env[key];
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------
