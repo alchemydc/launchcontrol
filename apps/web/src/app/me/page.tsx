@@ -9,7 +9,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { CloseButton } from "@/components/close-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -31,6 +32,9 @@ export default async function MePage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>{displayName}</CardTitle>
+          <CardAction>
+            <CloseButton fallbackHref="/" />
+          </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex items-center gap-2">

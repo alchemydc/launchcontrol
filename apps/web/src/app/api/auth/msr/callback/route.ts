@@ -10,7 +10,7 @@
  *  6. Apply PII rule: compute lastInitial via redactLastName; discard full lastName.
  *  7. Compute isRmrMember from org list.
  *  8. Persist the SessionData fields in the main session cookie.
- *  9. 302 /me.
+ *  9. 302 / (events home).
  *
  * On error, redirects to /login?error=<reason>. Full last name is never
  * logged, stored in a cookie, or written to any persistent layer.
@@ -111,6 +111,6 @@ export async function GET(request: NextRequest) {
   session.isRmrMember = isRmrMember;
   await session.save();
 
-  // 9. Send to profile page.
-  redirect("/me");
+  // 9. Send to events home.
+  redirect("/");
 }
