@@ -182,7 +182,7 @@ async function main() {
   }
   if (tokenBack && tokenBack !== requestToken) {
     console.warn(
-      `WARN: oauth_token in redirect (${tokenBack.slice(0, 8)}…) differs from request token (${requestToken.slice(0, 8)}…)`
+      "WARN: oauth_token in redirect differs from request token"
     );
   }
 
