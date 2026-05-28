@@ -11,13 +11,16 @@
     "ingest": "tsx --env-file=.env scripts/ingest.ts",
     "migrate:turso": "tsx --env-file=.env scripts/migrate-turso.ts",
     "wipe:db": "tsx --env-file=.env scripts/wipe-db.ts",
+    "probe:msr": "tsx --env-file=.env scripts/msr-oauth-probe.ts",
     "pretest": "node tests/fixtures/build-multi-event-season.mjs && node tests/fixtures/build-multi-event-rejection-axdb.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate"
   },
   "lint-staged": {
-    "**/*.{ts,tsx,js,jsx,mjs,cjs}": ["eslint --max-warnings 0"]
+    "**/*.{ts,tsx,js,jsx,mjs,cjs}": [
+      "eslint --max-warnings 0"
+    ]
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -28,8 +31,10 @@
     "better-sqlite3": "^12.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "iron-session": "^8.0.4",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
+    "oauth-1.0a": "^2.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "recharts": "^3.8.1",

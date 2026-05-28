@@ -1,0 +1,5 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`signRequest — HMAC-SHA1 signature pinning > produces the expected Authorization header for a POST with a token (access exchange) 1`] = `"OAuth oauth_consumer_key="test-consumer-key", oauth_nonce="nonce456fixed", oauth_signature="nAshzctGkXdq%2Fi8mvze%2Bcm3cuyM%3D", oauth_signature_method="HMAC-SHA1", oauth_timestamp="1748300100", oauth_token="req-token-key", oauth_verifier="verifier-xyz", oauth_version="1.0""`;
+
+exports[`signRequest — HMAC-SHA1 signature pinning > produces the expected Authorization header for a POST with no token 1`] = `"OAuth oauth_callback="http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fmsr%2Fcallback", oauth_consumer_key="test-consumer-key", oauth_nonce="abc123fixed", oauth_signature="cUn%2Fry3VT3WT%2BegQ0KqDNOLCZAc%3D", oauth_signature_method="HMAC-SHA1", oauth_timestamp="1748300000", oauth_version="1.0""`;
