@@ -23,6 +23,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  const contentLength = request.headers.get("content-length");
+  if (contentLength && Number(contentLength) > MAX_BYTES) {
+    return NextResponse.json({ error: "file too large" }, { status: 413 });
+  }
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -41,7 +46,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "file too large" }, { status: 413 });
   }
 
-  if (!file.name.endsWith(".axdb")) {
+  if (!file.name.toLowerCase().endsWith(".axdb")) {
     return NextResponse.json({ error: "file must have .axdb extension" }, { status: 400 });
   }
 
