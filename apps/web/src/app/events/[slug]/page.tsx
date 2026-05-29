@@ -4,6 +4,7 @@ import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
 import { buildLeaderboard } from "@/lib/leaderboard";
 import { findSmugmugEventFolder } from "@/lib/smugmug";
+import { requireRmrMember } from "@/lib/session";
 import { LeaderboardTable } from "./leaderboard-table";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,9 @@ export default async function EventPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+
+  // Gate runs before notFound() so unauth viewers can't probe slug existence.
+  await requireRmrMember(`/events/${slug}`);
 
   const event = await prisma.event.findUnique({
     where: { slug },

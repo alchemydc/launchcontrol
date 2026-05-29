@@ -6,6 +6,7 @@ import { ProgressionChart, type ProgressionPoint } from "./progression-chart";
 import { TimeDeltaChart } from "./time-delta-chart";
 import { BackButton } from "@/components/back-button";
 import { EventHistory } from "./event-history";
+import { requireRmrMember } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,10 @@ export default async function DriverPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  // Gate runs before notFound() so unauth viewers can't probe driver id existence.
+  await requireRmrMember(`/drivers/${id}`);
+
   const driverId = Number(id);
   if (!Number.isInteger(driverId) || driverId <= 0) notFound();
 

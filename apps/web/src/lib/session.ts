@@ -11,8 +11,9 @@
  * redactLastName() and stores only lastInitial.
  */
 
-import { getIronSession } from "iron-session";
+import { getIronSession, type IronSession } from "iron-session";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 // ---------------------------------------------------------------------------
 // SESSION_SECRET is checked lazily on first use — not at module load — so
@@ -53,6 +54,7 @@ export interface SessionData {
 
 export interface RequestTokenSessionData {
   oauthTokenSecret?: string;
+  returnTo?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,4 +92,59 @@ export async function getRequestTokenSession() {
       path: "/api/auth/msr/callback",
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// sanitizeReturnTo — strict open-redirect validator
+//
+// Returns the sanitized path string, or null if the value is unsafe/invalid.
+// Callers should fall back to "/" when null is returned.
+// ---------------------------------------------------------------------------
+
+export function sanitizeReturnTo(raw: string | null | undefined): string | null {
+  if (!raw || raw.length < 1 || raw.length > 512) return null;
+
+  // Reject control chars, whitespace, backslashes, and percent-encoded control
+  // chars (%00–%1f, %7f) before any further parsing.
+  if (/[\x00-\x1f\x7f\s\\]/.test(raw)) return null;
+  if (/%(?:0[0-9a-f]|1[0-9a-f]|7f)/i.test(raw)) return null;
+
+  // Must start with exactly "/" and second char must not be "/" or "\" (blocks //evil.com and /\evil.com).
+  if (!raw.startsWith("/") || raw[1] === "/" || raw[1] === "\\") return null;
+
+  // Parse via URL to normalize; reject if the host is anything other than the placeholder.
+  let url: URL;
+  try {
+    url = new URL(raw, "http://placeholder");
+  } catch {
+    return null;
+  }
+  if (url.host !== "placeholder") return null;
+
+  // Reconstruct without fragment; re-check the leading-slash invariant on the result.
+  const result = url.pathname + url.search;
+  if (!result.startsWith("/") || result[1] === "/" || result[1] === "\\") return null;
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// requireRmrMember — page-level gate
+//
+// Callers MUST NOT wrap this in try/catch — redirect() throws NEXT_REDIRECT.
+// Gate runs before any data fetch so unauthorized viewers cannot probe slug
+// existence via 404 vs redirect behavior.
+// ---------------------------------------------------------------------------
+
+export async function requireRmrMember(
+  returnPath?: string
+): Promise<{ session: IronSession<SessionData> }> {
+  const session = await getSession();
+
+  if (!session.msrUid || !session.isRmrMember) {
+    const safe = returnPath ? sanitizeReturnTo(returnPath) : null;
+    redirect(safe ? `/?returnTo=${encodeURIComponent(safe)}` : "/");
+  }
+
+  return { session };
 }

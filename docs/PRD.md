@@ -30,6 +30,7 @@ MVP targets PCA RMR specifically, but design choices that don't add cost should 
 
 - **MSR OAuth 1.0a login** — authenticate users against their MSR profile. Chosen because RMR PCA AX drivers must already have an MSR account to register for events.
 - **Signed session cookie** — HttpOnly, SameSite=Lax, signed, keyed on the MSR user UID returned by `/rest/me`.
+- **RMR-member gate on all event/leaderboard pages** — `/`, `/events/[slug]`, `/leaderboard`, `/leaderboard/[year]`, and `/drivers/[id]` render to RMR-organization members only. Unauthenticated visitors and signed-in non-RMR users see a landing page at `/` describing what they'll unlock. Deep links round-trip through OAuth via `?returnTo=`.
 - **Dynamic public calendar** — `/calendar` fetches the RMR org's MSR event calendar server-side and caches it for 5 minutes.
 
 #### 1.3.2 VisualAX `.axdb` ingestion
@@ -55,7 +56,7 @@ Driver-submitted YouTube/Vimeo links remain a Future scope item, not shipped.
 - **Ingestion correctness:** integration test ingests the synthetic `apps/web/tests/fixtures/synthetic.axdb` (committed) and asserts driver counts, run counts, class PAX multipliers, and that every persisted `Driver.lastInitial` matches `/^[A-Z?]\./`. A regex sweep on the dumped DB confirms no full last name beyond the first character appears in any Driver, Entry, or Run row.
 - **PII rule:** the full last name of any driver is used only transiently to compute the identity hash and must never be persisted to the app DB or appear in any leaderboard rendering.
 - **Auth boundary:** every route under `/api/admin/*` returns 401 unless the session is present and the MSR UID is in the admin allowlist.
-- **Public reads** of completed event leaderboards do **not** presently require auth.
+- **Auth boundary:** all event/leaderboard pages (`/`, `/events/[slug]`, `/leaderboard`, `/leaderboard/[year]`, `/drivers/[id]`) require a valid MSR session AND RMR-organization membership. Unauth and non-RMR visitors are routed to the landing page at `/`. Deep-link `returnTo` is honored only for RMR members (dropped for non-RMR to avoid bounce loops) and sanitized against open-redirect on both write and read.
 - **Vercel:** preview deploy for every PR; main deploys to production on merge.
 
 ---
