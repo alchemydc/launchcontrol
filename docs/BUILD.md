@@ -6,7 +6,7 @@ Implementation reference and build history for [Launch Control](https://launchco
 
 ## Current Status
 
-**Status (2026-05-28):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M2 ✓ · M4 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus a dynamic qualifying threshold (M1.13). Members can now sign in with their MotorsportReg account via the header nav and view `/me`. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
+**Status (2026-05-29):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M2 ✓ · M2.1 ✓ · M4 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus a dynamic qualifying threshold (M1.13). Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. Event data and leaderboards (event list, event detail, season standings, driver profiles) are now restricted to MSR-authenticated RMR members; unauth and non-RMR visitors see a landing page at `/` and deep links survive sign-in via a sanitized `returnTo` round-trip. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
 
 ---
 
@@ -509,6 +509,26 @@ M2 ships full MSR OAuth 1.0a sign-in end-to-end: a three-legged OAuth handshake 
 - **Sign-in policy: require RMR membership?** **No — record only.** `isRmrMember` is stored on the session for UI affordances but does not gate sign-in. Admin features gate via the existing env-backed allowlist (`ADMIN_MSR_UIDS`). Push to future scope when the app expands beyond a single club.
 
 **Definition of Done met:** signed-in user lands on `/me` after a real OAuth handshake against live MSR; session cookie roundtrips and survives page refresh; logout clears it and subsequent `/me` hits redirect to `/login`; secrets never appear in DB, logs, or client payloads. (Non-RMR-member smoke deferred — only RMR-member accounts tested in this session.)
+
+### M2.1 — RMR-only gate ✓ (done 2026-05-29)
+
+**What landed:** `/` branches on session state — RMR members see the events-home view, everyone else sees the `Landing` component. A `requireRmrMember(returnPath?)` page-level gate covers the four detail/list routes (`/events/[slug]`, `/leaderboard`, `/leaderboard/[year]`, `/drivers/[id]`). The header nav hides Events and Leaderboard links for non-members. `returnTo` deep-link round-trip is wired through the existing transient `lc_msr_req` cookie. 18 vitest cases cover `sanitizeReturnTo`.
+
+**Helpers added to `apps/web/src/lib/session.ts`:**
+- `sanitizeReturnTo(raw): string | null` — strict open-redirect validator (6 rules + percent-encoded control-char check, see Gotcha 5).
+- `requireRmrMember(returnPath?)` — page-level gate; throws `redirect()` to `/?returnTo=<encoded>` when the caller isn't an RMR member.
+
+**Files changed (12 total):**
+- Modified: `apps/web/src/app/api/auth/msr/callback/route.ts`, `apps/web/src/app/api/auth/msr/login/route.ts`, `apps/web/src/app/drivers/[id]/page.tsx`, `apps/web/src/app/events/[slug]/page.tsx`, `apps/web/src/app/leaderboard/[year]/page.tsx`, `apps/web/src/app/leaderboard/page.tsx`, `apps/web/src/app/page.tsx`, `apps/web/src/components/header-nav.tsx`, `apps/web/src/lib/session.ts`
+- New: `apps/web/src/app/_events-home.tsx`, `apps/web/src/components/landing.tsx`, `apps/web/tests/return-to.test.ts`
+
+**Gotchas:**
+
+1. **Never wrap `requireRmrMember` in `try/catch`** — `redirect()` throws `NEXT_REDIRECT`; swallowing it produces a blank page. Callers MUST let the throw propagate.
+2. **Gate runs before `notFound()` on dynamic routes** (`/events/[slug]`, `/leaderboard/[year]`, `/drivers/[id]`). Otherwise unauth viewers can distinguish valid from invalid slugs/ids by 404-vs-redirect timing.
+3. **`lc_msr_req` cookie path-scoping is about send, not set.** The cookie is created by `/api/auth/msr/login` and stored with `path=/api/auth/msr/callback`. The browser only sends it back to URLs matching that path — `Set-Cookie` from any origin path is honored. Adding `returnTo` to its payload changes nothing about the transport.
+4. **`returnTo` is silently dropped for non-RMR users in the callback.** Otherwise the callback redirects to (say) `/leaderboard`, the gate immediately bounces back to `/?returnTo=...`, and the user sees a flicker. Deliberate trade-off — non-RMR users always land on `/` after sign-in.
+5. **`sanitizeReturnTo` rejects percent-encoded control chars (`%00–%1f`, `%7f`) in addition to raw control chars.** The Node `URL` constructor keeps percent-encoded controls encoded in `pathname` rather than decoding them, so a raw `[\x00-\x1f\x7f]` regex alone misses `/path%0d%0aSet-Cookie:x`. The second regex (`/%(?:0[0-9a-f]|1[0-9a-f]|7f)/i`) closes that gap.
 
 ### M4 — Admin upload ✓ (done 2026-05-28)
 

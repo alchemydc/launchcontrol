@@ -21,7 +21,7 @@ import { redirect } from "next/navigation";
 import { MSR_ACCESS_TOKEN_URL, MSR_ME_URL } from "@/lib/msr-endpoints";
 import { parseFormEncoded, signRequest, signedMsrFetch } from "@/lib/msr";
 import type { MsrMeResponse } from "@/lib/msr";
-import { getRequestTokenSession, getSession } from "@/lib/session";
+import { getRequestTokenSession, getSession, sanitizeReturnTo } from "@/lib/session";
 import { redactLastName } from "@/lib/pii";
 
 export const runtime = "nodejs";
@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
   // 2. Read and immediately destroy the transient request-token cookie.
   const reqSession = await getRequestTokenSession();
   const oauthTokenSecret = reqSession.oauthTokenSecret;
+  const rawReturnTo = reqSession.returnTo;
   reqSession.destroy();
 
   if (!oauthTokenSecret) {
@@ -111,6 +112,8 @@ export async function GET(request: NextRequest) {
   session.isRmrMember = isRmrMember;
   await session.save();
 
-  // 9. Send to events home.
-  redirect("/");
+  // 9. Redirect: RMR members go to returnTo (re-validated) or home; non-members
+  //    always land on "/" so the landing page renders cleanly (avoids bounce loop).
+  const returnTo = sanitizeReturnTo(rawReturnTo);
+  redirect(isRmrMember && returnTo ? returnTo : "/");
 }

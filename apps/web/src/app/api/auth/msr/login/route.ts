@@ -8,14 +8,15 @@
  *  4. 302 to MSR authorize page.
  */
 
+import type { NextRequest } from "next/server";
 import { redirect } from "next/navigation";
 import { MSR_AUTHORIZE_URL_BASE, MSR_REQUEST_TOKEN_URL } from "@/lib/msr-endpoints";
 import { parseFormEncoded, signRequest } from "@/lib/msr";
-import { getRequestTokenSession } from "@/lib/session";
+import { getRequestTokenSession, sanitizeReturnTo } from "@/lib/session";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const callbackUrl = process.env.MSR_OAUTH_CALLBACK_URL;
   if (!callbackUrl) {
     throw new Error("MSR_OAUTH_CALLBACK_URL environment variable is not set");
@@ -56,9 +57,11 @@ export async function GET() {
     );
   }
 
-  // 3. Stash the token secret in the transient session cookie.
+  // 3. Stash the token secret (and optional returnTo) in the transient session cookie.
   const reqSession = await getRequestTokenSession();
   reqSession.oauthTokenSecret = oauthTokenSecret;
+  const returnTo = sanitizeReturnTo(request.nextUrl.searchParams.get("returnTo"));
+  if (returnTo) reqSession.returnTo = returnTo;
   await reqSession.save();
 
   // 4. Redirect to the MSR authorize page.

@@ -25,12 +25,16 @@ export async function HeaderNav() {
 
   return (
     <nav className="flex items-center gap-4">
-      <Link href="/" className={linkClass}>
-        Events
-      </Link>
-      <Link href="/leaderboard" className={linkClass}>
-        Leaderboard
-      </Link>
+      {session.isRmrMember && (
+        <Link href="/" className={linkClass}>
+          Events
+        </Link>
+      )}
+      {session.isRmrMember && (
+        <Link href="/leaderboard" className={linkClass}>
+          Leaderboard
+        </Link>
+      )}
       {showAdmin && (
         <Link href="/admin" className={linkClass}>
           Admin
