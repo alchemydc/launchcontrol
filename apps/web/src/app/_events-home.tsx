@@ -17,7 +17,7 @@ function formatDateShort(date: Date): string {
 export async function EventsHome({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; returnTo?: string }>;
+  searchParams: Promise<{ year?: string; returnTo?: string | string[] }>;
 }) {
   const { year: yearParam } = await searchParams;
 

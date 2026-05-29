@@ -101,7 +101,8 @@ export async function getRequestTokenSession() {
 // Callers should fall back to "/" when null is returned.
 // ---------------------------------------------------------------------------
 
-export function sanitizeReturnTo(raw: string | null | undefined): string | null {
+export function sanitizeReturnTo(raw: string | string[] | null | undefined): string | null {
+  if (Array.isArray(raw)) return null;
   if (!raw || raw.length < 1 || raw.length > 512) return null;
 
   // Reject control chars, whitespace, backslashes, and percent-encoded control

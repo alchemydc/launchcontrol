@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; returnTo?: string }>;
+  searchParams: Promise<{ year?: string; returnTo?: string | string[] }>;
 }) {
   const session = await getSession();
   const { returnTo: rawReturnTo } = await searchParams;

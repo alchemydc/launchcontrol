@@ -86,4 +86,8 @@ describe("sanitizeReturnTo — edge cases", () => {
   it("rejects a string with a newline", () => {
     expect(sanitizeReturnTo("/path\nnewline")).toBeNull();
   });
+
+  it("rejects array input (repeated query keys)", () => {
+    expect(sanitizeReturnTo(["/leaderboard", "/drivers/1"])).toBeNull();
+  });
 });
