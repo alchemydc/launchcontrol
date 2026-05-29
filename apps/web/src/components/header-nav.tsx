@@ -10,6 +10,7 @@
 
 import Link from "next/link";
 import { getSession } from "@/lib/session";
+import { isAdmin } from "@/lib/admin";
 
 const linkClass =
   "text-sm text-muted-foreground hover:text-foreground transition-colors";
@@ -20,6 +21,7 @@ export async function HeaderNav() {
   const displayName = isSignedIn
     ? `${session.firstName ?? ""} ${session.lastInitial ?? ""}`.trim()
     : null;
+  const showAdmin = isAdmin(session.msrUid);
 
   return (
     <nav className="flex items-center gap-4">
@@ -29,6 +31,11 @@ export async function HeaderNav() {
       <Link href="/leaderboard" className={linkClass}>
         Leaderboard
       </Link>
+      {showAdmin && (
+        <Link href="/admin" className={linkClass}>
+          Admin
+        </Link>
+      )}
       {isSignedIn ? (
         <Link href="/me" className={linkClass}>
           {displayName}

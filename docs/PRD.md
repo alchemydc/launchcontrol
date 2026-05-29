@@ -62,9 +62,7 @@ Driver-submitted YouTube/Vimeo links remain a Future scope item, not shipped.
 
 ## Part 3 · Active Open Questions
 
-| # | Question | Blocks | Owner |
-|---|----------|--------|-------|
-| 5 | Admin allowlist: which MSR UIDs / emails bootstrap as admin? | M4 | TBD |
+No active open questions.
 
 ---
 

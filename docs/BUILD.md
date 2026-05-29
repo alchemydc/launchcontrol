@@ -6,7 +6,7 @@ Implementation reference and build history for [Launch Control](https://launchco
 
 ## Current Status
 
-**Status (2026-05-28):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M2 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus a dynamic qualifying threshold (M1.13). Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
+**Status (2026-05-28):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M2 ✓ · M4 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus a dynamic qualifying threshold (M1.13). Members can now sign in with their MotorsportReg account via the header nav and view `/me`. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
 
 ---
 
@@ -510,6 +510,64 @@ M2 ships full MSR OAuth 1.0a sign-in end-to-end: a three-legged OAuth handshake 
 
 **Definition of Done met:** signed-in user lands on `/me` after a real OAuth handshake against live MSR; session cookie roundtrips and survives page refresh; logout clears it and subsequent `/me` hits redirect to `/login`; secrets never appear in DB, logs, or client payloads. (Non-RMR-member smoke deferred — only RMR-member accounts tested in this session.)
 
+### M4 — Admin upload ✓ (done 2026-05-28)
+
+M4 adds a browser-based `.axdb` upload workflow for admins, so the timing chief can publish post-event results without shell access. The same `ingestAxdb()` module from M1 is reused — the only new code is the authorization layer, the upload validation helper, the admin UI, and the API route.
+
+**Authorization model:**
+
+- `ADMIN_MSR_UIDS` — a comma-separated env var listing the MSR UIDs of admins. No default, no fallback; if unset, no one is admin and `/admin` returns 404 for everyone. Set in Vercel env per deployment environment by the operator.
+- `isAdmin(msrUid)` in `apps/web/src/lib/admin.ts` — pure function, reads env per-call. Returns `false` for any falsy UID or missing/empty env var.
+- `/admin/layout.tsx` calls `notFound()` for non-admins — 404 rather than 403 so the route's existence is not disclosed to logged-in non-admins. Layout-level gate covers `/admin`, `/admin/ingest`, and any future `/admin/*` pages.
+- `POST /api/admin/ingest` independently re-checks session (401) and `isAdmin()` (403). Defense in depth — the route is independently reachable without the UI.
+
+**Upload validation (`apps/web/src/lib/axdb-validate.ts`):**
+
+Three layers before `ingestAxdb()` touches the data:
+1. **Size cap** — 413 if `file.size > 4 MB`. Fits under Vercel Hobby's 4.5 MB body limit; observed RMR `.axdb` files are well under 1 MB.
+2. **Magic header** — first 16 bytes must equal `"SQLite format 3\0"`. Cheap check; short-circuits without writing to disk.
+3. **`PRAGMA quick_check`** — write to `os.tmpdir()/axdb-{uuid}.axdb`, open read-only with `better-sqlite3`, run `PRAGMA quick_check`. If not `"ok"`, unlink and return `{ ok: false }`. If ok, return `{ ok: true, tempPath }` for the caller to hand directly to `ingestAxdb()`.
+
+`ingestAxdb()` then applies its own structural checks (required tables, single-event guard, disposition validation) before any DB write.
+
+**Temp-file lifecycle:** the buffer is written to `os.tmpdir()` for the `quick_check` and passed to `ingestAxdb()`. The route handler unlinks it in `finally` regardless of success or failure.
+
+**API route (`apps/web/src/app/api/admin/ingest/route.ts`):**
+
+Validation pipeline in order: session present → admin allowlist → parse FormData → size cap → `.axdb` extension hint → buffer + validate → ingest → cleanup → audit log → 200 JSON. Ingest errors surface as 422 with the error message.
+
+`export const runtime = "nodejs"` — `better-sqlite3` requires native bindings; Edge runtime is not supported.
+
+Audit log: `console.log({ event: "admin-ingest", admin: msrUid, status, slug, counts })`. Persistent `Ingest` table is deferred to post-MVP.
+
+**Admin UI:**
+
+- `/admin` — landing page with a card linking to `/admin/ingest`. Room for future admin cards.
+- `/admin/ingest` — server component rendering the client `UploadForm`.
+- `UploadForm` (`"use client"`) — file input + upload button. Three states: `idle | uploading | done`. Success: event name (linked to `/events/[slug]`), slug, four counts, and a "Re-uploaded — no changes" badge when `status === "unchanged"`. Error: inline error message. Uses only existing shadcn components (`button`, `input`, `card`, `badge`).
+
+**Header nav:** `isAdmin()` checked in `HeaderNav` (server component); "Admin" link rendered between "Leaderboard" and the user display name only when the session UID is allowlisted.
+
+**Env vars added to `.env.example`:** `ADMIN_MSR_UIDS=` with a comment on the comma-separated format.
+
+**Files added:**
+- `apps/web/src/lib/admin.ts`
+- `apps/web/src/lib/axdb-validate.ts`
+- `apps/web/src/app/admin/layout.tsx`
+- `apps/web/src/app/admin/page.tsx`
+- `apps/web/src/app/admin/ingest/page.tsx`
+- `apps/web/src/app/admin/ingest/upload-form.tsx`
+- `apps/web/src/app/api/admin/ingest/route.ts`
+- `apps/web/tests/admin.test.ts`
+- `apps/web/tests/axdb-validate.test.ts`
+
+**Security posture:**
+- Admins are trusted users (per PRD §1.3), so no CSRF tokens or rate limiting in MVP. Uploaded *content* is treated as untrusted — three validation layers before any DB write.
+- No persistence of the uploaded buffer beyond the `os.tmpdir()` file deleted in `finally`. Driver last names (PII) transit memory only and are redacted by `ingestAxdb()` before any DB write.
+- `ADMIN_MSR_UIDS` is env-only, no hardcoded fallback. If unset, no one is admin.
+
+**Out of scope for M4 (future):** persistent audit table, rate limiting, chunked/resumable uploads for files >4 MB, background-worker hand-off.
+
 ### M3 — Public calendar (target: 0.5 session, after M2)
 
 - `/calendar` server-fetches `/rest/calendars/organization/{RMR_ORG_ID}`.
@@ -545,6 +603,7 @@ Resolved open questions from PRD development — preserved here as context for f
 | 12 | Multi-event `.axdb` support. | VisualAX format permits multiple events per file (unused by RMR). Ingest enforces single-event with a fail-loud guard; full multi-event support deferred to post-MVP if a region adopts the season-points feature. | 2026-05-27 | post-M1.12 |
 | 13 | Season qualifying threshold and single-car-per-season rule. | Threshold dynamic per season: `floor(N/2) + 1` (above 51%). Qualifying scores must all be in one car (primary = most events, tiebreak by cumulative points). Chair confirmed prior season PCA Series exports did not enforce the single-car rule. Car key is normalized `carDescription` only (numbers float per-event for non-permanent-number drivers). | 2026-05-27 | M1.13 |
 | 14 | M2 open implementation questions. | Callback URL not pre-registered with MSR (accepts any `oauth_callback`); `/rest/me.json` shape pinned as `MsrMeResponse`; sign-in policy is record-only (no RMR-gate, admin via `ADMIN_MSR_UIDS`); token revocation behaviour still untested. See M2 section for details. | 2026-05-28 | M2 |
+| 15 | Admin allowlist: which MSR UIDs bootstrap as admin? | `ADMIN_MSR_UIDS` env var (comma-separated). Set in Vercel env per deployment environment; no default, no fallback — if unset, no one is admin. The timing chief's UID is added to the Vercel preview and prod env vars by the operator after M4 deploys. | 2026-05-28 | M4 |
 
 ---
 
