@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ export function UploadForm() {
   const [state, setState] = useState<State>("idle");
   const [result, setResult] = useState<IngestResult | null>(null);
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -65,14 +66,15 @@ export function UploadForm() {
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              <label
-                htmlFor="axdb-file"
-                className={cn(buttonVariants({ variant: "outline" }), "cursor-pointer")}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
               >
                 Choose .axdb file
-              </label>
+              </Button>
               <input
-                id="axdb-file"
+                ref={fileInputRef}
                 type="file"
                 name="file"
                 accept=".axdb"
@@ -127,8 +129,11 @@ export function UploadForm() {
                   <li>Entries: {result.counts.entries}</li>
                   <li>Runs: {result.counts.runs}</li>
                 </ul>
-                <Link href={`/events/${result.event.slug}`} className="mt-2">
-                  <Button variant="default" className="w-full">View results →</Button>
+                <Link
+                  href={`/events/${result.event.slug}`}
+                  className={cn(buttonVariants({ variant: "default" }), "mt-2 w-full")}
+                >
+                  View results →
                 </Link>
               </>
             ) : (
