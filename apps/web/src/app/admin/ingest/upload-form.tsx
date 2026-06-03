@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -21,6 +21,8 @@ type IngestResult =
 export function UploadForm() {
   const [state, setState] = useState<State>("idle");
   const [result, setResult] = useState<IngestResult | null>(null);
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -63,8 +65,43 @@ export function UploadForm() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            <Input type="file" name="file" accept=".axdb" required />
-            <Button type="submit" disabled={state === "uploading"}>
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Choose .axdb file
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                name="file"
+                accept=".axdb"
+                required
+                style={{
+                  position: "absolute",
+                  width: 1,
+                  height: 1,
+                  padding: 0,
+                  margin: -1,
+                  overflow: "hidden",
+                  clip: "rect(0,0,0,0)",
+                  whiteSpace: "nowrap",
+                  border: 0,
+                }}
+                onChange={(e) => setSelectedName(e.target.files?.[0]?.name ?? null)}
+              />
+              <span
+                className={cn(
+                  "text-sm truncate",
+                  selectedName ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
+                {selectedName ?? "No file selected"}
+              </span>
+            </div>
+            <Button type="submit" disabled={state === "uploading" || !selectedName}>
               {state === "uploading" ? "Uploading..." : "Upload"}
             </Button>
           </form>
@@ -79,14 +116,12 @@ export function UploadForm() {
           <CardContent className="flex flex-col gap-2">
             {result.ok ? (
               <>
-                {result.status === "unchanged" && (
-                  <Badge variant="outline">Re-uploaded — no changes</Badge>
+                {result.status === "unchanged" ? (
+                  <Badge variant="warning">Re-uploaded — no changes</Badge>
+                ) : (
+                  <Badge variant="success">Ingest succeeded</Badge>
                 )}
-                <p className="text-sm font-medium">
-                  <Link href={`/events/${result.event.slug}`} className="underline underline-offset-4 hover:text-primary">
-                    {result.event.name}
-                  </Link>
-                </p>
+                <p className="text-sm font-medium">{result.event.name}</p>
                 <p className="text-xs text-muted-foreground">Slug: {result.event.slug}</p>
                 <ul className="text-xs text-muted-foreground flex flex-col gap-0.5">
                   <li>Classes: {result.counts.classes}</li>
@@ -94,6 +129,12 @@ export function UploadForm() {
                   <li>Entries: {result.counts.entries}</li>
                   <li>Runs: {result.counts.runs}</li>
                 </ul>
+                <Link
+                  href={`/events/${result.event.slug}`}
+                  className={cn(buttonVariants({ variant: "default" }), "mt-2 w-full")}
+                >
+                  View results →
+                </Link>
               </>
             ) : (
               <p className="text-sm text-destructive">{result.error}</p>

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata: Metadata = {
@@ -17,9 +19,14 @@ export default function AdminPage() {
               <CardTitle>Ingest .axdb</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Upload a post-event VisualAX .axdb file to publish results.
-              </p>
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Upload a post-event VisualAX .axdb file to publish results.
+                </p>
+                <span className={cn(buttonVariants({ variant: "default", size: "default" }), "pointer-events-none")} aria-hidden={true}>
+                  Upload .axdb file →
+                </span>
+              </div>
             </CardContent>
           </Card>
         </Link>
