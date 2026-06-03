@@ -633,6 +633,14 @@ Out of scope for the MVP but noted to keep prior thinking discoverable:
 
 - **Containerization** (Docker / `docker-compose`) for parity between dev, preview, and prod.
 - **Background ingestion worker** if `.axdb` uploads outgrow Vercel function limits.
+- **Revisit the `better-sqlite3` dependency.** `apps/web/src/lib/axdb-validate.ts` and `apps/web/src/lib/ingest.ts` both import `better-sqlite3` to read user-uploaded `.axdb` SQLite files. It is a native N-API addon (statically links SQLite C) and has caused real friction:
+  - Every install needs either a `prebuild-install` binary matching `<node-abi>-<platform>-<arch>` or a fresh `node-gyp` compile (Python + clang). Node 24 / ABI v137 on darwin-arm64 may not have a published prebuild yet, forcing source builds.
+  - `node-gyp` detects macOS Command Line Tools via `pkgutil --pkg-info=com.apple.pkg.CLTools_Executables` — not `xcode-select -p`. If the receipt is missing (CLT installed by a non-pkg path), the build aborts with "No Xcode or CLT version detected!" even though the toolchain is on disk.
+  - Vercel-vs-CI strictness drift hit us on 2026-06-03: a malformed `pnpm-lock.yaml` from Dependabot passed Vercel's default `pnpm install` (regenerates lockfile in build sandbox) but broke GH Actions' `pnpm install --frozen-lockfile`. See `feedback_dependabot_lockfile_duplicate_keys` memory; consider setting Vercel's install command to `pnpm install --frozen-lockfile` so prod and CI fail together.
+  - **Candidate replacements** (dig in later — picking depends on confirming the runtime Node patch version on Vercel and CI):
+    - **`node:sqlite`** (built into Node ≥ 22.5; stable without flag in recent 22.x patch releases and Node 24). Zero install, no compile, sync API in the same shape as `better-sqlite3` — mechanical diff in the two consumer files. Strongest candidate.
+    - **`sql.js`** (SQLite compiled to WASM). Truly no native, runs anywhere Node runs. Tradeoffs: async + whole-file-into-memory + ~2–3× slower than native. Irrelevant for `.axdb` sizes; would require restructuring sync code to async.
+    - **`@libsql/client`** (already in deps via the Prisma adapter for Turso). Supports `file:` URLs for local SQLite — but is still native underneath (platform-specific prebuilds) and async-only, so it swaps one native dep for another and forces an async refactor. Lowest payoff.
 
 ---
 
