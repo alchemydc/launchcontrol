@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata: Metadata = {
@@ -16,17 +15,15 @@ export default function AdminPage() {
         <Link href="/admin/ingest">
           <Card className="cursor-pointer hover:border-primary/40 transition-colors">
             <CardHeader>
-              <CardTitle>Ingest .axdb</CardTitle>
+              <CardTitle className="flex items-center justify-between">
+                Ingest .axdb
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col gap-3">
-                <p className="text-sm text-muted-foreground">
-                  Upload a post-event VisualAX .axdb file to publish results.
-                </p>
-                <span className={cn(buttonVariants({ variant: "default", size: "default" }), "pointer-events-none")} aria-hidden={true}>
-                  Upload .axdb file →
-                </span>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                Upload a post-event VisualAX .axdb file to publish results.
+              </p>
             </CardContent>
           </Card>
         </Link>
