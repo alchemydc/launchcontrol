@@ -6,7 +6,7 @@ Implementation reference and build history for [Launch Control](https://launchco
 
 ## Current Status
 
-**Status (2026-05-29):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M2 ✓ · M2.1 ✓ · M4 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (best-4-of-N, per-class standings, multi-season nav), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus a dynamic qualifying threshold (M1.13). Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. Event data and leaderboards (event list, event detail, season standings, driver profiles) are now restricted to MSR-authenticated RMR members; unauth and non-RMR visitors see a landing page at `/` and deep links survive sign-in via a sanitized `returnTo` round-trip. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
+**Status (2026-06-08):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M1.14 ✓ · M2 ✓ · M2.1 ✓ · M4 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (top-K-of-N where K is the dynamic qualifying threshold, per-class standings, multi-season nav, multi-class & multi-car participation as of M1.14), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus the dynamic qualifying threshold from M1.13. Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. Event data and leaderboards (event list, event detail, season standings, driver profiles) are now restricted to MSR-authenticated RMR members; unauth and non-RMR visitors see a landing page at `/` and deep links survive sign-in via a sanitized `returnTo` round-trip. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
 
 ---
 
@@ -371,7 +371,7 @@ Unplanned feature: surface RMR's existing SmugMug event galleries directly on ev
 
 ### M1.9 — RMR season leaderboard ✓ (done 2026-05-21)
 
-**Note (2026-05-27):** Two scoring rules in this milestone are superseded by **M1.13**: the hardcoded "7 events / best 4" is replaced by a dynamic `floor(N/2) + 1` formula, and a single-car-per-season constraint is added. The historical milestone text below is preserved for context but does not describe current behavior.
+**Note (2026-05-27, amended 2026-06-08):** Three scoring rules in this milestone have moved. The hardcoded "7 events / best 4" was replaced by a dynamic `floor(N/2) + 1` formula in **M1.13**. The single-car-per-season constraint added in M1.13 and the single-season-class-per-driver constraint from M1.9 were both reversed in **M1.14**: drivers now appear in every class they entered, and multiple cars within a class all score. The historical milestone text below is preserved for context but does not describe current behavior.
 
 A season-long points standings page across each car class, plus the navigation shape to support both the current 2026 season and a historical 2025 season (data backfill in scope).
 
@@ -434,6 +434,8 @@ Backfill: wipe local + Turso schema via `pnpm --filter web wipe:db`, re-migrate,
 
 ### M1.13 — Dynamic qualifying threshold + single-car constraint ✓ (done 2026-05-27)
 
+**Superseded in part by M1.14 (2026-06-08):** the single-car-per-season constraint described below was reversed by the AX chair. Only the dynamic qualifying threshold (`floor(N/2) + 1`) survives. The historical text is preserved below.
+
 RMR chair feedback on 2026-05-27 identified two scoring rules in M1.9 that were wrong. The 2026 season is 6 events (not 7 — a June date was lost), so the hardcoded "best 4 of 7" constant was doubly wrong: the total was off by one, and the threshold must come from the data rather than code. The chair also clarified that championship points are car-specific: only events a driver ran in their primary car count.
 
 **Qualifying threshold:**
@@ -453,6 +455,37 @@ RMR chair feedback on 2026-05-27 identified two scoring rules in M1.9 that were 
 - The chair confirmed 2025 official PCA Series exports did not enforce the single-car rule either, so `docs/private/compare-official.ts` will newly report mismatches for affected 2025 drivers after M1.13 lands. This is correct — not a regression. Re-run it after the change to catalog drift.
 
 **Files changed:** `apps/web/src/lib/season-leaderboard.ts`, `apps/web/src/app/leaderboard/season-leaderboard-view.tsx`, `apps/web/src/app/leaderboard/page.tsx`, `apps/web/src/app/leaderboard/[year]/page.tsx`, `apps/web/tests/season-leaderboard.test.ts`, `apps/web/tests/driver-history.test.ts`, `apps/web/tests/fixtures/build-multi-event-season.mjs`.
+
+### M1.14 — Multi-class / multi-car season scoring ✓ (done 2026-06-08)
+
+AX chair update on 2026-06-08 reversed the single-car-per-season constraint introduced in M1.13. Drivers may now score points in multiple cars (across multiple classes) within a season. The dynamic qualifying threshold from M1.13 is retained unchanged.
+
+**New scoring rules (RMR PCA 2026 — region-specific):**
+
+- A driver appears in **every class** they entered. The single-season-class picker from M1.9 (and the primary-car picker from M1.13) are both removed.
+- For each `(driver, class)` pair, **all entries score** regardless of car. A driver who switches between a Boxster and a Cayman within CS gets points from both.
+- Per-class eligibility is computed independently: a `(driver, class)` row is **Official** when its scoring-event count `≥ qualifyingEvents` and **Provisional** otherwise. The Provisional badge already renders as `Provisional · N/threshold`.
+- "A driver can only win in a single class" (chair's wording) is enforced by arithmetic, not by code: the threshold is `floor(N/2) + 1`, strictly greater than `N/2`. Two times the threshold exceeds N, so no driver can clear the bar in two classes within a single season. Documented at the `qualifyingEventCount` helper.
+
+**Implementation notes:**
+
+- `apps/web/src/lib/season-leaderboard.ts` re-keys raw scores by `${driverId}|${classCode}` (composite). Three internal helpers were deleted: `normalizeCarKey`, the season-class derivation block, and the primary-car derivation block. The `SeasonStandingsRow.primaryCar` field is removed (it would have been ambiguous under multi-car) — no UI surface relied on it beyond the per-row caption display.
+- `apps/web/src/app/leaderboard/season-leaderboard-view.tsx` drops the per-row `primaryCar.carDescription` caption from `DriverCard` and `DriverTableRow`. No other UI change — the existing class-section layout already handles the same driverId appearing in two sections (the `/drivers/[id]` link still collapses to one profile).
+- Per-event scoring (Step 2) is unchanged. The fastest entry in each `(event, class)` cell earns 1000; others scale relative to that. The previous code already included all entries in the per-event fastest computation; only the standings-inclusion filter at the back end of the pipeline was tightening it. Removing that filter is the entire behavior change.
+- No schema or migration change. No re-ingest required.
+
+**Test fixture (unchanged data, updated expectations):**
+
+The synthetic 2026 fixture (6 events, 7 drivers) is unchanged on disk — only the comment block was rewritten. Standings under M1.14:
+
+- **C1:** Alex 4000 elig, Bea 3803 elig, Dee 1744 prov, Evan 806 prov.
+- **CS:** Fred 3797 elig, Gina 3766 elig, Cam 3000 prov, Dee 1967 prov, Bea 1000 prov.
+
+Notable: Bea and Dee now appear in both C1 and CS (Bea 5/CS-1, Dee 2/2). Fred's Cayman GT4 event-3 entry that M1.13 excluded now contributes 922 pts. Gina's three Cayman events that M1.13 excluded now contribute 775/741/817 pts.
+
+**Operational note:** `docs/private/compare-official.ts` newly reports drift in the *opposite* direction from the M1.13 transition — the official PCA Series exports from 2025 reportedly did not enforce single-car either, so the M1.14 numbers should *converge* on the official rendering for both 2025 and 2026 backfills. Re-run after deploy to catalog the new alignment.
+
+**Files changed:** `apps/web/src/lib/season-leaderboard.ts`, `apps/web/src/app/leaderboard/season-leaderboard-view.tsx`, `apps/web/tests/season-leaderboard.test.ts`, `apps/web/tests/fixtures/build-multi-event-season.mjs`, `docs/PRD.md`, `docs/BUILD.md`.
 
 ### M2 — MSR OAuth ✓ (done 2026-05-28)
 
@@ -624,6 +657,7 @@ Resolved open questions from PRD development — preserved here as context for f
 | 13 | Season qualifying threshold and single-car-per-season rule. | Threshold dynamic per season: `floor(N/2) + 1` (above 51%). Qualifying scores must all be in one car (primary = most events, tiebreak by cumulative points). Chair confirmed prior season PCA Series exports did not enforce the single-car rule. Car key is normalized `carDescription` only (numbers float per-event for non-permanent-number drivers). | 2026-05-27 | M1.13 |
 | 14 | M2 open implementation questions. | Callback URL not pre-registered with MSR (accepts any `oauth_callback`); `/rest/me.json` shape pinned as `MsrMeResponse`; sign-in policy is record-only (no RMR-gate, admin via `ADMIN_MSR_UIDS`); token revocation behaviour still untested. See M2 section for details. | 2026-05-28 | M2 |
 | 15 | Admin allowlist: which MSR UIDs bootstrap as admin? | `ADMIN_MSR_UIDS` env var (comma-separated). Set in Vercel env per deployment environment; no default, no fallback — if unset, no one is admin. The timing chief's UID is added to the Vercel preview and prod env vars by the operator after M4 deploys. | 2026-05-28 | M4 |
+| 16 | Single-car-per-season rule (M1.13) — keep or reverse? | Reversed per AX chair 2026-06-08. Drivers may now score points in multiple cars across multiple classes within a season. The dynamic qualifying threshold (`floor(N/2) + 1`) is retained, computed per `(driver, class)` pair. "A driver can only win one class" is enforced by arithmetic (2 × threshold > N), not by code. | 2026-06-08 | M1.14 |
 
 ---
 

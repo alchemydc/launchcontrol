@@ -90,11 +90,6 @@ function DriverCard({
           >
             {driver.driverName}
           </Link>
-          {driver.primaryCar?.carDescription && (
-            <p className="text-xs text-muted-foreground truncate">
-              {driver.primaryCar.carDescription}
-            </p>
-          )}
           {!driver.eligible && (
             <Badge variant="outline" className="mt-1 text-[10px]">
               Provisional · {driver.eventsCountedInClass}/
@@ -146,11 +141,6 @@ function DriverTableRow({
           >
             {driver.driverName}
           </Link>
-          {driver.primaryCar?.carDescription && (
-            <p className="text-xs text-muted-foreground truncate">
-              {driver.primaryCar.carDescription}
-            </p>
-          )}
           {!driver.eligible && (
             <Badge variant="outline" className="text-xs">
               Provisional · {driver.eventsCountedInClass}/
