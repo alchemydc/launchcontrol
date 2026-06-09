@@ -13,20 +13,25 @@
 //
 // Scenario (2026 season, classes C1 / CS):
 //
-//  Driver 1: Alex Arena    (member MES-001, C1 every event) — 6 events; best-4-of-6
-//  Driver 2: Bea Barton    (member MES-002, C1 events 1-4+6, CS event 5) — season class C1 (5 C1 entries)
+//  Driver 1: Alex Arena    (member MES-001, C1 every event) — 6 events; top-4-of-6
+//  Driver 2: Bea Barton    (member MES-002, C1 events 1-4+6, CS event 5)
+//                            — C1: 5 events (eligible); CS: 1 event (provisional 1/4)
 //  Driver 3: Cam Crane     (member MES-003, CS events 1-3 + DNF events 5+6) — provisional (3 < 4)
-//  Driver 4: Dee Dumas     (member MES-004, C1 events 1-2, CS events 3-4) — 2+2 tie → C1 (earliest)
+//  Driver 4: Dee Dumas     (member MES-004, C1 events 1-2, CS events 3-4)
+//                            — C1: 2 events (provisional 2/4); CS: 2 events (provisional 2/4)
 //  Driver 5: Evan Elias    (member MES-005, C1 event 1 only) — provisional (1 < 4)
-//  Driver 6: Fred Farr     (member MES-006, CS all 6 events) — primary car = Boxster S (5 of 6);
-//                            event 3 entry is Cayman GT4 (off-primary; excluded from season total).
-//                            Event 1 uses "boxster s" (lowercase) to test normalization; events 2,4,5,6 use "Boxster S".
-//                            latestDescription = "Boxster S" (from event 6, the last Boxster S event).
-//  Driver 7: Gina Grant    (member MES-007, CS all 6 events) — 3 events in "911", 3 in "Cayman";
-//                            count tie → cumulative-points tiebreak → primary = 911
-//                            (Gina is faster relative to field in 911 events).
+//  Driver 6: Fred Farr     (member MES-006, CS all 6 events, mixed cars)
+//                            Cars: Boxster S (events 1,2,4,5,6) and Cayman GT4 (event 3).
+//                            Event 1 uses "boxster s" (lowercase) to exercise pre-M1.14 normalization
+//                            tests; today the description has no scoring impact (multi-car allowed).
+//                            All 6 events score for Fred in CS.
+//  Driver 7: Gina Grant    (member MES-007, CS all 6 events, mixed cars)
+//                            Cars: 911 (events 1,2,3) and Cayman (events 4,5,6).
+//                            All 6 events score for Gina in CS.
 //
-// Dynamic qualifying threshold: floor(6/2)+1 = 4. Drivers need 4 scoring events to be eligible.
+// Dynamic qualifying threshold: floor(6/2)+1 = 4. Drivers need 4 scoring events
+// IN THAT CLASS to be eligible (Official); below threshold = Provisional.
+// Math: 2 × 4 = 8 > 6, so no driver can be Official in two classes this season.
 //
 // Cone math uses CONE_PENALTY_MS = 2000 (raw times stored as finish_tick - start_tick).
 // Alex's event 5 run: raw=54000ms + 1 cone → corrected=56000ms (only C1 scorer → 1000 pts).
@@ -36,60 +41,67 @@
 //   ingest should honor R1=59000ms as Cam's best at event 3.
 //   All other driver-events: bestcommittedrun_no points to their single (and fastest) run.
 //
-// Scoring assertions (documented in season-leaderboard.test.ts):
+// Per-event scoring (every entry contributes to its (event, class) field;
+// car identity has no effect on points):
 //
 //  Event 1 / C1  fastest = 50000ms (Alex) → 1000 pts
 //             Bea   55000ms → round(1000 * 50000 / 55000) = 909
 //             Dee   60000ms → round(1000 * 50000 / 60000) = 833
 //             Evan  62000ms → round(1000 * 50000 / 62000) = 806
 //  Event 1 / CS  fastest = 57000ms (Cam)  → 1000 pts
-//             Fred  62000ms ("boxster s" normalized = "boxster s") → round(1000 * 57000 / 62000) = 919
-//             Gina  58000ms (911) → round(1000 * 57000 / 58000) = 983
+//             Fred  62000ms (boxster s) → round(1000 * 57000 / 62000) = 919
+//             Gina  58000ms (911)       → round(1000 * 57000 / 58000) = 983
 //
 //  Event 2 / C1  fastest = 51000ms (Alex) → 1000 pts
 //             Bea   53000ms → round(1000 * 51000 / 53000) = 962
 //             Dee   56000ms → round(1000 * 51000 / 56000) = 911
 //  Event 2 / CS  fastest = 58000ms (Cam)  → 1000 pts
 //             Fred  63000ms (Boxster S) → round(1000 * 58000 / 63000) = 921
-//             Gina  59000ms (911) → round(1000 * 58000 / 59000) = 983
+//             Gina  59000ms (911)       → round(1000 * 58000 / 59000) = 983
 //
 //  Event 3 / C1  fastest = 52000ms (Alex) → 1000 pts
 //             Bea   54000ms → round(1000 * 52000 / 54000) = 963
-//  Event 3 / CS  Cam committed=59000ms (R1), Dee=61000ms
+//  Event 3 / CS  Cam committed = 59000ms (R1); R2=57000ms is the faster clean
+//             but the bestcommittedrun override pins R1.
 //             fastest = 59000ms (Cam) → 1000 pts
 //             Dee   61000ms → round(1000 * 59000 / 61000) = 967
-//             Fred  64000ms (Cayman GT4) → round(1000 * 59000 / 64000) = 922 [off-primary; excluded from Fred's total]
-//             Gina  60000ms (911) → round(1000 * 59000 / 60000) = 983
-//             (without override, Cam's faster R2=57000ms would give Dee 934 pts instead)
+//             Fred  64000ms (Cayman GT4) → round(1000 * 59000 / 64000) = 922
+//             Gina  60000ms (911)       → round(1000 * 59000 / 60000) = 983
+//             (without override, Cam's R2=57000ms would give Dee 934, Fred 891,
+//             Gina 950 — these assertions guard the committed-best path.)
 //
 //  Event 4 / C1  fastest = 53000ms (Alex) → 1000 pts
 //             Bea   57000ms → round(1000 * 53000 / 57000) = 930
-//  Event 4 / CS  fastest = 65000ms (Fred, Boxster S) → 1000 pts
-//             Gina  80000ms (Cayman) → round(1000 * 65000 / 80000) = 813
-//             (Dee's CS entry off-class; excluded)
+//  Event 4 / CS  fastest = 62000ms (Dee) → 1000 pts
+//             Fred  65000ms (Boxster S) → round(1000 * 62000 / 65000) = 954
+//             Gina  80000ms (Cayman)    → round(1000 * 62000 / 80000) = 775
 //
-//  Event 5 / C1  fastest = 56000ms (Alex, 54000+2000 cone) → 1000 pts
-//  Event 5 / CS  fastest = 66000ms (Fred, Boxster S) → 1000 pts
-//             Bea   60000ms → off-class for Bea; excluded
+//  Event 5 / C1  fastest = 56000ms (Alex, 54000 + 2000 cone) → 1000 pts
+//  Event 5 / CS  fastest = 60000ms (Bea) → 1000 pts
 //             Cam   DNF    → no CLEAN run (exercises CLEAN filter)
-//             Gina  81000ms (Cayman) → round(1000 * 66000 / 81000) = 815
+//             Fred  66000ms (Boxster S) → round(1000 * 60000 / 66000) = 909
+//             Gina  81000ms (Cayman)    → round(1000 * 60000 / 81000) = 741
 //
 //  Event 6 / C1  fastest = 55000ms (Alex) → 1000 pts
 //             Bea   58000ms → round(1000 * 55000 / 58000) = 948
 //  Event 6 / CS  fastest = 67000ms (Fred, "Boxster S") → 1000 pts
 //             Cam   DNF    → no CLEAN run
-//             Gina  82000ms (Cayman) → round(1000 * 67000 / 82000) = 817
+//             Gina  82000ms (Cayman)    → round(1000 * 67000 / 82000) = 817
 //
-// Alex's C1 scores: 1000 × 6 → best 4 = 4000; 2 dropped.
-// Bea's  C1 scores: 909, 962, 963, 930, 948 → top-4 = 963+962+948+930 = 3803; event-1 (909) dropped.
-// Cam's  CS scores: 1000, 1000, 1000   → total = 3000; eligible=false (3 < 4)
-// Dee's  C1 scores: 833, 911           → total = 1744 (2 events, tiebreak to C1, CS entries excluded)
-// Evan's C1 scores: 806                → total = 806; eligible=false (1 < 4)
-// Fred's CS Boxster S scores (primary): events 1,2,4,5,6 → 919+921+1000+1000+1000 = 4840; best 4 = 4000;
-//          event 3 Cayman GT4 excluded by single-car constraint.
-// Gina's CS 911 scores (primary): events 1,2,3 → 983×3 = 2949;
-//          Cayman scores (excluded): events 4,5,6 → 813+815+817 = 2445;
-//          eligible=false (only 3 primary-car events < 4).
+// Standings expectations (under M1.14 multi-class / multi-car):
+//
+//  C1:
+//    Alex  1000×6                              → top-4 = 4000 eligible
+//    Bea   909, 962, 963, 930, 948             → top-4 = 3803 eligible (909 dropped)
+//    Dee   833, 911                            → top-2 = 1744 provisional 2/4
+//    Evan  806                                 → 806 provisional 1/4
+//
+//  CS:
+//    Fred  919, 921, 922, 954, 909, 1000       → top-4 = 1000+954+922+921 = 3797 eligible
+//    Gina  983, 983, 983, 775, 741, 817        → top-4 = 983+983+983+817   = 3766 eligible
+//    Cam   1000, 1000, 1000                    → top-3 = 3000 provisional 3/4
+//    Dee   967, 1000                           → top-2 = 1967 provisional 2/4
+//    Bea   1000                                → 1000 provisional 1/4
 
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

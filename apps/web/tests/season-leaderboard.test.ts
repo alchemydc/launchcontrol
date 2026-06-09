@@ -55,13 +55,21 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 // Fixture overview (documented in build-multi-event-season.mjs):
 //
-//  Alex  (C1, 6 events)  → 1000 × 6, best 4 = 4000, 2 dropped
-//  Bea   (C1, 5 events + CS event 5 off-class) → 963+962+948+930 = 3803 (top-4 of 5; 909 dropped)
-//  Cam   (CS, 3 scoring events + DNF at events 5+6) → 1000 × 3 = 3000, eligible=false
-//  Dee   (2 C1 + 2 CS → tiebreak C1) → 833 + 911 = 1744
-//  Evan  (C1, 1 event)  → 806, eligible=false
-//  Fred  (CS, primary=Boxster S 5 events, event 3 Cayman GT4 excluded) → top-4 of 5 = 3921
-//  Gina  (CS, primary=911 3 events by cumulative-points tiebreak) → 983×3 = 2949, eligible=false
+// Multi-class / multi-car (M1.14): a driver appears in every class they
+// entered; multiple cars within the same class all count for points.
+//
+//  C1:
+//    Alex  1000×6                      → top-4 = 4000 eligible
+//    Bea   909, 962, 963, 930, 948     → top-4 = 3803 eligible (909 dropped)
+//    Dee   833, 911                    → 1744 provisional 2/4
+//    Evan  806                         → 806 provisional 1/4
+//
+//  CS:
+//    Fred  919, 921, 922, 954, 909, 1000 → top-4 = 3797 eligible (909+919 dropped)
+//    Gina  983, 983, 983, 775, 741, 817  → top-4 = 3766 eligible (775+741 dropped)
+//    Cam   1000, 1000, 1000              → 3000 provisional 3/4 (DNF at 5+6)
+//    Dee   967, 1000                     → 1967 provisional 2/4
+//    Bea   1000                          → 1000 provisional 1/4 (event 5 only)
 //
 // Dynamic qualifying threshold: floor(6/2)+1 = 4
 // ---------------------------------------------------------------------------
@@ -88,19 +96,19 @@ describe("buildSeasonLeaderboard(2026)", () => {
   // Assertion 1: Fastest driver in class = 1000 pts for every (event, class) group.
   it("fastest in class earns 1000 pts for every event × class group", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
-    // Directly: Alex wins every C1 event → all his scores are 1000
+    // Alex wins every C1 event → all his scores are 1000.
     const c1 = result.sections.find((s) => s.classCode === "C1")!;
     const alex = c1.drivers.find((d) => d.driverName === "Alex A.")!;
     for (const score of alex.scores) {
       expect(score.points).toBe(1000);
     }
-    // Cam wins all CS events she scored (events 1-3)
+    // Cam wins each CS event she scored (events 1-3, both DNF at 5+6).
     const cs = result.sections.find((s) => s.classCode === "CS")!;
     const cam = cs.drivers.find((d) => d.driverName === "Cam C.")!;
     for (const score of cam.scores) {
       expect(score.points).toBe(1000);
     }
-    // No score can exceed 1000
+    // No score can exceed 1000.
     for (const section of result.sections) {
       for (const driver of section.drivers) {
         for (const score of driver.scores) {
@@ -138,16 +146,13 @@ describe("buildSeasonLeaderboard(2026)", () => {
     expect(alex.totalPoints).toBe(4000);
   });
 
-  // Assertion 4: Off-class entries excluded.
-  // Bea's CS entry at event 5 must NOT appear in her scores.
-  it("off-class entries excluded: Bea's CS event 5 not in her scores", async () => {
+  // Assertion 4 (M1.14): Multi-class participation. Bea ran C1 at events 1-4+6
+  // and CS at event 5. Her C1 row reflects 5 scoring events; her CS row reflects 1.
+  it("multi-class: Bea's C1 row has 5 scores (event 5 is CS-only, not in C1)", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     const c1 = result.sections.find((s) => s.classCode === "C1")!;
     const bea = c1.drivers.find((d) => d.driverName === "Bea B.")!;
-    // Bea entered C1 at events 1-4+6 and CS at event 5.  Season class = C1 (5 entries).
-    // So she should have exactly 5 scores (events 1-4+6 in C1).
     expect(bea.scores).toHaveLength(5);
-    // Event 5 must not appear
     expect(bea.scores.find((s) => s.eventName === "Season Event 5")).toBeUndefined();
     // Top-4 of 5: 963 + 962 + 948 + 930 = 3803 (event 1 score 909 dropped)
     expect(bea.totalPoints).toBe(
@@ -156,32 +161,48 @@ describe("buildSeasonLeaderboard(2026)", () => {
       Math.round((1000 * 55000) / 58000) +  // event 6: 948
       Math.round((1000 * 53000) / 57000),   // event 4: 930
     );
+    expect(bea.eligible).toBe(true);
   });
 
-  // Bea's off-class CS entry at event 5 must also NOT appear in CS standings.
-  it("off-class entries excluded: Bea's entry not in CS standings", async () => {
+  it("multi-class: Bea also appears in CS standings as Provisional 1/4", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
-    const beaInCS = cs.drivers.find((d) => d.driverName === "Bea B.");
-    expect(beaInCS).toBeUndefined();
+    const bea = cs.drivers.find((d) => d.driverName === "Bea B.");
+    expect(bea).toBeDefined();
+    expect(bea!.scores).toHaveLength(1);
+    // At event 5 CS Bea (60000ms) is the fastest entry → 1000 pts.
+    expect(bea!.scores[0]!.eventName).toBe("Season Event 5");
+    expect(bea!.scores[0]!.points).toBe(1000);
+    expect(bea!.totalPoints).toBe(1000);
+    expect(bea!.eligible).toBe(false);
+    expect(bea!.eventsCountedInClass).toBe(1);
   });
 
-  // Assertion 5: Season class tiebreak.
-  // Dee: 2 entries in C1 (events 1+2), 2 entries in CS (events 3+4).
-  // C1 and CS tie at 2; C1 wins because event 1 < event 3.
-  it("season class tiebreak: Dee (2 C1 + 2 CS) lands in C1 (earliest event wins)", async () => {
+  // Assertion 5 (M1.14): Dee ran C1 events 1-2 and CS events 3-4. She appears
+  // in both class sections, Provisional in each (2/4).
+  it("multi-class: Dee appears in C1 (2 scores) and CS (2 scores), both Provisional", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     const c1 = result.sections.find((s) => s.classCode === "C1")!;
-    const dee = c1.drivers.find((d) => d.driverName === "Dee D.");
-    expect(dee).toBeDefined();
-    // Dee's C1 scores: event 1 = 833, event 2 = 911  → total = 1744
-    expect(dee!.scores).toHaveLength(2);
-    expect(dee!.totalPoints).toBe(
+    const deeC1 = c1.drivers.find((d) => d.driverName === "Dee D.")!;
+    expect(deeC1).toBeDefined();
+    expect(deeC1.scores).toHaveLength(2);
+    // C1: event 1 = 833, event 2 = 911 → 1744
+    expect(deeC1.totalPoints).toBe(
       Math.round((1000 * 50000) / 60000) + Math.round((1000 * 51000) / 56000),
-    ); // 833 + 911 = 1744
-    // Dee must NOT appear in CS standings
+    );
+    expect(deeC1.eligible).toBe(false);
+    expect(deeC1.eventsCountedInClass).toBe(2);
+
     const cs = result.sections.find((s) => s.classCode === "CS")!;
-    expect(cs.drivers.find((d) => d.driverName === "Dee D.")).toBeUndefined();
+    const deeCS = cs.drivers.find((d) => d.driverName === "Dee D.")!;
+    expect(deeCS).toBeDefined();
+    expect(deeCS.scores).toHaveLength(2);
+    // CS: event 3 = round(59000/61000*1000)=967, event 4 = 1000 (Dee wins) → 1967
+    expect(deeCS.totalPoints).toBe(Math.round((1000 * 59000) / 61000) + 1000);
+    expect(deeCS.eligible).toBe(false);
+    expect(deeCS.eventsCountedInClass).toBe(2);
+    // Same driverId in both sections, so /drivers/[id] links collapse correctly.
+    expect(deeCS.driverId).toBe(deeC1.driverId);
   });
 
   // Assertion 6: Eligibility flag.
@@ -267,90 +288,98 @@ describe("buildSeasonLeaderboard(2026)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // M1.13 — Single-car constraint: Fred (primary = Boxster S, 5 events)
+  // M1.14 — Multi-car within a class: Fred runs Boxster S (5 events) and
+  //         Cayman GT4 (event 3) in CS. All 6 events score for him.
   // ---------------------------------------------------------------------------
 
-  it("Fred's primary car is Boxster S", async () => {
+  it("multi-car: Fred has 6 CS scores spanning Boxster S and Cayman GT4", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
     const fred = cs.drivers.find((d) => d.driverName === "Fred F.")!;
     expect(fred).toBeDefined();
-    expect(fred.primaryCar?.carDescription).toBe("Boxster S");
+    expect(fred.scores).toHaveLength(6);
+    // Event 3 (Cayman GT4) must now appear — no longer filtered out.
+    const event3 = fred.scores.find((s) => s.eventName === "Season Event 3");
+    expect(event3).toBeDefined();
+    // Event 3 / CS fastest = 59000ms (Cam committed) → Fred 64000ms = round(59/64*1000) = 922
+    expect(event3!.points).toBe(Math.round((1000 * 59000) / 64000));
   });
 
-  it("Fred has 5 counted scores (Cayman GT4 event 3 excluded by single-car constraint)", async () => {
+  it("multi-car: Fred's totalPoints uses top-4 of all 6 CS scores", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
     const fred = cs.drivers.find((d) => d.driverName === "Fred F.")!;
-    // Fred has 5 primary-car entries (events 1,2,4,5,6); event 3 (Cayman GT4) excluded
-    expect(fred.scores).toHaveLength(5);
-    // Event 3 must not appear in Fred's scores
-    expect(fred.scores.find((s) => s.eventName === "Season Event 3")).toBeUndefined();
+    // Per-event scores:
+    //   e1=919, e2=921, e3=922, e4=954 (Dee wins), e5=909 (Bea wins), e6=1000 (Fred wins, Cam DNF)
+    // Top-4 desc: 1000 + 954 + 922 + 921 = 3797 (909 + 919 dropped).
+    const e1 = Math.round((1000 * 57000) / 62000); // 919
+    const e2 = Math.round((1000 * 58000) / 63000); // 921
+    const e3 = Math.round((1000 * 59000) / 64000); // 922
+    const e4 = Math.round((1000 * 62000) / 65000); // 954
+    expect(fred.totalPoints).toBe(1000 + e4 + e3 + e2);
+    expect(fred.totalPoints).toBe(3797);
+    expect(fred.eligible).toBe(true);
+    expect(fred.eventsCountedInClass).toBe(6);
+    // Lower two scores are dropped.
+    const event1 = fred.scores.find((s) => s.eventName === "Season Event 1");
+    const event5 = fred.scores.find((s) => s.eventName === "Season Event 5");
+    expect(event1!.points).toBe(e1);
+    expect(event1!.dropped).toBe(true);  // 919 is among the bottom two
+    expect(event5!.dropped).toBe(true);  // 909 is among the bottom two
   });
 
-  it("Fred's totalPoints uses best-4 of his 5 primary-car scores", async () => {
+  it("multi-car: car description case ('boxster s' vs 'Boxster S') has no scoring impact", async () => {
+    // Pre-M1.14 the lowercased event-1 entry tested normalization of the primary-car
+    // grouping. Now there's no grouping — both events simply score on the same axis.
     const result = await buildSeasonLeaderboard(2026, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
     const fred = cs.drivers.find((d) => d.driverName === "Fred F.")!;
-    // Scores (primary-car only): event1=919, event2=921, event4=954, event5=909, event6=1000
-    // Fastest at event 4 CS is Dee (62000ms), so Fred gets round(62000/65000*1000)=954.
-    // Fastest at event 5 CS is Bea (60000ms, off-class but still counted for scoring),
-    //   so Fred gets round(60000/66000*1000)=909.
-    // Top-4: 1000+954+921+919=3794 (event5=909 dropped)
-    const event1Pts = Math.round((1000 * 57000) / 62000); // 919
-    const event2Pts = Math.round((1000 * 58000) / 63000); // 921
-    const event4Pts = Math.round((1000 * 62000) / 65000); // 954 — Dee is fastest CS at event 4
-    expect(fred.totalPoints).toBe(1000 + event4Pts + event2Pts + event1Pts); // 3794
-    // event 5 score (909) is dropped
-    const event5Score = fred.scores.find((s) => s.eventName === "Season Event 5");
-    expect(event5Score).toBeDefined();
-    expect(event5Score!.dropped).toBe(true);
-  });
-
-  it("normalization: Fred's lowercased 'boxster s' entry (event 1) is included in his scores", async () => {
-    const result = await buildSeasonLeaderboard(2026, prisma);
-    const cs = result.sections.find((s) => s.classCode === "CS")!;
-    const fred = cs.drivers.find((d) => d.driverName === "Fred F.")!;
-    // Event 1 uses car_model="boxster s" which normalizes to same carKey as "Boxster S" (events 2,4,5,6)
-    // → Fred's event 1 score is included in his primary-car scores, not excluded.
-    const event1Score = fred.scores.find((s) => s.eventName === "Season Event 1");
-    expect(event1Score).toBeDefined();
-    const event1Pts = Math.round((1000 * 57000) / 62000); // 919
-    expect(event1Score!.points).toBe(event1Pts);
+    const event1 = fred.scores.find((s) => s.eventName === "Season Event 1");
+    expect(event1).toBeDefined();
+    expect(event1!.points).toBe(Math.round((1000 * 57000) / 62000)); // 919
   });
 
   // ---------------------------------------------------------------------------
-  // M1.13 — Single-car constraint: Gina (primary = 911, by cumulative-points tiebreak)
+  // M1.14 — Multi-car within a class: Gina runs 911 (events 1-3) and Cayman
+  //         (events 4-6) in CS. All 6 events score for her.
   // ---------------------------------------------------------------------------
 
-  it("Gina's primary car is 911 (count tie, 911 wins on cumulative points)", async () => {
+  it("multi-car: Gina has 6 CS scores spanning 911 and Cayman", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
     const gina = cs.drivers.find((d) => d.driverName === "Gina G.")!;
     expect(gina).toBeDefined();
-    expect(gina.primaryCar?.carDescription).toBe("911");
+    expect(gina.scores).toHaveLength(6);
+    expect(gina.eligible).toBe(true);
+    expect(gina.eventsCountedInClass).toBe(6);
   });
 
-  it("Gina has 3 scores (only 911 events; Cayman events excluded) and is Provisional", async () => {
+  it("multi-car: Gina's totalPoints = top-4 of all 6 CS scores", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
     const gina = cs.drivers.find((d) => d.driverName === "Gina G.")!;
-    // Only 911 events (1,2,3) count; Cayman events (4,5,6) excluded
-    expect(gina.scores).toHaveLength(3);
-    // Gina has 3 scoring events < 4 threshold → Provisional
-    expect(gina.eligible).toBe(false);
-    expect(gina.eventsCountedInClass).toBe(3);
+    // 911 events score 983 each (Cam is the per-event fastest by a narrow margin).
+    // Cayman events: e4 fastest=62000 Dee → 775; e5 fastest=60000 Bea → 741;
+    //                e6 fastest=67000 Fred → 817.
+    // Top-4: 983 + 983 + 983 + 817 = 3766; 775 and 741 dropped.
+    const e1 = Math.round((1000 * 57000) / 58000); // 983
+    const e2 = Math.round((1000 * 58000) / 59000); // 983
+    const e3 = Math.round((1000 * 59000) / 60000); // 983
+    const e6 = Math.round((1000 * 67000) / 82000); // 817
+    expect(gina.totalPoints).toBe(e1 + e2 + e3 + e6);
+    expect(gina.totalPoints).toBe(3766);
   });
 
-  it("Gina's totalPoints = 983 × 3 = 2949 from her 911 events", async () => {
+  // ---------------------------------------------------------------------------
+  // M1.14 — CS standings ordering reflects multi-class/multi-car results.
+  // ---------------------------------------------------------------------------
+
+  it("CS section is sorted: Fred, Gina, Cam, Dee, Bea", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
-    const gina = cs.drivers.find((d) => d.driverName === "Gina G.")!;
-    // Event 1: round(1000*57000/58000)=983, Event 2: round(1000*58000/59000)=983, Event 3: round(1000*59000/60000)=983
-    const e1 = Math.round((1000 * 57000) / 58000);
-    const e2 = Math.round((1000 * 58000) / 59000);
-    const e3 = Math.round((1000 * 59000) / 60000);
-    expect(gina.totalPoints).toBe(e1 + e2 + e3);
+    const names = cs.drivers.map((d) => d.driverName);
+    // Fred 3797 elig, Gina 3766 elig, Cam 3000 prov, Dee 1967 prov, Bea 1000 prov.
+    expect(names).toEqual(["Fred F.", "Gina G.", "Cam C.", "Dee D.", "Bea B."]);
   });
 });
 
