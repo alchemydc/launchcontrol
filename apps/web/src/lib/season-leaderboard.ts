@@ -11,11 +11,12 @@ import { prisma as defaultClient } from "@/lib/prisma";
  * floor(N/2) + 1 where N = total events in the season.
  * N=6→4, N=7→4, N=8→5.
  *
- * Because the threshold is strictly greater than N/2, a driver who runs at
- * least the threshold count in any one class cannot also reach it in another
- * class (2 × threshold > N). The "a driver can only win in one class" rule
- * (M1.14, AX chair 2026-06-08) is therefore enforced by arithmetic — no
- * special code is needed to limit a driver to a single official class.
+ * Combined with the per-event invariant codified in PRD §2 ("Data invariants:
+ * one class per driver per event"), 2 × threshold > N means a driver who
+ * reaches the threshold in any one class cannot also reach it in another
+ * class within the same season. The "a driver can only win in one class"
+ * rule (M1.14, AX chair 2026-06-08) is therefore enforced by arithmetic,
+ * conditioned on that invariant — no per-driver capping code is needed.
  */
 function qualifyingEventCount(totalEventsInSeason: number): number {
   return Math.floor(totalEventsInSeason / 2) + 1;
@@ -113,10 +114,13 @@ export async function buildSeasonLeaderboard(
   // 2. Score each (event, class) group.
   //
   //    eventClassPoints[eventId][classCode][driverId] = best points that driver
-  //    earned for this event in this class. Co-drive collapse: if a driver
-  //    somehow has multiple entries in the same class at the same event (rare;
-  //    AGENTS-known invariant says this shouldn't happen because co-drives use
-  //    distinct Driver records), keep the higher score.
+  //    earned for this event in this class. Defense-in-depth: if a driver
+  //    somehow has multiple entries in the same class at the same event,
+  //    keep the higher score. Per PRD §2 ("Data invariants") this should
+  //    never happen — co-drives resolve to distinct Driver records via the
+  //    identity-hash dedupe in ingest.ts, and the per-event one-class rule
+  //    bars the other pathway — but the schema does not enforce uniqueness,
+  //    so we collapse defensively rather than throw.
   const eventClassPoints: Map<
     number, // eventId
     Map<
