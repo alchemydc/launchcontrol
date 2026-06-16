@@ -32,6 +32,16 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # Catch-all so ungrouped production deps (better-sqlite3, shadcn,
+      # lucide-react, recharts, …) land in ONE PR instead of one-per-dep,
+      # minimizing how often pnpm-lock.yaml is mutated. Named groups above
+      # are evaluated first and keep precedence; majors still get their own
+      # PR for scrutiny. See docs/dependabot.md.
+      production-minor-patch:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
       # Hold eslint at v9 until the next.js eslint plugin set
       # (eslint-plugin-react, eslint-plugin-import, eslint-plugin-jsx-a11y)
