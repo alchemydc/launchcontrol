@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import {
   type ColumnDef,
   type SortingState,
@@ -14,6 +13,7 @@ import {
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DriverLink } from "@/components/driver-link";
 import { RankPill } from "@/components/podium";
 import {
   Table,
@@ -143,12 +143,7 @@ function DriverCard({
       <div className="flex items-start gap-3">
         <RankPill rank={rank} />
         <div className="min-w-0 flex-1">
-          <Link
-            href={`/drivers/${row.driverId}`}
-            className="block font-medium hover:underline truncate"
-          >
-            {row.driverName}
-          </Link>
+          <DriverLink driverId={row.driverId} name={row.driverName} className="block truncate" />
           {row.carDescription && (
             <p className="text-xs text-muted-foreground truncate">
               {row.carDescription}
@@ -262,12 +257,7 @@ export function LeaderboardTable({
         ),
         cell: ({ row }) => (
           <div>
-            <Link
-              href={`/drivers/${row.original.driverId}`}
-              className="font-medium hover:underline"
-            >
-              {row.original.driverName}
-            </Link>
+            <DriverLink driverId={row.original.driverId} name={row.original.driverName} />
             {row.original.carDescription && (
               <div className="text-muted-foreground text-xs">
                 {row.original.carDescription}
