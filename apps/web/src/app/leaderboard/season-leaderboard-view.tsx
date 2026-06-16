@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { DriverLink } from "@/components/driver-link";
 import { RankPill } from "@/components/podium";
 import {
   Table,
@@ -84,12 +85,7 @@ function DriverCard({
       <div className="flex items-center gap-3">
         <RankPill rank={rank} />
         <div className="min-w-0 flex-1">
-          <Link
-            href={`/drivers/${driver.driverId}`}
-            className="block truncate font-medium hover:underline"
-          >
-            {driver.driverName}
-          </Link>
+          <DriverLink driverId={driver.driverId} name={driver.driverName} className="block truncate" />
           {!driver.eligible && (
             <Badge variant="outline" className="mt-1 text-[10px]">
               Provisional · {driver.eventsCountedInClass}/
@@ -135,12 +131,7 @@ function DriverTableRow({
       </TableCell>
       <TableCell className="px-3 py-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <Link
-            href={`/drivers/${driver.driverId}`}
-            className="font-medium hover:underline"
-          >
-            {driver.driverName}
-          </Link>
+          <DriverLink driverId={driver.driverId} name={driver.driverName} />
           {!driver.eligible && (
             <Badge variant="outline" className="text-xs">
               Provisional · {driver.eventsCountedInClass}/
@@ -193,12 +184,7 @@ function ClassSection({
         {leader && (
           <p className="hidden sm:block truncate text-xs text-muted-foreground">
             Leader:{" "}
-            <Link
-              href={`/drivers/${leader.driverId}`}
-              className="font-medium text-foreground hover:underline hover:text-primary"
-            >
-              {leader.driverName}
-            </Link>{" "}
+            <DriverLink driverId={leader.driverId} name={leader.driverName} />{" "}
             · <span className="tabular-nums">{leader.totalPoints}</span> pts
           </p>
         )}
