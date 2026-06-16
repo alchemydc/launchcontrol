@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { type LeaderboardRow, formatMs } from "@/lib/leaderboard";
+import { type LeaderboardRow, formatMs, formatDelta } from "@/lib/leaderboard";
 
 const ALL_CLASSES = "__all__";
 
@@ -129,7 +129,15 @@ function ClassBadge({
   );
 }
 
-function DriverCard({ row, rank }: { row: LeaderboardRow; rank: number }) {
+function DriverCard({
+  row,
+  rank,
+  delta,
+}: {
+  row: LeaderboardRow;
+  rank: number;
+  delta: { fromPrior: number | null; fromP1: number | null } | undefined;
+}) {
   return (
     <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
       <div className="flex items-start gap-3">
@@ -155,13 +163,18 @@ function DriverCard({ row, rank }: { row: LeaderboardRow; rank: number }) {
         </div>
         <div className="text-right shrink-0">
           <div className="text-base font-semibold tabular-nums leading-none">
-            {formatMs(row.bestPaxMs)}
+            {formatMs(row.bestRawMs)}
           </div>
           <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-            best pax
+            time
           </div>
         </div>
       </div>
+      {delta && delta.fromP1 != null && (
+        <div className="mt-1.5 text-[11px] tabular-nums text-muted-foreground">
+          {formatDelta(delta.fromPrior)} from prior · {formatDelta(delta.fromP1)} from P1
+        </div>
+      )}
       {row.runs.length > 0 && (
         <div className="mt-3">
           <RunChips runs={row.runs} />
@@ -179,7 +192,7 @@ export function LeaderboardTable({
   classCodes: string[];
 }) {
   const [sorting, setSorting] = useState<SortingState>([
-    { id: "bestPaxMs", desc: false },
+    { id: "bestRawMs", desc: false },
   ]);
   const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
   const rankByIdRef = useRef<Map<string, number>>(new Map());
@@ -191,6 +204,25 @@ export function LeaderboardTable({
         : rows.filter((r) => r.classCode === classFilter),
     [rows, classFilter],
   );
+
+  const deltaByRow = useMemo(() => {
+    const map = new Map<LeaderboardRow, { fromPrior: number | null; fromP1: number | null }>();
+    const ranked = filteredRows
+      .filter((r) => r.bestRawMs != null)
+      .sort((a, b) => a.bestRawMs! - b.bestRawMs!);
+    const leader = ranked[0]?.bestRawMs ?? null;
+    ranked.forEach((r, i) => {
+      if (i === 0) {
+        map.set(r, { fromPrior: null, fromP1: null });
+      } else {
+        map.set(r, {
+          fromPrior: r.bestRawMs! - ranked[i - 1]!.bestRawMs!,
+          fromP1: leader == null ? null : r.bestRawMs! - leader,
+        });
+      }
+    });
+    return map;
+  }, [filteredRows]);
 
   const columns = useMemo<ColumnDef<LeaderboardRow>[]>(
     () => [
@@ -266,7 +298,7 @@ export function LeaderboardTable({
         accessorFn: (row) => row.bestRawMs ?? Number.POSITIVE_INFINITY,
         header: ({ column }) => (
           <SortHeader
-            label="Best Raw"
+            label="Time"
             isSorted={column.getIsSorted()}
             onClick={() => column.toggleSorting()}
             numeric
@@ -277,19 +309,22 @@ export function LeaderboardTable({
         ),
       },
       {
-        id: "bestPaxMs",
-        accessorFn: (row) => row.bestPaxMs ?? Number.POSITIVE_INFINITY,
-        header: ({ column }) => (
-          <SortHeader
-            label="Best PAX"
-            isSorted={column.getIsSorted()}
-            onClick={() => column.toggleSorting()}
-            numeric
-          />
-        ),
+        id: "fromPrior",
+        header: "from prior",
+        enableSorting: false,
         cell: ({ row }) => (
-          <span className="tabular-nums font-medium">
-            {formatMs(row.original.bestPaxMs)}
+          <span className="tabular-nums text-muted-foreground">
+            {formatDelta(deltaByRow.get(row.original)?.fromPrior ?? null)}
+          </span>
+        ),
+      },
+      {
+        id: "fromP1",
+        header: "from P1",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="tabular-nums text-muted-foreground">
+            {formatDelta(deltaByRow.get(row.original)?.fromP1 ?? null)}
           </span>
         ),
       },
@@ -300,7 +335,7 @@ export function LeaderboardTable({
         cell: ({ row }) => <RunChips runs={row.original.runs} />,
       },
     ],
-    [],
+    [deltaByRow],
   );
 
   // React Compiler can't safely memoize TanStack Table's returned functions;
@@ -334,7 +369,7 @@ export function LeaderboardTable({
           aria-label="Filter by class"
           className="-mx-1 px-1 overflow-x-auto flex-1"
         >
-          <ul className="flex gap-1.5 w-max">
+          <ul className="flex flex-wrap gap-1.5">
             <li>
               <ClassChip
                 active={classFilter === ALL_CLASSES}
@@ -368,7 +403,7 @@ export function LeaderboardTable({
           </li>
         ) : (
           sortedRows.map((row, i) => (
-            <DriverCard key={row.id} row={row.original} rank={i + 1} />
+            <DriverCard key={row.id} row={row.original} rank={i + 1} delta={deltaByRow.get(row.original)} />
           ))
         )}
       </ul>

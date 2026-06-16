@@ -87,3 +87,9 @@ export function formatMs(ms: number | null): string {
   if (ms == null) return "—";
   return (ms / 1000).toFixed(3);
 }
+
+// "+1.234" for a positive gap, "—" for null (leader / no time).
+export function formatDelta(ms: number | null): string {
+  if (ms == null) return "—";
+  return "+" + (ms / 1000).toFixed(3);
+}

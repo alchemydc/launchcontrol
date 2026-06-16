@@ -24,7 +24,7 @@ export async function HeaderNav() {
   const showAdmin = isAdmin(session.msrUid);
 
   return (
-    <nav className="flex items-center gap-4">
+    <nav className="flex flex-wrap items-center gap-3 sm:gap-4">
       {session.isRmrMember && (
         <Link href="/" className={linkClass}>
           Events
