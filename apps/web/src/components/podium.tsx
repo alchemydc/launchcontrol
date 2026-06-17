@@ -26,7 +26,8 @@ export function podiumClasses(rank: number): string {
   }
 }
 
-export function RankPill({ rank }: { rank: number }) {
+export function RankPill({ rank }: { rank: number | undefined }) {
+  if (rank == null) return null;
   return (
     <div
       aria-label={`${ordinal(rank)} place`}

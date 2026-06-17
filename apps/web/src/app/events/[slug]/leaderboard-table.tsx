@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   type ColumnDef,
   type SortingState,
@@ -135,7 +135,7 @@ function DriverCard({
   delta,
 }: {
   row: LeaderboardRow;
-  rank: number;
+  rank: number | undefined;
   delta: { fromPrior: number | null; fromP1: number | null } | undefined;
 }) {
   return (
@@ -190,8 +190,6 @@ export function LeaderboardTable({
     { id: "bestRawMs", desc: false },
   ]);
   const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
-  const rankByIdRef = useRef<Map<string, number>>(new Map());
-
   const filteredRows = useMemo(
     () =>
       classFilter === ALL_CLASSES
@@ -200,23 +198,25 @@ export function LeaderboardTable({
     [rows, classFilter],
   );
 
-  const deltaByRow = useMemo(() => {
-    const map = new Map<LeaderboardRow, { fromPrior: number | null; fromP1: number | null }>();
+  const { deltaByRow, rankByRow } = useMemo(() => {
+    const delta = new Map<LeaderboardRow, { fromPrior: number | null; fromP1: number | null }>();
+    const rank = new Map<LeaderboardRow, number>();
     const ranked = filteredRows
       .filter((r) => r.bestRawMs != null)
       .sort((a, b) => a.bestRawMs! - b.bestRawMs!);
     const leader = ranked[0]?.bestRawMs ?? null;
     ranked.forEach((r, i) => {
+      rank.set(r, i + 1);
       if (i === 0) {
-        map.set(r, { fromPrior: null, fromP1: null });
+        delta.set(r, { fromPrior: null, fromP1: null });
       } else {
-        map.set(r, {
+        delta.set(r, {
           fromPrior: r.bestRawMs! - ranked[i - 1]!.bestRawMs!,
           fromP1: leader == null ? null : r.bestRawMs! - leader,
         });
       }
     });
-    return map;
+    return { deltaByRow: delta, rankByRow: rank };
   }, [filteredRows]);
 
   const columns = useMemo<ColumnDef<LeaderboardRow>[]>(
@@ -226,7 +226,7 @@ export function LeaderboardTable({
         header: () => <span className="text-left block">#</span>,
         enableSorting: false,
         cell: ({ row }) => (
-          <RankPill rank={rankByIdRef.current.get(row.id) ?? 0} />
+          <RankPill rank={rankByRow.get(row.original)} />
         ),
       },
       {
@@ -325,7 +325,7 @@ export function LeaderboardTable({
         cell: ({ row }) => <RunChips runs={row.original.runs} />,
       },
     ],
-    [deltaByRow],
+    [deltaByRow, rankByRow],
   );
 
   // React Compiler can't safely memoize TanStack Table's returned functions;
@@ -343,10 +343,6 @@ export function LeaderboardTable({
   });
 
   const sortedRows = table.getRowModel().rows;
-
-  const newRankMap = new Map<string, number>();
-  sortedRows.forEach((r, i) => newRankMap.set(r.id, i + 1));
-  rankByIdRef.current = newRankMap;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
@@ -392,8 +388,8 @@ export function LeaderboardTable({
             No entries match the current filter.
           </li>
         ) : (
-          sortedRows.map((row, i) => (
-            <DriverCard key={row.id} row={row.original} rank={i + 1} delta={deltaByRow.get(row.original)} />
+          sortedRows.map((row) => (
+            <DriverCard key={row.id} row={row.original} rank={rankByRow.get(row.original)} delta={deltaByRow.get(row.original)} />
           ))
         )}
       </ul>
@@ -431,13 +427,13 @@ export function LeaderboardTable({
                 </TableCell>
               </TableRow>
             ) : (
-              sortedRows.map((row, i) => {
-                const rank = i + 1;
+              sortedRows.map((row) => {
+                const rank = rankByRow.get(row.original);
                 return (
                   <TableRow
                     key={row.id}
                     className={
-                      rank <= 3
+                      rank != null && rank <= 3
                         ? "hover:bg-accent/20"
                         : "odd:bg-background even:bg-muted/10 hover:bg-accent/30"
                     }
