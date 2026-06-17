@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 
 interface LandingProps {
@@ -13,6 +14,16 @@ export function Landing({ signedIn, returnTo }: LandingProps) {
   return (
     <main className="flex flex-1 items-center justify-center px-6 py-16">
       <div className="w-full max-w-sm space-y-6">
+        <div className="flex justify-center">
+          <Image
+            src="/launchcontrol-badge.png"
+            alt="Launch Control — PCA Rocky Mountain Region autocross"
+            width={480}
+            height={480}
+            priority
+            className="h-auto w-48 drop-shadow-lg"
+          />
+        </div>
         <div className="flex items-start gap-4">
           <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
           <div>
