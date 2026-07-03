@@ -63,6 +63,10 @@ Why all three fields rather than just `member_num`: VisualAX's `member_num` is f
 - **App:** Next.js App Router, server components by default; gated routes use `export const dynamic = "force-dynamic"`. Key routes: `/events/[slug]`, `/leaderboard[/year]`, `/drivers/[id]`, `/admin` + `/admin/ingest`, `/me`. Leaderboard logic lives in `src/lib/leaderboard.ts`, `season-leaderboard.ts`, `entry-best.ts`, `driver-history.ts` — pages call these, not inline Prisma aggregation.
 - **Auth:** MSR (MotorsportReg) OAuth 1.0a (`src/lib/msr.ts`, `msr-endpoints.ts`) + `iron-session` cookies (`src/lib/session.ts`). Member gating checks the user's MSR orgs against `MSR_RMR_ORG_ID`; admin gating checks `ADMIN_MSR_UIDS` (`src/lib/admin.ts`). Full surnames are never stored in the session.
 
+## UI changes
+
+Before implementing a UI/layout fix, confirm the actual root cause in-browser first (chrome-devtools MCP is configured) — don't fix the element you assume is responsible. After implementing, verify at both mobile and desktop breakpoints and confirm the responsive layout matches the existing pages.
+
 ## Domain invariants (easy to get wrong)
 
 - **One class per driver per event.** A co-drive is a *separate* `Driver` row (number-suffix convention, e.g. `34` + `34X`), never the same driver in two classes at one event. `Entry` is intentionally **not** unique on `(eventId, driverId)`.
