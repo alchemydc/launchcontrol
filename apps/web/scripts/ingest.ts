@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { ingestAxdb } from "@/lib/ingest";
 import { prisma } from "@/lib/prisma";
+import { writeAudit } from "@/lib/audit";
 
 async function main() {
   const arg = process.argv[2];
@@ -21,6 +22,21 @@ async function main() {
 
   const result = await ingestAxdb(path);
   console.log(JSON.stringify(result, null, 2));
+
+  try {
+    await writeAudit(prisma, {
+      action: "ingest",
+      actorMsrUid: "cli",
+      actorName: "cli",
+      targetType: "event",
+      targetId: result.event.id,
+      targetSlug: result.event.slug,
+      detail: { filename: path, axdbSha256: result.axdbSha256, status: result.status, counts: result.counts },
+    });
+  } catch (auditErr) {
+    // Audit is best-effort — a logging hiccup must not fail a completed ingest.
+    console.error("[ingest] failed to write audit log", auditErr);
+  }
 }
 
 main()

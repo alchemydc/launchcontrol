@@ -104,3 +104,17 @@ model Video {
 
   @@index([eventId])
 }
+
+model AdminAuditLog {
+  id          Int      @id @default(autoincrement())
+  action      String   // "ingest" | "event.update" | "event.delete"
+  actorMsrUid String   // MSR UID, or "cli" for scripts/ingest.ts
+  actorName   String   // "First L." only — NEVER full last name (PII rule)
+  targetType  String   // "event"
+  targetId    Int?
+  targetSlug  String?
+  detail      String   // JSON string (SQLite has no native JSON type)
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}

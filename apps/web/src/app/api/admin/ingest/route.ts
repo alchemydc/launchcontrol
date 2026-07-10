@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/admin";
 import { validateAxdbBuffer } from "@/lib/axdb-validate";
 import { ingestAxdb } from "@/lib/ingest";
 import { prisma } from "@/lib/prisma";
+import { writeAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -60,8 +61,25 @@ export async function POST(request: NextRequest) {
   const { tempPath } = validated;
   try {
     const summary = await ingestAxdb(tempPath, prisma);
-    const { status, event, counts } = summary;
+    const { status, event, counts, axdbSha256 } = summary;
     console.log({ event: "admin-ingest", admin: msrUid, status, slug: event.slug, counts });
+
+    try {
+      const actorName = [session.firstName, session.lastInitial].filter(Boolean).join(" ") || "unknown";
+      await writeAudit(prisma, {
+        action: "ingest",
+        actorMsrUid: msrUid,
+        actorName,
+        targetType: "event",
+        targetId: event.id,
+        targetSlug: event.slug,
+        detail: { filename: file.name, axdbSha256, status, counts },
+      });
+    } catch (auditErr) {
+      // Audit is best-effort — a logging hiccup must not fail a completed ingest.
+      console.error("[admin-ingest] failed to write audit log", auditErr);
+    }
+
     return NextResponse.json({ status, event, counts }, { status: 200 });
   } catch (err) {
     return NextResponse.json(
