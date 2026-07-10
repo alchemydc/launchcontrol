@@ -22,7 +22,7 @@ MVP targets PCA RMR specifically, but design choices that don't add cost should 
 ### 1.2 Personas
 
 - **RMR Driver / Competitor** — wants a clean mobile-responsive results dashboard (raw / PAX / class), and a way to view or share event media.
-- **RMR Admin / Timing Chief** — wants frictionless MSR login and a dead-simple way to publish a post-event `.axdb` so leaderboards appear immediately.
+- **RMR Admin / Timing Chief** — wants frictionless MSR login, a dead-simple way to publish a post-event `.axdb` so leaderboards appear immediately, and a way to fix upload mistakes (bad metadata, duplicates) without touching the database.
 
 ### 1.3 MVP Feature Scope
 
@@ -38,6 +38,7 @@ MVP targets PCA RMR specifically, but design choices that don't add cost should 
 - **PII redaction at ingest** — driver last names from VisualAX are reduced to a single uppercase initial + period (e.g. `K.`) before any row reaches the app DB. The full last name is never persisted by this app. See architecture notes in [docs/BUILD.md](./BUILD.md) for schema and mapping details.
 - **Local ingest CLI (M1)** — `pnpm ingest <path-to-axdb>` reads the source SQLite read-only, normalizes (with redaction) into the app DB. Idempotent on re-run.
 - **Admin upload (M4)** — multipart admin-only upload endpoint reuses the same ingest logic.
+- **Admin event management (M4.1)** — `/admin/events` lists every ingested event and lets admins fix bad uploads in-browser: edit name/date/location (the URL slug regenerates using the same convention as ingest, with a 409 guard against colliding with an existing event), or delete an event behind a confirmation dialog showing exactly what will be removed. Deleting cascades entries/runs/videos and sweeps drivers left with no entries or videos. Every admin ingest/edit/delete writes a persistent `AdminAuditLog` row (actor MSR UID + redacted `First L.` name, JSON detail).
 - **Dynamic leaderboards** — `/events/[slug]` renders sortable, filterable tables: overall raw, PAX/indexed, class standings; per-driver run details (cones, DNF/RRN dispositions). Driver column shows `First L.` only.
 
 #### 1.3.3 Media aggregation
@@ -58,6 +59,7 @@ Driver-submitted YouTube/Vimeo links remain a Future scope item, not shipped.
 - **Data invariants (RMR / AxWare convention):**
   - **One class per driver per event.** A human enters each event in at most one car class. Co-drives are modeled by VisualAX as separate `drivers` rows with a number-suffix convention (`337` + `337X`, `62` + `162`) and resolve to separate app `Driver` records via the identity-hash dedupe at ingest (see `apps/web/src/lib/ingest.ts`). The schema is permissive (`Entry` has no `(eventId, driverId)` uniqueness, to handle the theoretical case if a future region adopts the platform) but RMR real data has never violated this invariant. Season scoring (M1.14) depends on it: the "one championship class per driver" arithmetic guarantee (`2 × qualifyingThreshold > N`) only holds when this invariant holds.
 - **Auth boundary:** every route under `/api/admin/*` returns 401 unless the session is present and the MSR UID is in the admin allowlist.
+- **Admin data management:** event delete must fully cascade (entries → runs, videos) and remove drivers left with no entries and no videos; edit must never mint a duplicate slug (409 on collision). Every admin ingest/edit/delete is recorded in `AdminAuditLog` with the actor's name stored redacted (`First L.` — the PII rule applies to audit rows too). Integration-tested in `apps/web/tests/admin-events.test.ts`, including a regression test that delete + re-ingest produces exactly one `Event` row.
 - **Auth boundary:** all event/leaderboard pages (`/`, `/events/[slug]`, `/leaderboard`, `/leaderboard/[year]`, `/drivers/[id]`) require a valid MSR session AND RMR-organization membership. Unauth and non-RMR visitors are routed to the landing page at `/`. Deep-link `returnTo` is honored only for RMR members (dropped for non-RMR to avoid bounce loops) and sanitized against open-redirect on both write and read.
 - **Vercel:** preview deploy for every PR; main deploys to production on merge.
 

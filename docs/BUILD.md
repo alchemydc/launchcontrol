@@ -6,7 +6,7 @@ Implementation reference and build history for [Launch Control](https://launchco
 
 ## Current Status
 
-**Status (2026-06-08):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M1.14 ✓ · M2 ✓ · M2.1 ✓ · M4 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (top-K-of-N where K is the dynamic qualifying threshold, per-class standings, multi-season nav, multi-class & multi-car participation as of M1.14), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus the dynamic qualifying threshold from M1.13. Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. Event data and leaderboards (event list, event detail, season standings, driver profiles) are now restricted to MSR-authenticated RMR members; unauth and non-RMR visitors see a landing page at `/` and deep links survive sign-in via a sanitized `returnTo` round-trip. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
+**Status (2026-07-10):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M1.14 ✓ · M2 ✓ · M2.1 ✓ · M4 ✓ · M4.1 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (top-K-of-N where K is the dynamic qualifying threshold, per-class standings, multi-season nav, multi-class & multi-car participation as of M1.14), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus the dynamic qualifying threshold from M1.13. Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. Event data and leaderboards (event list, event detail, season standings, driver profiles) are now restricted to MSR-authenticated RMR members; unauth and non-RMR visitors see a landing page at `/` and deep links survive sign-in via a sanitized `returnTo` round-trip. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required — and manage ingested events at `/admin/events`: edit name/date/location (the URL slug regenerates), or delete a bad/duplicate event with full cascade and an orphan-driver sweep, with every admin ingest/edit/delete recorded in a persistent `AdminAuditLog`. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
 
 ---
 
@@ -192,6 +192,19 @@ model Video {
   createdAt   DateTime @default(now())
   event       Event    @relation(fields: [eventId],  references: [id], onDelete: Cascade)
   driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+}
+
+model AdminAuditLog {
+  id          Int      @id @default(autoincrement())
+  action      String   // "ingest" | "event.update" | "event.delete"
+  actorMsrUid String   // MSR UID, or "cli" for scripts/ingest.ts
+  actorName   String   // "First L." only — NEVER full last name (PII rule)
+  targetType  String   // "event"
+  targetId    Int?
+  targetSlug  String?
+  detail      String   // JSON string (SQLite has no native JSON type)
+  createdAt   DateTime @default(now())
+  @@index([createdAt])
 }
 ```
 
@@ -591,7 +604,7 @@ Validation pipeline in order: session present → admin allowlist → parse Form
 
 `export const runtime = "nodejs"` — `better-sqlite3` requires native bindings; Edge runtime is not supported.
 
-Audit log: `console.log({ event: "admin-ingest", admin: msrUid, status, slug, counts })`. Persistent `Ingest` table is deferred to post-MVP.
+Audit log: `console.log({ event: "admin-ingest", admin: msrUid, status, slug, counts })`. ~~Persistent `Ingest` table is deferred to post-MVP.~~ Superseded in M4.1: successful ingests (browser and CLI) now also write a persistent `AdminAuditLog` row.
 
 **Admin UI:**
 
@@ -619,7 +632,30 @@ Audit log: `console.log({ event: "admin-ingest", admin: msrUid, status, slug, co
 - No persistence of the uploaded buffer beyond the `os.tmpdir()` file deleted in `finally`. Driver last names (PII) transit memory only and are redacted by `ingestAxdb()` before any DB write.
 - `ADMIN_MSR_UIDS` is env-only, no hardcoded fallback. If unset, no one is admin.
 
-**Out of scope for M4 (future):** persistent audit table, rate limiting, chunked/resumable uploads for files >4 MB, background-worker hand-off.
+**Out of scope for M4 (future):** persistent audit table (landed in M4.1), rate limiting, chunked/resumable uploads for files >4 MB, background-worker hand-off.
+
+### M4.1 — Admin event management ✓ (done 2026-07-10)
+
+Closes the "hand-edit the DB to fix bad uploads" gap. An admin uploaded 2024/2025 `.axdb` files with bad metadata; because ingest keys events by `slug = ${event_date}-${slugify(event_name)}`, re-uploading a corrected file minted a **new** Event and left the stale one in place. Since season pages derive year from `Event.date`, one misdated event pollutes the season switcher, shifts the dynamic qualifying threshold (`floor(N/2)+1`), and skews standings.
+
+**What landed:**
+
+- **`/admin/events`** — server-rendered event list (name, date, slug, entry/run/video counts, createdAt) with per-row Edit and Delete dialog actions. Covered by the existing `/admin/layout.tsx` gate; new card on the `/admin` hub.
+- **Edit metadata** (`PATCH /api/admin/events/:id`) — name/date/location edited in place. Changing name or date regenerates the slug via `buildEventSlug()` (exported from `src/lib/ingest.ts` so ingest and admin-edit can never drift). Editing into another event's slug returns 409 with an inline dialog error; a Prisma `P2002` catch backstops the check-then-update race.
+- **Guarded delete** (`DELETE /api/admin/events/:id`) — confirmation dialog shows exactly what goes ("N entries, M runs, K videos"; no type-to-confirm — deletes are recoverable by re-uploading the `.axdb`). `Event` delete cascades `Entry` → `Run` and `Video`; the same interactive transaction then sweeps `Driver` rows with no remaining entries **and** no videos. The sweep is global by design (also cleans pre-existing orphans); `Driver`/`CarClass` are shared across events and otherwise untouched.
+- **`AdminAuditLog`** (migration `20260710213325_admin_audit_log`) — one generic table for `ingest` / `event.update` / `event.delete` with actor MSR UID + redacted display name (`First L.` only), target id/slug, and a JSON-string `detail` column (before/after for edits, counts + `orphanDriversDeleted` for deletes, filename + sha + counts for ingests). Edit/delete write the audit row inside their transaction; the two ingest paths (admin upload route, CLI with `actor: "cli"`) write best-effort in a try/catch so an audit hiccup never fails a completed ingest.
+- `IngestSummary` gained `axdbSha256` (ingest already computed it) so audit writers don't recompute.
+- Added the shadcn `dialog` primitive (base-nova / Base UI — no new npm dependency).
+
+**Decisions:** API routes rather than server actions (consistent with the codebase's only mutation idiom); a single `/admin/events` page with row actions rather than per-event pages; orphan sweep automatic inside the delete transaction rather than a separate button; one generic audit model rather than a separate `IngestLog`.
+
+**Files:** new `src/lib/admin-events.ts` (`updateEventMetadata`, `deleteEventWithSweep`, typed `EventNotFoundError`/`SlugCollisionError`), `src/lib/audit.ts` (`writeAudit`), `src/app/api/admin/events/[id]/route.ts`, `src/app/admin/events/` (page + table + two dialogs), `src/components/ui/dialog.tsx`; modified `src/lib/ingest.ts`, both ingest entry points, `/admin` hub, `prisma/schema.prisma`.
+
+**Tests:** `tests/admin-events.test.ts` (13 cases, isolated `test-admin-events.db`): delete cascade, orphan sweep with cross-event shared drivers, video-guard (driver whose only remaining footprint is a video on a surviving event survives), audit-row PII sweep, slug regen/ingest-convention parity, location-only edit stability, collision atomicity (no partial write, no audit row), not-found, and a regression test that delete + re-ingest lands on exactly one Event row.
+
+**Verified end-to-end (2026-07-10):** reproduced the duplicate with a date/name-tweaked synthetic fixture, then fixed it entirely through the UI — edit with slug regen, inline 409 on collision, both deletes (second sweep removed all 6 synthetic drivers), deleted slug 404s, home/leaderboard recovered. Checked at mobile (390px — table scrolls in its own `overflow-x-auto` container) and desktop breakpoints.
+
+**Deploy note:** the Turso migration is applied manually by the operator (`pnpm --filter web migrate:turso`) — delete/edit fail against Turso until it's applied because the audit insert is part of the transaction.
 
 ### M3 — Public calendar (target: 0.5 session, after M2)
 
