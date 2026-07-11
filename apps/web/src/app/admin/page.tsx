@@ -42,6 +42,21 @@ export default function AdminPage() {
             </CardContent>
           </Card>
         </Link>
+        <Link href="/admin/audit">
+          <Card className="cursor-pointer hover:border-primary/40 transition-colors">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                Audit log
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Review admin ingest, edit, and delete history.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
     </main>
   );
