@@ -10,6 +10,7 @@ export type IngestSummary = {
   status: "ingested" | "unchanged";
   event: { id: number; slug: string; name: string };
   counts: { classes: number; drivers: number; entries: number; runs: number };
+  axdbSha256: string;
 };
 
 type SrcEvent = { id: number; event_name: string; event_date: string };
@@ -41,11 +42,15 @@ type SrcRegistration = {
 const REQUIRED_TABLES = ["events", "classes", "drivers", "registrations", "runs"] as const;
 
 
-function slugify(s: string): string {
+export function slugify(s: string): string {
   return s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+export function buildEventSlug(dateStr: string, name: string): string {
+  return `${dateStr}-${slugify(name)}`;
 }
 
 function toDisposition(raw: string | null): RunDisposition {
@@ -151,7 +156,7 @@ export async function ingestAxdb(
       srcDrivers = srcDrivers.filter((d) => srcDriverIdsWithRuns.has(d.id));
     }
 
-    const slug = `${srcEvent.event_date}-${slugify(srcEvent.event_name)}`;
+    const slug = buildEventSlug(srcEvent.event_date, srcEvent.event_name);
     const eventDate = new Date(`${srcEvent.event_date}T00:00:00.000Z`);
 
     return await client.$transaction(async (tx) => {
@@ -169,6 +174,7 @@ export async function ingestAxdb(
             entries,
             runs,
           },
+          axdbSha256: sha,
         };
       }
 
@@ -405,6 +411,7 @@ export async function ingestAxdb(
           entries: srcDrivers.length,
           runs: runsData.length,
         },
+        axdbSha256: sha,
       };
     });
   } finally {
