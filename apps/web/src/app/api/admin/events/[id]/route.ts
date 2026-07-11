@@ -76,7 +76,7 @@ export async function PATCH(
     const event = await updateEventMetadata(
       prisma,
       eventId,
-      { name: name.trim(), date, location: location ? location : null },
+      { name: name.trim(), date, location: location?.trim() ? location.trim() : null },
       guarded.actor,
     );
     return NextResponse.json({ event }, { status: 200 });

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { ingestAxdb } from "@/lib/ingest";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
@@ -31,7 +31,8 @@ async function main() {
       targetType: "event",
       targetId: result.event.id,
       targetSlug: result.event.slug,
-      detail: { filename: path, axdbSha256: result.axdbSha256, status: result.status, counts: result.counts },
+      // basename only — the absolute path would leak local machine details into the shared DB
+      detail: { filename: basename(path), axdbSha256: result.axdbSha256, status: result.status, counts: result.counts },
     });
   } catch (auditErr) {
     // Audit is best-effort — a logging hiccup must not fail a completed ingest.

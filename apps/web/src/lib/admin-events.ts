@@ -102,14 +102,14 @@ export async function deleteEventWithSweep(
   const event = await client.event.findUnique({ where: { id: eventId } });
   if (!event) throw new EventNotFoundError(eventId);
 
-  const [entries, runs, videos] = await Promise.all([
-    client.entry.count({ where: { eventId } }),
-    client.run.count({ where: { entry: { eventId } } }),
-    client.video.count({ where: { eventId } }),
-  ]);
-  const counts = { entries, runs, videos };
-
   return await client.$transaction(async (tx) => {
+    // Counted inside the transaction so the audit row reflects exactly what
+    // this delete removes, even if rows changed since the caller's last read.
+    const entries = await tx.entry.count({ where: { eventId } });
+    const runs = await tx.run.count({ where: { entry: { eventId } } });
+    const videos = await tx.video.count({ where: { eventId } });
+    const counts = { entries, runs, videos };
+
     await tx.event.delete({ where: { id: eventId } });
 
     // Global by design: also cleans up any pre-existing orphans, not just
