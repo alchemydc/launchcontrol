@@ -208,6 +208,8 @@ model AdminAuditLog {
 }
 ```
 
+**`Video` is schema-only.** The table has existed since the init migration (20260518214917) as groundwork for the future M5 media hub (driver-submitted YouTube/Vimeo links — see PRD Future Scope), but **no write path exists yet** and no rows exist in any environment. The M4.1 admin surface already handles it correctly: event delete cascades videos, the delete dialog shows the video count, and the orphan-driver sweep keeps drivers whose only remaining footprint is a video on a surviving event.
+
 Derived values (computed, not stored):
 
 - `corrected_time_ms = raw_time_ms + cones * CONE_PENALTY_MS` where `CONE_PENALTY_MS = 2000` (PCA AX standard; lives as a constant in code until a region overrides it).
