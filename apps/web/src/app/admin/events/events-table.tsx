@@ -103,10 +103,7 @@ export function EventsTable({ rows }: { rows: EventRow[] }) {
         <DeleteEventDialog
           row={deletingRow}
           onClose={() => setDeletingRow(null)}
-          onSuccess={() => {
-            setDeletingRow(null);
-            router.refresh();
-          }}
+          onDeleted={() => router.refresh()}
         />
       )}
     </>
