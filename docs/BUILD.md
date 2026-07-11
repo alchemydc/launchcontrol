@@ -648,6 +648,8 @@ Closes the "hand-edit the DB to fix bad uploads" gap. An admin uploaded 2024/202
 - **`AdminAuditLog`** (migration `20260710213325_admin_audit_log`) — one generic table for `ingest` / `event.update` / `event.delete` with actor MSR UID + redacted display name (`First L.` only), target id/slug, and a JSON-string `detail` column (before/after for edits, counts + `orphanDriversDeleted` for deletes, filename + sha + counts for ingests). Edit/delete write the audit row inside their transaction; the two ingest paths (admin upload route, CLI with `actor: "cli"`) write best-effort in a try/catch so an audit hiccup never fails a completed ingest.
 - `IngestSummary` gained `axdbSha256` (ingest already computed it) so audit writers don't recompute.
 - Added the shadcn `dialog` primitive (base-nova / Base UI — no new npm dependency).
+- **`/admin/audit`** (follow-up in the same PR) — read-only server-rendered page behind the same admin gate listing the latest 200 audit rows (timestamp, action, redacted actor, target slug) with per-row expandable pretty-printed detail JSON. Third card on the `/admin` hub.
+- **Delete result stays visible** (follow-up in the same PR): the delete dialog switches to a persistent success state showing entries/runs/videos removed and orphaned drivers swept, closing only when dismissed; the table refreshes behind the open dialog.
 
 **Decisions:** API routes rather than server actions (consistent with the codebase's only mutation idiom); a single `/admin/events` page with row actions rather than per-event pages; orphan sweep automatic inside the delete transaction rather than a separate button; one generic audit model rather than a separate `IngestLog`.
 
