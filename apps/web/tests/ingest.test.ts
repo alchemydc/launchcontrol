@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
-import { ingestAxdb } from "@/lib/ingest";
+import { ingestAxdb, normalizeMemberNum } from "@/lib/ingest";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test.db");
 const TEST_DB_URL = "file:./test.db";
@@ -139,6 +139,36 @@ describe("ingestAxdb(synthetic.axdb)", () => {
     for (const e of entries) {
       expect(e.bestCommittedRunNumber, `entry ${e.id} should have bestCommittedRunNumber set`).not.toBeNull();
     }
+  });
+});
+
+describe("normalizeMemberNum", () => {
+  it("passes through a plain member number", () => {
+    expect(normalizeMemberNum("123")).toBe("123");
+  });
+
+  it("strips a space-separated 'verified' suffix", () => {
+    expect(normalizeMemberNum("123 verified")).toBe("123");
+  });
+
+  it("strips a hyphen-separated 'verified' suffix", () => {
+    expect(normalizeMemberNum("123-verified")).toBe("123");
+  });
+
+  it("strips an uppercase 'VERIFIED' suffix", () => {
+    expect(normalizeMemberNum("123-VERIFIED")).toBe("123");
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(normalizeMemberNum("  123  ")).toBe("123");
+  });
+
+  it("returns null for whitespace-only input", () => {
+    expect(normalizeMemberNum("   ")).toBeNull();
+  });
+
+  it("returns null for null input", () => {
+    expect(normalizeMemberNum(null)).toBeNull();
   });
 });
 

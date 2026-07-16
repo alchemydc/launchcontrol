@@ -74,6 +74,19 @@ function computeIdentityHash(
   return createHash("sha256").update(key).digest("hex");
 }
 
+// VisualAX's post-AxWare-transition exports sometimes append a "verified" token
+// to member_num (`"1234 verified"`, `"1234-verified"`) that isn't present on
+// older exports of the same person. Left unstripped, this splits one human into
+// multiple Driver rows. Strip it down to the base number before it ever reaches
+// the identity hash or gets stored.
+export function normalizeMemberNum(raw: string | null): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const stripped = trimmed.replace(/[-\s]+verified$/i, "").trim();
+  return stripped.length > 0 ? stripped : null;
+}
+
 export async function ingestAxdb(
   path: string,
   client: PrismaClient = defaultClient,
@@ -223,9 +236,11 @@ export async function ingestAxdb(
 
       // Driver: identity is `(memberNum, firstName, lastName)` hashed. VisualAX's member_num
       // is family/account-level — multiple distinct humans can share one, and co-drivers
-      // may either share the primary's member_num or have an empty member_num. Hashing
-      // the full last_name lets us cross-link the same human across events while still
-      // persisting only the redacted lastInitial (see redactLastName above).
+      // may either share the primary's member_num or have an empty member_num. member_num is
+      // normalized (verified-suffix stripped, see normalizeMemberNum above) before hashing,
+      // so the same person's differing raw forms across exports still collapse to one
+      // identity. Hashing the full last_name lets us cross-link the same human across
+      // events while still persisting only the redacted lastInitial (see redactLastName above).
       const driverHashBySrc = new Map<number, string>();
       const uniqueDriverIdentities = new Map<string, {
         identityHash: string;
@@ -234,7 +249,7 @@ export async function ingestAxdb(
         lastInitial: string;
       }>();
       for (const d of srcDrivers) {
-        const memberNum = d.member_num?.trim() ? d.member_num.trim() : null;
+        const memberNum = normalizeMemberNum(d.member_num);
         const identityHash = computeIdentityHash(memberNum, d.first_name, d.last_name);
         driverHashBySrc.set(d.id, identityHash);
         // Last write wins on duplicate identityHash within one source — mirrors the

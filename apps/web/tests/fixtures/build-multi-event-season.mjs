@@ -25,6 +25,10 @@
 //                            Event 1 uses "boxster s" (lowercase) to exercise pre-M1.14 normalization
 //                            tests; today the description has no scoring impact (multi-car allowed).
 //                            All 6 events score for Fred in CS.
+//                            member_num carries a "verified" suffix in raw form on two events —
+//                            event 1: "MES-006 verified", event 2: "MES-006-verified" — to
+//                            exercise normalizeMemberNum() collapsing both to "MES-006" and
+//                            still resolving to a single Driver row (see ingest.test.ts).
 //  Driver 7: Gina Grant    (member MES-007, CS all 6 events, mixed cars)
 //                            Cars: 911 (events 1,2,3) and Cayman (events 4,5,6).
 //                            All 6 events score for Gina in CS.
@@ -309,7 +313,7 @@ buildEventAxdb(
     { id: 3, last: "Crane",  first: "Cam",  num: "103", classId: 2, paxId: 2, memberNum: "MES-003", car: "Porsche 911 GT3" },
     { id: 4, last: "Dumas",  first: "Dee",  num: "104", classId: 1, paxId: 1, memberNum: "MES-004" },
     { id: 5, last: "Elias",  first: "Evan", num: "105", classId: 1, paxId: 1, memberNum: "MES-005" },
-    { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006", car: "boxster s" }, // lowercase — normalized to same key as "Boxster S"
+    { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006 verified", car: "boxster s" }, // lowercase — normalized to same key as "Boxster S"; member_num carries a "verified" suffix (M1.x normalizeMemberNum test)
     { id: 7, last: "Grant",  first: "Gina", num: "107", classId: 2, paxId: 2, memberNum: "MES-007", car: "911" },
   ],
   [
@@ -337,7 +341,7 @@ buildEventAxdb(
     { id: 2, last: "Barton", first: "Bea",  num: "102", classId: 1, paxId: 1, memberNum: "MES-002" },
     { id: 3, last: "Crane",  first: "Cam",  num: "103", classId: 2, paxId: 2, memberNum: "MES-003", car: "Porsche 911 GT3" },
     { id: 4, last: "Dumas",  first: "Dee",  num: "104", classId: 1, paxId: 1, memberNum: "MES-004" },
-    { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006", car: "Boxster S" },
+    { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006-verified", car: "Boxster S" }, // hyphenated "verified" suffix form (M1.x normalizeMemberNum test)
     { id: 7, last: "Grant",  first: "Gina", num: "107", classId: 2, paxId: 2, memberNum: "MES-007", car: "911" },
   ],
   [

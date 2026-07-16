@@ -52,6 +52,17 @@ afterAll(async () => {
   rmSync(TEST_DB_PATH, { force: true });
 });
 
+describe("member_num normalization across events", () => {
+  it("collapses Fred's 'verified'-suffixed raw member_num forms to one Driver row", async () => {
+    // Fred's raw member_num is "MES-006 verified" at event 1 and "MES-006-verified"
+    // at event 2, but plain "MES-006" at events 3-6. normalizeMemberNum() must
+    // strip both suffix forms so all 6 events resolve to the same Driver.
+    const freds = await prisma.driver.findMany({ where: { firstName: "Fred" } });
+    expect(freds).toHaveLength(1);
+    expect(freds[0]!.memberNum).toBe("MES-006");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Fixture overview (documented in build-multi-event-season.mjs):
 //
