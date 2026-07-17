@@ -73,7 +73,8 @@ function parseArgs(argv: string[]): { rootDir: string; write: boolean; outDir: s
 // Skip AxWare "Trailer Export" files (a different export shape) and anything
 // staged under a `disabled` directory.
 function shouldSkipFile(basename: string): boolean {
-  return basename.includes("Trailer Export");
+  // Case-insensitive to match ingest.sh's `-iname '*trailer*export*.axdb'` skip.
+  return basename.toLowerCase().includes("trailer export");
 }
 
 function shouldSkipDir(dirName: string): boolean {

@@ -295,10 +295,14 @@ export async function ingestAxdb(
         const nameOnlyHashes = Array.from(
           new Set(Array.from(uniqueDriverIdentities.values(), (i) => i.nameOnlyHash)),
         );
-        const [existingByIdentityHash, existingByNameOnlyHash] = await Promise.all([
-          tx.driver.findMany({ where: { identityHash: { in: identityHashes } } }),
-          tx.driver.findMany({ where: { nameOnlyHash: { in: nameOnlyHashes } } }),
-        ]);
+        // Sequential on purpose: parallel queries on an interactive-transaction client
+        // share one connection and can abort the transaction (Prisma guidance).
+        const existingByIdentityHash = await tx.driver.findMany({
+          where: { identityHash: { in: identityHashes } },
+        });
+        const existingByNameOnlyHash = await tx.driver.findMany({
+          where: { nameOnlyHash: { in: nameOnlyHashes } },
+        });
         const existingByHash = new Map(existingByIdentityHash.map((d) => [d.identityHash, d]));
 
         // identityHash → resolved app Driver id. Populated identities are resolved (updated,
