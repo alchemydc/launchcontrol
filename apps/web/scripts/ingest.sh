@@ -11,14 +11,14 @@ usage() {
 list_event_dirs() {
   local search_root="$1"
 
-  find "$search_root" -type f -name '*.axdb' -not -iname '*trailer*export*.axdb' -exec dirname '{}' ';' |
+  find "$search_root" -type f -name '*.axdb' -not -iname '*trailer*export*.axdb' -not -path '*/disabled/*' -exec dirname '{}' ';' |
     LC_ALL=C sort -u
 }
 
 list_candidates() {
   local event_dir="$1"
 
-  find "$event_dir" -type f -name '*.axdb' -not -iname '*trailer*export*.axdb' |
+  find "$event_dir" -type f -name '*.axdb' -not -iname '*trailer*export*.axdb' -not -path '*/disabled/*' |
     LC_ALL=C sort
 }
 

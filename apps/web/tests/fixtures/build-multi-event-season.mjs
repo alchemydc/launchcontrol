@@ -32,6 +32,10 @@
 //  Driver 7: Gina Grant    (member MES-007, CS all 6 events, mixed cars)
 //                            Cars: 911 (events 1,2,3) and Cayman (events 4,5,6).
 //                            All 6 events score for Gina in CS.
+//                            member_num is blank at event 4 only (Fred already carries the
+//                            "verified"-suffix drift at events 1-2, so a different member
+//                            exercises the nameOnlyHash merge-back path — see
+//                            season-leaderboard.test.ts's single-Driver-across-6-events assertion).
 //
 // Dynamic qualifying threshold: floor(6/2)+1 = 4. Drivers need 4 scoring events
 // IN THAT CLASS to be eligible (Official); below threshold = Provisional.
@@ -402,7 +406,7 @@ buildEventAxdb(
     { id: 2, last: "Barton", first: "Bea",  num: "102", classId: 1, paxId: 1, memberNum: "MES-002" },
     { id: 4, last: "Dumas",  first: "Dee",  num: "104", classId: 2, paxId: 2, memberNum: "MES-004" }, // CS
     { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006", car: "Boxster S" },
-    { id: 7, last: "Grant",  first: "Gina", num: "107", classId: 2, paxId: 2, memberNum: "MES-007", car: "Cayman" },
+    { id: 7, last: "Grant",  first: "Gina", num: "107", classId: 2, paxId: 2, memberNum: null, car: "Cayman" }, // blank member_num this event only — exercises nameOnlyHash merge-back (ingest.test.ts covers the mechanism directly)
   ],
   [
     { driverId: 1, deltaMs: 53000, cones: 0 },
