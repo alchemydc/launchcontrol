@@ -180,9 +180,14 @@ function UnrankedList({ rows }: { rows: CombinedResultRow[] }) {
               </Badge>
             )}
             <span className="text-muted-foreground text-xs">
-              {row.classMismatch
-                ? "raced a different class in each session"
-                : `missing ${row.missingSessions.join(", ")}`}
+              {[
+                row.missingSessions.length > 0
+                  ? `missing ${row.missingSessions.join(", ")}`
+                  : null,
+                row.classMismatch ? "raced a different class in each session" : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           </li>
         ))}

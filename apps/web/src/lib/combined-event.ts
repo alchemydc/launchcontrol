@@ -74,14 +74,14 @@ export type CombinedResults = {
 // just re-identifies *which* run produced that value so the UI can show
 // "R4: 38.335" the way the club's own handout does. Reuses the same
 // CONE_PENALTY_MS constant rather than re-deriving the cone math.
-function bestRunForEntry(entry: EntryForBest): { runNumber: number; correctedMs: number } | null {
+function bestRunForEntry(entry: EntryForBest): { runNumber: number | null; correctedMs: number } | null {
   const bestMs = bestCorrectedMsForEntry(entry);
   if (bestMs == null) return null;
   const match = entry.runs.find(
     (r: RunForBest) =>
       r.disposition === "CLEAN" && r.rawTimeMs != null && r.rawTimeMs + r.cones * CONE_PENALTY_MS === bestMs,
   );
-  return { runNumber: match?.runNumber ?? entry.bestCommittedRunNumber ?? -1, correctedMs: bestMs };
+  return { runNumber: match?.runNumber ?? entry.bestCommittedRunNumber ?? null, correctedMs: bestMs };
 }
 
 function sessionMeta(event: CombinedSessionEvent) {

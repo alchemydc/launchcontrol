@@ -32,8 +32,8 @@ function qualifyingEventCount(totalEventsInSeason: number): number {
  * lowest-`id` (earliest-ingested) session in the group.
  *
  * Exported for reuse by `combined-event.ts` (combined page header) and unit
- * tests. A single-element input just returns that event's name unchanged
- * (the strip still applies, matching how a lone session would ever be shown).
+ * tests. The strip applies to a single-element input too — a lone session
+ * named "Foo (A)" labels as "Foo", same as the full group would.
  */
 export function combinedEventLabel(
   events: Array<{ id: number; name: string }>,
