@@ -74,6 +74,30 @@ function computeIdentityHash(
   return createHash("sha256").update(key).digest("hex");
 }
 
+// Full-name-only key, independent of member_num. Used to self-heal legacy .axdb
+// exports (e.g. the 2024 AxWare transition) where every driver row has a blank
+// member_num, which would otherwise split one human into a distinct Driver per
+// event. Never used as the primary identity — only to find merge/adopt
+// candidates when an identityHash lookup misses (see the driver-resolution
+// block below).
+export function computeNameOnlyHash(firstName: string, lastName: string): string {
+  const key = `${firstName.toLowerCase().trim()}|${lastName.toLowerCase().trim()}`;
+  return createHash("sha256").update(key).digest("hex");
+}
+
+// VisualAX's post-AxWare-transition exports sometimes append a "verified" token
+// to member_num (`"1234 verified"`, `"1234-verified"`) that isn't present on
+// older exports of the same person. Left unstripped, this splits one human into
+// multiple Driver rows. Strip it down to the base number before it ever reaches
+// the identity hash or gets stored.
+export function normalizeMemberNum(raw: string | null): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const stripped = trimmed.replace(/[-\s]+verified$/i, "").trim();
+  return stripped.length > 0 ? stripped : null;
+}
+
 export async function ingestAxdb(
   path: string,
   client: PrismaClient = defaultClient,
@@ -223,18 +247,34 @@ export async function ingestAxdb(
 
       // Driver: identity is `(memberNum, firstName, lastName)` hashed. VisualAX's member_num
       // is family/account-level — multiple distinct humans can share one, and co-drivers
-      // may either share the primary's member_num or have an empty member_num. Hashing
-      // the full last_name lets us cross-link the same human across events while still
-      // persisting only the redacted lastInitial (see redactLastName above).
-      const driverHashBySrc = new Map<number, string>();
-      const uniqueDriverIdentities = new Map<string, {
+      // may either share the primary's member_num or have an empty member_num. member_num is
+      // normalized (verified-suffix stripped, see normalizeMemberNum above) before hashing,
+      // so the same person's differing raw forms across exports still collapse to one
+      // identity. Hashing the full last_name lets us cross-link the same human across
+      // events while still persisting only the redacted lastInitial (see redactLastName above).
+      //
+      // Legacy .axdb exports (e.g. the 2024 AxWare transition) carry a blank member_num for
+      // every driver, so identityHash alone would split one human into one Driver row per
+      // event. When an identityHash lookup misses, nameOnlyHash (full-name-only, see
+      // computeNameOnlyHash above) finds merge/adopt candidates instead:
+      //   - a blank-member row merges into the single populated Driver sharing its name
+      //     (no new row) — self-healing the legacy files as they're ingested.
+      //   - a populated row "adopts" a single pre-existing blank-member Driver sharing its
+      //     name, updating it in place — so a later, better-identified export of the same
+      //     legacy-era human still lands on the same row.
+      // Both only fire when there is EXACTLY ONE candidate; 0 or ≥2 leaves the status quo
+      // (a new, separate Driver row) rather than guessing.
+      type DriverIdentity = {
         identityHash: string;
         memberNum: string | null;
         firstName: string;
         lastInitial: string;
-      }>();
+        nameOnlyHash: string;
+      };
+      const driverHashBySrc = new Map<number, string>();
+      const uniqueDriverIdentities = new Map<string, DriverIdentity>();
       for (const d of srcDrivers) {
-        const memberNum = d.member_num?.trim() ? d.member_num.trim() : null;
+        const memberNum = normalizeMemberNum(d.member_num);
         const identityHash = computeIdentityHash(memberNum, d.first_name, d.last_name);
         driverHashBySrc.set(d.id, identityHash);
         // Last write wins on duplicate identityHash within one source — mirrors the
@@ -244,6 +284,7 @@ export async function ingestAxdb(
           memberNum,
           firstName: d.first_name,
           lastInitial: redactLastName(d.last_name),
+          nameOnlyHash: computeNameOnlyHash(d.first_name, d.last_name),
         });
       }
 
@@ -251,25 +292,37 @@ export async function ingestAxdb(
 
       if (uniqueDriverIdentities.size > 0) {
         const identityHashes = Array.from(uniqueDriverIdentities.keys());
-        const existingDrivers = await tx.driver.findMany({
+        const nameOnlyHashes = Array.from(
+          new Set(Array.from(uniqueDriverIdentities.values(), (i) => i.nameOnlyHash)),
+        );
+        // Sequential on purpose: parallel queries on an interactive-transaction client
+        // share one connection and can abort the transaction (Prisma guidance).
+        const existingByIdentityHash = await tx.driver.findMany({
           where: { identityHash: { in: identityHashes } },
         });
-        const existingByHash = new Map(existingDrivers.map((d) => [d.identityHash, d]));
+        const existingByNameOnlyHash = await tx.driver.findMany({
+          where: { nameOnlyHash: { in: nameOnlyHashes } },
+        });
+        const existingByHash = new Map(existingByIdentityHash.map((d) => [d.identityHash, d]));
 
-        const newDriverData: Array<{
-          identityHash: string;
-          memberNum: string | null;
-          firstName: string;
-          lastInitial: string;
-        }> = [];
+        // identityHash → resolved app Driver id. Populated identities are resolved (updated,
+        // adopted, or created) before blank ones so a blank identity's merge-candidate search
+        // can see the id of an in-file populated driver this same pass just created.
+        const resolvedIdByIdentity = new Map<string, number>();
+        const populatedMisses: Array<[string, DriverIdentity]> = [];
+        const blankMisses: Array<[string, DriverIdentity]> = [];
+
         for (const [hash, info] of uniqueDriverIdentities) {
           const cur = existingByHash.get(hash);
           if (!cur) {
-            newDriverData.push(info);
-          } else if (
+            (info.memberNum == null ? blankMisses : populatedMisses).push([hash, info]);
+            continue;
+          }
+          if (
             cur.firstName !== info.firstName ||
             cur.lastInitial !== info.lastInitial ||
-            cur.memberNum !== info.memberNum
+            cur.memberNum !== info.memberNum ||
+            cur.nameOnlyHash !== info.nameOnlyHash
           ) {
             await tx.driver.update({
               where: { id: cur.id },
@@ -277,20 +330,87 @@ export async function ingestAxdb(
                 firstName: info.firstName,
                 lastInitial: info.lastInitial,
                 memberNum: info.memberNum,
+                nameOnlyHash: info.nameOnlyHash,
               },
             });
           }
-        }
-        if (newDriverData.length > 0) {
-          await tx.driver.createMany({ data: newDriverData });
+          resolvedIdByIdentity.set(hash, cur.id);
         }
 
-        const allDrivers = await tx.driver.findMany({
-          where: { identityHash: { in: identityHashes } },
-        });
-        const driverIdByHash = new Map(allDrivers.map((d) => [d.identityHash, d.id]));
+        // Populated, identityHash miss: adopt-forward into a pre-existing blank-member Driver
+        // sharing the full-name key, else create. A blank Driver's identityHash is unique, so
+        // at most one can share a nameOnlyHash — the ambiguity guard only needs to rule out
+        // OTHER populated rows/identities sharing that same name.
+        const populatedCreateData: DriverIdentity[] = [];
+        for (const [hash, info] of populatedMisses) {
+          const blankCandidate = existingByNameOnlyHash.find(
+            (d) => d.nameOnlyHash === info.nameOnlyHash && d.memberNum == null,
+          );
+          const otherPopulatedInDb = existingByNameOnlyHash.some(
+            (d) => d.nameOnlyHash === info.nameOnlyHash && d.memberNum != null,
+          );
+          const otherPopulatedInFile = Array.from(uniqueDriverIdentities.entries()).some(
+            ([otherHash, otherInfo]) =>
+              otherHash !== hash &&
+              otherInfo.memberNum != null &&
+              otherInfo.nameOnlyHash === info.nameOnlyHash,
+          );
+          if (blankCandidate && !otherPopulatedInDb && !otherPopulatedInFile) {
+            await tx.driver.update({
+              where: { id: blankCandidate.id },
+              data: {
+                memberNum: info.memberNum,
+                identityHash: info.identityHash,
+                firstName: info.firstName,
+                lastInitial: info.lastInitial,
+                nameOnlyHash: info.nameOnlyHash,
+              },
+            });
+            resolvedIdByIdentity.set(hash, blankCandidate.id);
+          } else {
+            populatedCreateData.push(info);
+          }
+        }
+        if (populatedCreateData.length > 0) {
+          await tx.driver.createMany({ data: populatedCreateData });
+          const created = await tx.driver.findMany({
+            where: { identityHash: { in: populatedCreateData.map((i) => i.identityHash) } },
+          });
+          for (const d of created) resolvedIdByIdentity.set(d.identityHash, d.id);
+        }
+
+        // Blank, identityHash miss: merge into the single populated Driver sharing the
+        // full-name key — either resolved above (this file or already in the DB) — else
+        // create a new name-only Driver row (status quo, e.g. an ambiguous shared name).
+        const blankCreateData: DriverIdentity[] = [];
+        for (const [hash, info] of blankMisses) {
+          const candidateIds = new Set<number>();
+          for (const [otherHash, otherInfo] of uniqueDriverIdentities) {
+            if (otherHash === hash || otherInfo.memberNum == null) continue;
+            if (otherInfo.nameOnlyHash !== info.nameOnlyHash) continue;
+            const id = resolvedIdByIdentity.get(otherHash);
+            if (id != null) candidateIds.add(id);
+          }
+          for (const d of existingByNameOnlyHash) {
+            if (d.memberNum != null && d.nameOnlyHash === info.nameOnlyHash) candidateIds.add(d.id);
+          }
+          if (candidateIds.size === 1) {
+            const [onlyId] = candidateIds;
+            resolvedIdByIdentity.set(hash, onlyId!);
+          } else {
+            blankCreateData.push(info);
+          }
+        }
+        if (blankCreateData.length > 0) {
+          await tx.driver.createMany({ data: blankCreateData });
+          const created = await tx.driver.findMany({
+            where: { identityHash: { in: blankCreateData.map((i) => i.identityHash) } },
+          });
+          for (const d of created) resolvedIdByIdentity.set(d.identityHash, d.id);
+        }
+
         for (const [srcId, hash] of driverHashBySrc) {
-          const id = driverIdByHash.get(hash);
+          const id = resolvedIdByIdentity.get(hash);
           if (id == null) {
             throw new Error(`Failed to resolve driver id for identity hash '${hash.slice(0, 12)}…'`);
           }

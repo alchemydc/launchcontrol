@@ -31,9 +31,12 @@ model Driver {
   lastInitial  String  // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest.ts redactLastName()
   identityHash String  @unique
   memberNum    String?
+  nameOnlyHash String?   // sha256(lower(first)|lower(last)) — full-name key for blank-member merging at ingest; nullable because pre-existing rows can't be backfilled (full surname is never stored)
 
   entries Entry[]
   videos  Video[]
+
+  @@index([nameOnlyHash])
 }
 
 model CarClass {

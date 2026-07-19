@@ -52,6 +52,29 @@ afterAll(async () => {
   rmSync(TEST_DB_PATH, { force: true });
 });
 
+describe("member_num normalization across events", () => {
+  it("collapses Fred's 'verified'-suffixed raw member_num forms to one Driver row", async () => {
+    // Fred's raw member_num is "MES-006 verified" at event 1 and "MES-006-verified"
+    // at event 2, but plain "MES-006" at events 3-6. normalizeMemberNum() must
+    // strip both suffix forms so all 6 events resolve to the same Driver.
+    const freds = await prisma.driver.findMany({ where: { firstName: "Fred" } });
+    expect(freds).toHaveLength(1);
+    expect(freds[0]!.memberNum).toBe("MES-006");
+  });
+});
+
+describe("nameOnlyHash merge-back across events", () => {
+  it("collapses Gina's blank-member_num event (event 4) into her one populated Driver row", async () => {
+    // Gina's member_num is "MES-007" at events 1-3, 5-6, but blank at event 4.
+    // The blank row must merge into the existing populated Driver by nameOnlyHash
+    // rather than splitting into a second Driver — ingest.test.ts covers the
+    // merge/adopt mechanism directly; this checks it holds across a full season.
+    const ginas = await prisma.driver.findMany({ where: { firstName: "Gina", lastInitial: "G." } });
+    expect(ginas).toHaveLength(1);
+    expect(ginas[0]!.memberNum).toBe("MES-007");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Fixture overview (documented in build-multi-event-season.mjs):
 //
