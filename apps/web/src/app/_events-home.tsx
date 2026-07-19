@@ -44,14 +44,13 @@ export async function EventsHome({
   });
 
   // Combined-event grouping (M1.15): events sharing a calendar date form one
-  // combined scoring event — badge each session card and surface one
-  // combined-standings link per multi-event date.
+  // combined scoring event — badge each session card and link each one to the
+  // combined standings.
   const dateCounts = new Map<string, number>();
   for (const event of events) {
     const dateKey = event.date.toISOString().slice(0, 10);
     dateCounts.set(dateKey, (dateCounts.get(dateKey) ?? 0) + 1);
   }
-  const seenCombinedDates = new Set<string>();
 
   const photosUrls = await Promise.all(
     events.map((e) => findSmugmugEventFolder(e.name, e.date)),
@@ -112,8 +111,6 @@ export async function EventsHome({
             {events.map((event, i) => {
               const dateKey = event.date.toISOString().slice(0, 10);
               const isCombined = (dateCounts.get(dateKey) ?? 0) > 1;
-              const showCombinedLink = isCombined && !seenCombinedDates.has(dateKey);
-              if (showCombinedLink) seenCombinedDates.add(dateKey);
 
               return (
                 <li key={event.id}>
@@ -153,7 +150,7 @@ export async function EventsHome({
                         </Badge>
                       </div>
                     </CardHeader>
-                    {showCombinedLink && (
+                    {isCombined && (
                       <div className="relative z-10 px-6 pb-4 -mt-2">
                         <Link
                           href={`/events/combined/${dateKey}`}
