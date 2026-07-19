@@ -21,6 +21,7 @@ interface SeasonLeaderboardViewProps {
   years: number[];
   standings: SeasonStandingsByClass[];
   totalEvents: number;
+  completedEvents: number;
   qualifyingEvents: number;
 }
 
@@ -270,6 +271,7 @@ export function SeasonLeaderboardView({
   years,
   standings,
   totalEvents,
+  completedEvents,
   qualifyingEvents,
 }: SeasonLeaderboardViewProps) {
   return (
@@ -288,9 +290,10 @@ export function SeasonLeaderboardView({
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Points are awarded per event: 1000 to the class winner, others
                 proportional. Combined (same-date, multi-session) events score
-                once, on summed session times. Best {qualifyingEvents} scores
-                count toward the season total. Drivers with fewer than{" "}
-                {qualifyingEvents} scoring events are marked Provisional.
+                once, on summed session times. Best {qualifyingEvents} of{" "}
+                {totalEvents} scores count toward the season total. Drivers
+                with fewer than {qualifyingEvents} scoring events are marked
+                Provisional.
               </p>
             </div>
           </div>
@@ -301,6 +304,16 @@ export function SeasonLeaderboardView({
           )}
         </div>
       </header>
+
+      {completedEvents < qualifyingEvents && standings.length > 0 && (
+        <div className="mb-6 flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-4">
+          <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
+          <p className="text-sm text-muted-foreground">
+            Standings are provisional until {qualifyingEvents} of{" "}
+            {totalEvents} events are complete ({completedEvents} run so far).
+          </p>
+        </div>
+      )}
 
       <ClassJumpBar standings={standings} />
 

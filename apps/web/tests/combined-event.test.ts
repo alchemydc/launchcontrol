@@ -84,6 +84,10 @@ describe("buildSeasonLeaderboard(2027) — combined-event scoring groups", () =>
     const result = await buildSeasonLeaderboard(2027, prisma);
     expect(result.totalEvents).toBe(3);
     expect(result.qualifyingEvents).toBe(2);
+    // 2027 is intentionally absent from PLANNED_SEASON_EVENTS, so this is a
+    // pure fallback-to-actual regression case (M1.16): completedEvents ===
+    // totalEvents === actual scoring groups, unaffected by the planned map.
+    expect(result.completedEvents).toBe(3);
   });
 
   it("Quinn's C1 row: opener + classic (1000 each) count, combined (943) drops", async () => {
@@ -161,6 +165,47 @@ describe("buildSeasonLeaderboard(2027) — combined-event scoring groups", () =>
     expect(allNames).not.toContain("Leo L."); // missing session B
     expect(allNames).not.toContain("Mia C."); // DNF in session A
     expect(allNames).not.toContain("Nick D."); // class mismatch A vs. B
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M1.16 — planned-season threshold override, via injected map (2027 is
+// intentionally unlisted in the real PLANNED_SEASON_EVENTS; injection lets
+// us exercise the new behavior against this existing 3-group fixture without
+// regenerating it).
+// ---------------------------------------------------------------------------
+
+describe("buildSeasonLeaderboard(2027) — planned-season override via injected map", () => {
+  it("planned=6 > actual=3: totalEvents=6, qualifyingEvents=4, every driver Provisional, nothing dropped", async () => {
+    const result = await buildSeasonLeaderboard(2027, prisma, { 2027: 6 });
+    expect(result.totalEvents).toBe(6);
+    expect(result.completedEvents).toBe(3);
+    expect(result.qualifyingEvents).toBe(4);
+
+    for (const section of result.sections) {
+      for (const driver of section.drivers) {
+        expect(driver.qualifyingEvents).toBe(4);
+        expect(driver.eligible).toBe(false);
+        for (const score of driver.scores) {
+          expect(score.dropped).toBe(false);
+        }
+      }
+    }
+
+    // Quinn's combined score (943 pts) was dropped under the derived
+    // threshold of 2 (best-2-of-3); with threshold 4 all 3 of her scores
+    // count, raising her total from 2000 to 2943.
+    const c1 = result.sections.find((s) => s.classCode === "C1")!;
+    const quinn = c1.drivers.find((d) => d.driverName === "Quinn Q.")!;
+    const combinedScore = quinn.scores.find((s) => s.combined)!;
+    expect(combinedScore.dropped).toBe(false);
+    expect(quinn.totalPoints).toBe(2000 + combinedScore.points);
+  });
+
+  it("planned=2 < actual=3: max(2,3)=3, identical to the no-map run", async () => {
+    const withMap = await buildSeasonLeaderboard(2027, prisma, { 2027: 2 });
+    const withoutMap = await buildSeasonLeaderboard(2027, prisma);
+    expect(withMap).toEqual(withoutMap);
   });
 });
 
