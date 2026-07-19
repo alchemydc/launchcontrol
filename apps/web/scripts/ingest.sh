@@ -42,7 +42,9 @@ choose_candidate() {
   local event_dir="$1"
   shift
   local candidates=("$@")
-  local option_count=$(( ${#candidates[@]} + 1 ))
+  local combined_index=$(( ${#candidates[@]} + 1 ))
+  local skip_index=$(( ${#candidates[@]} + 2 ))
+  local option_count="$skip_index"
   local index=1
   local selection
 
@@ -51,7 +53,8 @@ choose_candidate() {
     printf '  %d) %s\n' "$index" "$(basename "$file")" >&2
     index=$((index + 1))
   done
-  printf '  %d) Skip this event\n' "$option_count" >&2
+  printf '  %d) Ingest all (combined event)\n' "$combined_index" >&2
+  printf '  %d) Skip this event\n' "$skip_index" >&2
 
   while true; do
     printf 'Choose file to ingest [1-%d]: ' "$option_count" >&2
@@ -72,7 +75,11 @@ choose_candidate() {
           return 0
         fi
 
-        if [ "$selection" -eq "$option_count" ]; then
+        if [ "$selection" -eq "$combined_index" ]; then
+          return 3
+        fi
+
+        if [ "$selection" -eq "$skip_index" ]; then
           return 2
         fi
 
@@ -127,17 +134,30 @@ EOF
     for candidate in "${candidates[@]}"; do
       echo "  - $(basename "$candidate")" >&2
     done
-    echo "Re-run interactively to choose one, or ingest a specific file directly with: pnpm --filter web ingest <path-to-axdb>" >&2
+    echo "Re-run interactively to choose one (or 'Ingest all (combined event)' for a same-date multi-session event), or ingest a specific file directly with: pnpm --filter web ingest <path-to-axdb>" >&2
     exit 1
   fi
 
   if selected_file="$(choose_candidate "$event_dir" "${candidates[@]}")"; then
+    choose_status=0
+  else
+    choose_status=$?
+  fi
+
+  if [ "$choose_status" -eq 0 ]; then
     echo "Selected $(basename "$selected_file") for $event_dir"
     ingest_file "$selected_file"
     continue
   fi
 
-  choose_status=$?
+  if [ "$choose_status" -eq 3 ]; then
+    echo "Ingesting all candidates in $event_dir as a combined event (lexicographic order):"
+    for candidate in "${candidates[@]}"; do
+      ingest_file "$candidate"
+    done
+    continue
+  fi
+
   if [ "$choose_status" -eq 2 ]; then
     echo "Skipping event directory: $event_dir"
     continue
