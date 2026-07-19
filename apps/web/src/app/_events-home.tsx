@@ -36,9 +36,21 @@ export async function EventsHome({
         lt: new Date(Date.UTC(year + 1, 0, 1)),
       },
     },
-    orderBy: { date: "desc" },
+    // Secondary `name asc` after `date desc` gives deterministic A/B ordering
+    // for combined-event sessions (both store the date at 00:00 UTC, so date
+    // alone doesn't disambiguate).
+    orderBy: [{ date: "desc" }, { name: "asc" }],
     include: { _count: { select: { entries: true } } },
   });
+
+  // Combined-event grouping (M1.15): events sharing a calendar date form one
+  // combined scoring event — badge each session card and link each one to the
+  // combined standings.
+  const dateCounts = new Map<string, number>();
+  for (const event of events) {
+    const dateKey = event.date.toISOString().slice(0, 10);
+    dateCounts.set(dateKey, (dateCounts.get(dateKey) ?? 0) + 1);
+  }
 
   const photosUrls = await Promise.all(
     events.map((e) => findSmugmugEventFolder(e.name, e.date)),
@@ -96,42 +108,62 @@ export async function EventsHome({
       ) : (
         <section className="rounded-3xl border border-border/70 bg-muted/20 p-3 shadow-sm">
           <ul className="space-y-3">
-            {events.map((event, i) => (
-              <li key={event.id}>
-                <Card className="group relative border border-border/70 bg-background/95 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background hover:shadow-md">
-                  <CardHeader className="flex flex-row items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground mb-1">
-                        {formatDateShort(event.date)}
-                      </p>
-                      <CardTitle className="group-hover:text-primary transition-colors">
+            {events.map((event, i) => {
+              const dateKey = event.date.toISOString().slice(0, 10);
+              const isCombined = (dateCounts.get(dateKey) ?? 0) > 1;
+
+              return (
+                <li key={event.id}>
+                  <Card className="group relative border border-border/70 bg-background/95 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background hover:shadow-md">
+                    <CardHeader className="flex flex-row items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground mb-1">
+                          {formatDateShort(event.date)}
+                        </p>
+                        <CardTitle className="group-hover:text-primary transition-colors">
+                          <Link
+                            href={`/events/${event.slug}`}
+                            className="after:content-[''] after:absolute after:inset-0"
+                          >
+                            {event.name}
+                          </Link>
+                        </CardTitle>
+                        {isCombined && (
+                          <Badge variant="outline" className="mt-1.5 text-[10px]">
+                            Combined event
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="relative z-10 flex flex-col items-end gap-2 shrink-0">
+                        {photosUrls[i] && (
+                          <a
+                            href={photosUrls[i]!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline text-sm"
+                          >
+                            Photos ↗
+                          </a>
+                        )}
+                        <Badge variant="secondary">
+                          {event._count.entries} entries
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    {isCombined && (
+                      <div className="relative z-10 px-6 pb-4 -mt-2">
                         <Link
-                          href={`/events/${event.slug}`}
-                          className="after:content-[''] after:absolute after:inset-0"
+                          href={`/events/combined/${dateKey}`}
+                          className="text-primary hover:underline text-xs"
                         >
-                          {event.name}
+                          View combined standings →
                         </Link>
-                      </CardTitle>
-                    </div>
-                    <div className="relative z-10 flex flex-col items-end gap-2 shrink-0">
-                      {photosUrls[i] && (
-                        <a
-                          href={photosUrls[i]!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline text-sm"
-                        >
-                          Photos ↗
-                        </a>
-                      )}
-                      <Badge variant="secondary">
-                        {event._count.entries} entries
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                </Card>
-              </li>
-            ))}
+                      </div>
+                    )}
+                  </Card>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

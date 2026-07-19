@@ -36,17 +36,24 @@ function formatDate(date: Date): string {
 
 function EventScoreChip({ score }: { score: EventScore }) {
   const dropped = score.dropped;
+  const title = `${score.eventName} — ${formatDate(score.eventDate)}${score.combined ? " (combined)" : ""}${dropped ? " (dropped)" : ""}`;
   return (
     <Link
-      href={`/events/${score.eventSlug}`}
-      title={`${score.eventName} — ${formatDate(score.eventDate)}${dropped ? " (dropped)" : ""}`}
+      href={score.href}
+      title={title}
       className={
-        "flex min-w-[3rem] flex-col items-center rounded-md px-1.5 py-1 text-center transition-colors " +
+        "relative flex min-w-[3rem] flex-col items-center rounded-md px-1.5 py-1 text-center transition-colors " +
         (dropped
           ? "border border-dashed border-border/70 text-muted-foreground hover:bg-muted/30"
           : "bg-muted/50 text-foreground hover:bg-accent/60")
       }
     >
+      {score.combined && (
+        <span
+          className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-primary"
+          aria-hidden="true"
+        />
+      )}
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80 leading-none">
         {formatDate(score.eventDate)}
       </span>
@@ -67,7 +74,7 @@ function EventScoreStrip({ scores }: { scores: EventScore[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {scores.map((s) => (
-        <EventScoreChip key={s.eventId} score={s} />
+        <EventScoreChip key={s.key} score={s} />
       ))}
     </div>
   );
@@ -280,9 +287,10 @@ export function SeasonLeaderboardView({
               </h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Points are awarded per event: 1000 to the class winner, others
-                proportional. Best {qualifyingEvents} scores count toward the
-                season total. Drivers with fewer than {qualifyingEvents} scoring
-                events are marked Provisional.
+                proportional. Combined (same-date, multi-session) events score
+                once, on summed session times. Best {qualifyingEvents} scores
+                count toward the season total. Drivers with fewer than{" "}
+                {qualifyingEvents} scoring events are marked Provisional.
               </p>
             </div>
           </div>
