@@ -1,5 +1,6 @@
 import { PrismaClient, type RunDisposition } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
+import { PLANNED_SEASON_EVENTS } from "@/lib/constants";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 // ---------------------------------------------------------------------------
@@ -8,9 +9,12 @@ import { prisma as defaultClient } from "@/lib/prisma";
 
 /**
  * Dynamic qualifying threshold: "clear 51% of the season".
- * floor(N/2) + 1 where N = total scoring groups in the season (M1.15: events
- * sharing a calendar date are auto-grouped into one combined scoring event,
- * so N counts *groups*, not raw `Event` rows).
+ * floor(N/2) + 1 where N = `max(plannedForYear, actualGroups)` — actual
+ * scoring groups ingested so far, raised to the planned season size when one
+ * is configured for the year (M1.16, `PLANNED_SEASON_EVENTS`), so a
+ * mid-season count doesn't shrink the threshold below what the full season
+ * will require (M1.15: events sharing a calendar date are auto-grouped into
+ * one combined scoring event, so N counts *groups*, not raw `Event` rows).
  * N=6→4, N=7→4, N=8→5.
  *
  * Combined with the per-event invariant codified in PRD §2 ("Data invariants:
@@ -18,10 +22,32 @@ import { prisma as defaultClient } from "@/lib/prisma";
  * reaches the threshold in any one class cannot also reach it in another
  * class within the same season. The "a driver can only win in one class"
  * rule (M1.14, AX chair 2026-06-08) is therefore enforced by arithmetic,
- * conditioned on that invariant — no per-driver capping code is needed.
+ * conditioned on that invariant — no per-driver capping code is needed. This
+ * still holds under M1.16 since actual ≤ N.
  */
 function qualifyingEventCount(totalEventsInSeason: number): number {
   return Math.floor(totalEventsInSeason / 2) + 1;
+}
+
+/**
+ * M1.16: derive the season's scoring basis — total (planned-vs-actual max),
+ * completed (actual groups ingested so far), and the resulting qualifying
+ * threshold. `planned` is injectable for tests; defaults to the real
+ * per-year map. `totalEvents === 0` short-circuits to a 0 threshold rather
+ * than `qualifyingEventCount(0) === 1`, preserving the pre-M1.16 empty-year
+ * contract.
+ */
+export function seasonScoringBasis(
+  year: number,
+  actualGroupCount: number,
+  planned: Record<number, number> = PLANNED_SEASON_EVENTS,
+): { totalEvents: number; completedEvents: number; qualifyingEvents: number } {
+  const totalEvents = Math.max(planned[year] ?? 0, actualGroupCount);
+  return {
+    totalEvents,
+    completedEvents: actualGroupCount,
+    qualifyingEvents: totalEvents === 0 ? 0 : qualifyingEventCount(totalEvents),
+  };
 }
 
 /**
@@ -76,7 +102,8 @@ export type SeasonStandingsByClass = {
 };
 
 export type SeasonLeaderboardResult = {
-  totalEvents: number;
+  totalEvents: number; // season size used for the threshold: max(planned, completedEvents) (M1.16)
+  completedEvents: number; // actual scoring groups ingested so far
   qualifyingEvents: number;
   sections: SeasonStandingsByClass[];
 };
@@ -136,11 +163,15 @@ export async function listSeasonYears(
  * every session).
  *
  * Returns total scoring-group count and computed qualifying threshold
- * alongside sections.
+ * alongside sections. `plannedEvents` (M1.16) raises the threshold's season
+ * size to a configured planned count when it exceeds the actual ingested
+ * group count, so a mid-season standing doesn't drop scores it shouldn't;
+ * see `seasonScoringBasis`.
  */
 export async function buildSeasonLeaderboard(
   year: number,
   client: PrismaClient = defaultClient,
+  plannedEvents: Record<number, number> = PLANNED_SEASON_EVENTS,
 ): Promise<SeasonLeaderboardResult> {
   // 1. Load all events + entries + runs for the season in chronological order.
   const events: LoadedEvent[] = await client.event.findMany({
@@ -162,7 +193,10 @@ export async function buildSeasonLeaderboard(
     },
   });
 
-  if (events.length === 0) return { totalEvents: 0, qualifyingEvents: 0, sections: [] };
+  if (events.length === 0) {
+    const basis = seasonScoringBasis(year, 0, plannedEvents);
+    return { ...basis, sections: [] };
+  }
 
   const driverInfo = new Map<number, { firstName: string; lastInitial: string }>();
 
@@ -214,8 +248,11 @@ export async function buildSeasonLeaderboard(
     group.push(event);
   }
   const scoringGroups = Array.from(groupsByDateKey.entries());
-  const totalEvents = scoringGroups.length;
-  const qualifyingEvents = qualifyingEventCount(totalEvents);
+  const { totalEvents, completedEvents, qualifyingEvents } = seasonScoringBasis(
+    year,
+    scoringGroups.length,
+    plannedEvents,
+  );
 
   // 4. Score each scoring group, per class. Multi-event groups score on
   //    summed best-corrected time; single-event groups score exactly as
@@ -383,5 +420,5 @@ export async function buildSeasonLeaderboard(
   }
 
   sections.sort((a, b) => a.classCode.localeCompare(b.classCode));
-  return { totalEvents, qualifyingEvents, sections };
+  return { totalEvents, completedEvents, qualifyingEvents, sections };
 }

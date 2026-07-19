@@ -17,6 +17,7 @@ export default async function LeaderboardPage() {
       years={years}
       standings={result.sections}
       totalEvents={result.totalEvents}
+      completedEvents={result.completedEvents}
       qualifyingEvents={result.qualifyingEvents}
     />
   );
