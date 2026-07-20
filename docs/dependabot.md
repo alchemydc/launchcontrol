@@ -65,6 +65,16 @@ gh pr merge <n> --repo alchemydc/launchcontrol --merge
 Or let each merge itself once CI is green: `gh pr merge <n> --repo alchemydc/launchcontrol
 --auto --merge`.
 
+**A lockfile PR can need more than one rebase.** Any PR that touches `pnpm-lock.yaml` goes
+`BEHIND`/`BLOCKED` the moment *another* PR merges into `main` — and strict checks won't let
+it merge until it's up-to-date again. So if you rebase PR B while PR A is still landing (or a
+third PR merges during B's ~4-5 min rebase+CI cycle), B comes back `BEHIND` and needs a second
+`@dependabot rebase`. To minimize this churn, merge the PRs that **don't** touch the lockfile
+first (GitHub Actions bumps, workflow-only changes), then the lockfile PRs strictly one at a
+time — wait for each to fully merge before rebasing the next. When polling, gate on the branch
+actually being current, not just green: require both `mergeStateStatus == CLEAN` **and** a
+fresh `web` pass on the *new* head SHA (a stale pre-rebase run still shows `pass`).
+
 After the batch, run the [local CI mirror](#local-ci-mirror-verification) against `main` to
 confirm the lockfile is healthy.
 
