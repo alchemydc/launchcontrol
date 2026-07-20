@@ -49,12 +49,6 @@ function EventScoreChip({ score }: { score: EventScore }) {
           : "bg-muted/50 text-foreground hover:bg-accent/60")
       }
     >
-      {score.combined && (
-        <span
-          className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-primary"
-          aria-hidden="true"
-        />
-      )}
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80 leading-none">
         {formatDate(score.eventDate)}
       </span>
@@ -275,7 +269,7 @@ export function SeasonLeaderboardView({
   qualifyingEvents,
 }: SeasonLeaderboardViewProps) {
   return (
-    <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
+    <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <header className="mb-6 sm:mb-8">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary mb-3">
           Season standings
