@@ -57,7 +57,7 @@ export default async function EventPage({
   const classCodes = Array.from(new Set(rows.map((r) => r.classCode))).sort();
 
   return (
-    <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
+    <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <header className="mb-6 sm:mb-8">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <BackButton fallbackHref="/" />
@@ -94,7 +94,7 @@ export default async function EventPage({
             className="mt-4 flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-primary/10"
           >
             <Badge variant="secondary" className="text-[10px]">Combined event</Badge>
-            <span>Session of a combined event · View combined standings →</span>
+            <span>Session of a combined event · View combined results →</span>
           </Link>
         )}
       </header>

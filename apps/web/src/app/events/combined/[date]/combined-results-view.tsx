@@ -13,7 +13,7 @@ export function CombinedResultsView({
   photosUrl: string | null;
 }) {
   return (
-    <main className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
+    <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <header className="mb-6 sm:mb-8">
         <div className="mb-3 flex items-center gap-3">
           <BackButton fallbackHref="/" />
