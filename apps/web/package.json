@@ -12,7 +12,7 @@
     "migrate:turso": "tsx --env-file=.env scripts/migrate-turso.ts",
     "wipe:db": "tsx --env-file=.env scripts/wipe-db.ts",
     "probe:msr": "tsx --env-file=.env scripts/msr-oauth-probe.ts",
-    "pretest": "node tests/fixtures/build-multi-event-season.mjs && node tests/fixtures/build-multi-event-rejection-axdb.mjs",
+    "pretest": "node tests/fixtures/build-multi-event-season.mjs && node tests/fixtures/build-multi-event-rejection-axdb.mjs && node tests/fixtures/build-combined-event-season.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate"
@@ -23,7 +23,7 @@
     ]
   },
   "dependencies": {
-    "@base-ui/react": "^1.5.0",
+    "@base-ui/react": "^1.6.0",
     "@libsql/client": "^0.17.3",
     "@prisma/adapter-libsql": "^7.8.0",
     "@prisma/client": "^7.8.0",
@@ -32,29 +32,29 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "iron-session": "^8.0.4",
-    "lucide-react": "^1.18.0",
-    "next": "16.2.9",
+    "lucide-react": "^1.25.0",
+    "next": "16.2.10",
     "oauth-1.0a": "^2.2.6",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "recharts": "^3.8.1",
-    "shadcn": "^4.11.0",
+    "recharts": "^3.9.2",
+    "shadcn": "^4.13.1",
     "tailwind-merge": "^3.6.0",
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "16.2.10",
     "prisma": "^7.8.0",
     "tailwindcss": "^4",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.1",
     "typescript": "^6",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

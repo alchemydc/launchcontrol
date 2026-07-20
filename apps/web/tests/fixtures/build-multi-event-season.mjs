@@ -25,9 +25,17 @@
 //                            Event 1 uses "boxster s" (lowercase) to exercise pre-M1.14 normalization
 //                            tests; today the description has no scoring impact (multi-car allowed).
 //                            All 6 events score for Fred in CS.
+//                            member_num carries a "verified" suffix in raw form on two events —
+//                            event 1: "MES-006 verified", event 2: "MES-006-verified" — to
+//                            exercise normalizeMemberNum() collapsing both to "MES-006" and
+//                            still resolving to a single Driver row (see ingest.test.ts).
 //  Driver 7: Gina Grant    (member MES-007, CS all 6 events, mixed cars)
 //                            Cars: 911 (events 1,2,3) and Cayman (events 4,5,6).
 //                            All 6 events score for Gina in CS.
+//                            member_num is blank at event 4 only (Fred already carries the
+//                            "verified"-suffix drift at events 1-2, so a different member
+//                            exercises the nameOnlyHash merge-back path — see
+//                            season-leaderboard.test.ts's single-Driver-across-6-events assertion).
 //
 // Dynamic qualifying threshold: floor(6/2)+1 = 4. Drivers need 4 scoring events
 // IN THAT CLASS to be eligible (Official); below threshold = Provisional.
@@ -105,186 +113,19 @@
 
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { rmSync } from "node:fs";
-import Database from "better-sqlite3";
+import { buildEventAxdb as buildEventAxdbCore } from "./axdb-builder.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-const SCHEMA = `
-  CREATE TABLE 'events' (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_name      VARCHAR(40) NOT NULL,
-    event_date      DATE        NOT NULL,
-    num_runs        INTEGER     NOT NULL,
-    mirrored        BOOLEAN     NOT NULL,
-    unique_numbers  BOOLEAN     NOT NULL,
-    org_name        VARCHAR(40) NOT NULL,
-    timing_mode     INTEGER     NOT NULL,
-    typical_time    FLOAT       NOT NULL,
-    web_active      BOOLEAN     NOT NULL,
-    run_timestamp   INTEGER
-  );
-
-  CREATE TABLE 'classes' (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    class_name      VARCHAR(20) NOT NULL UNIQUE,
-    paxed_class     BOOLEAN DEFAULT 0  NOT NULL,
-    pax             FLOAT   DEFAULT "1.0" NOT NULL,
-    run_timestamp   INTEGER
-  );
-  CREATE INDEX 'idx_classes_class_name' ON 'classes' (class_name);
-
-  CREATE TABLE 'drivers' (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    last_name       VARCHAR(30) NOT NULL,
-    first_name      VARCHAR(30) NOT NULL,
-    number          VARCHAR(6)  NOT NULL,
-    class_id        INTEGER     NOT NULL,
-    paxmult_id      INTEGER     NOT NULL,
-    car_model       VARCHAR(40),
-    car_color       VARCHAR(20),
-    member_num      VARCHAR(30),
-    sponsor         VARCHAR(40),
-    tire            VARCHAR(40),
-    email           VARCHAR(60),
-    cellphone       VARCHAR(20),
-    member          BOOLEAN,
-    registered      BOOLEAN,
-    icon_color      VARCHAR(20),
-    FOREIGN KEY (class_id)   REFERENCES classes ON UPDATE RESTRICT ON DELETE RESTRICT,
-    FOREIGN KEY (paxmult_id) REFERENCES classes ON UPDATE RESTRICT ON DELETE RESTRICT
-  );
-  CREATE INDEX 'idx_drivers_number'     ON 'drivers' (number);
-  CREATE INDEX 'idx_drivers_class_id'   ON 'drivers' (class_id);
-  CREATE INDEX 'idx_drivers_last_name'  ON 'drivers' (last_name);
-  CREATE INDEX 'idx_drivers_first_name' ON 'drivers' (first_name);
-
-  CREATE TABLE 'registrations' (
-    driver_id            INTEGER NOT NULL,
-    event_id             INTEGER NOT NULL,
-    bestcommittedrun_id  INTEGER,
-    bestcommittedrun_no  INTEGER,
-    bestpendingrun_id    INTEGER,
-    run_timestamp        INTEGER,
-    FOREIGN KEY (driver_id) REFERENCES drivers ON UPDATE RESTRICT ON DELETE RESTRICT,
-    FOREIGN KEY (event_id)  REFERENCES events  ON UPDATE RESTRICT ON DELETE RESTRICT
-  );
-  CREATE INDEX 'idx_registrations_driver_id' ON 'registrations' (driver_id);
-  CREATE INDEX 'idx_registrations_event_id'  ON 'registrations' (event_id);
-
-  CREATE TABLE 'runs' (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id     INTEGER NOT NULL,
-    driver_id    INTEGER NOT NULL,
-    start_at     INTEGER,
-    finish_at    INTEGER,
-    start_tick   INTEGER,
-    finish_tick  INTEGER,
-    cones        INTEGER,
-    disposition  VARCHAR(10),
-    status       INTEGER NOT NULL,
-    FOREIGN KEY (event_id)  REFERENCES events  ON UPDATE RESTRICT ON DELETE RESTRICT,
-    FOREIGN KEY (driver_id) REFERENCES drivers ON UPDATE RESTRICT ON DELETE RESTRICT
-  );
-  CREATE INDEX 'idx_runs_driver_id' ON 'runs' (driver_id);
-  CREATE INDEX 'idx_runs_event_id'  ON 'runs' (event_id);
-`;
-
 /**
- * Build a single-event .axdb fixture.
+ * Thin wrapper over the shared axdb-builder core: resolves `filename` against
+ * this script's directory and logs the write, matching this script's
+ * pre-extraction console output.
  * @param {string} filename - output filename (no path)
- * @param {string} eventName
- * @param {string} eventDate  - "YYYY-MM-DD"
- * @param {number} eventTs    - Unix timestamp for event
- * @param {Array}  classes    - [{id, name, paxed, pax}]
- * @param {Array}  drivers    - [{id, last, first, num, classId, paxId, memberNum}]
- * @param {Array}  runs       - [{driverId, deltaMs, cones, disposition}]
- * @param {Map|null} overrides - Map<driverId, bestcommittedrun_no> for committed-run overrides.
- *                               Drivers not in the map get bestcommittedrun_no pointing to
- *                               run #1 (the only run for most drivers in this fixture).
+ * @see ./axdb-builder.mjs for parameter details on the remaining arguments.
  */
 function buildEventAxdb(filename, eventName, eventDate, eventTs, classes, drivers, runs, overrides = null) {
-  const out = join(here, filename);
-  rmSync(out, { force: true });
-
-  const db = new Database(out);
-  db.pragma("journal_mode = DELETE");
-  db.pragma("foreign_keys = OFF");
-  db.exec(SCHEMA);
-
-  const insertEvent = db.prepare(`
-    INSERT INTO events (event_name, event_date, num_runs, mirrored, unique_numbers, org_name, timing_mode, typical_time, web_active, run_timestamp)
-    VALUES (?, ?, ?, 0, 0, ?, 0, ?, 1, ?)
-  `);
-  const insertClass = db.prepare(`INSERT INTO classes (class_name, paxed_class, pax, run_timestamp) VALUES (?, ?, ?, ?)`);
-  const insertDriver = db.prepare(`
-    INSERT INTO drivers (id, last_name, first_name, number, class_id, paxmult_id, car_model, car_color, member_num, sponsor, tire, email, cellphone, member, registered, icon_color)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '', 1, 1, 'red')
-  `);
-  const insertReg = db.prepare(`
-    INSERT INTO registrations (driver_id, event_id, bestcommittedrun_id, bestcommittedrun_no, run_timestamp)
-    VALUES (?, 1, ?, ?, ?)
-  `);
-  const insertRun = db.prepare(`
-    INSERT INTO runs (event_id, driver_id, start_at, finish_at, start_tick, finish_tick, cones, disposition, status)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?, 3)
-  `);
-  const lastRowId = db.prepare("SELECT last_insert_rowid() AS id");
-
-  db.transaction(() => {
-    insertEvent.run(eventName, eventDate, 6, "RMR Synthetic", 55.0, eventTs);
-
-    for (const c of classes) {
-      insertClass.run(c.name, c.paxed ? 1 : 0, c.pax, eventTs);
-    }
-
-    for (const d of drivers) {
-      insertDriver.run(d.id, d.last, d.first, d.num, d.classId, d.paxId, d.car ?? null, d.color ?? null, d.memberNum ?? null);
-    }
-
-    // Insert runs and track (driverId → [{runId, runNo}]) for registration population.
-    const runsByDriver = new Map();
-    let wallSec = eventTs + 1800;
-    let tick = 5_000_000;
-
-    for (const r of runs) {
-      const isClean = !r.disposition || r.disposition === "";
-      insertRun.run(
-        r.driverId,
-        wallSec,
-        wallSec + (isClean ? Math.ceil(r.deltaMs / 1000) : 1),
-        tick,
-        isClean ? tick + r.deltaMs : tick + 1,
-        r.cones ?? 0,
-        r.disposition ?? "",
-      );
-      const runId = lastRowId.get().id;
-      const list = runsByDriver.get(r.driverId) ?? [];
-      list.push({ runId, runNo: list.length + 1 });
-      runsByDriver.set(r.driverId, list);
-      wallSec += 60;
-      tick += 90_000;
-    }
-
-    // Insert registrations with bestcommittedrun_id and bestcommittedrun_no.
-    // For drivers in overrides map, use the specified run number.
-    // For all others, point to run #1 (default — all single-run drivers).
-    for (const d of drivers) {
-      const driverRuns = runsByDriver.get(d.id) ?? [];
-      const overrideNo = overrides?.get(d.id) ?? null;
-      const commitNo = overrideNo ?? (driverRuns.length > 0 ? 1 : null);
-      const commitEntry = driverRuns.find((r) => r.runNo === commitNo);
-      const commitId = commitEntry?.runId ?? null;
-      insertReg.run(d.id, commitId, commitNo, eventTs);
-    }
-  })();
-
-  const counts = {
-    events: db.prepare("SELECT COUNT(*) AS n FROM events").get().n,
-    drivers: db.prepare("SELECT COUNT(*) AS n FROM drivers").get().n,
-    runs: db.prepare("SELECT COUNT(*) AS n FROM runs").get().n,
-  };
-  db.close();
+  const counts = buildEventAxdbCore(join(here, filename), eventName, eventDate, eventTs, classes, drivers, runs, overrides);
   console.log(`Wrote ${filename}`, counts);
 }
 
@@ -309,7 +150,7 @@ buildEventAxdb(
     { id: 3, last: "Crane",  first: "Cam",  num: "103", classId: 2, paxId: 2, memberNum: "MES-003", car: "Porsche 911 GT3" },
     { id: 4, last: "Dumas",  first: "Dee",  num: "104", classId: 1, paxId: 1, memberNum: "MES-004" },
     { id: 5, last: "Elias",  first: "Evan", num: "105", classId: 1, paxId: 1, memberNum: "MES-005" },
-    { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006", car: "boxster s" }, // lowercase — normalized to same key as "Boxster S"
+    { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006 verified", car: "boxster s" }, // lowercase — normalized to same key as "Boxster S"; member_num carries a "verified" suffix (M1.x normalizeMemberNum test)
     { id: 7, last: "Grant",  first: "Gina", num: "107", classId: 2, paxId: 2, memberNum: "MES-007", car: "911" },
   ],
   [
@@ -337,7 +178,7 @@ buildEventAxdb(
     { id: 2, last: "Barton", first: "Bea",  num: "102", classId: 1, paxId: 1, memberNum: "MES-002" },
     { id: 3, last: "Crane",  first: "Cam",  num: "103", classId: 2, paxId: 2, memberNum: "MES-003", car: "Porsche 911 GT3" },
     { id: 4, last: "Dumas",  first: "Dee",  num: "104", classId: 1, paxId: 1, memberNum: "MES-004" },
-    { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006", car: "Boxster S" },
+    { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006-verified", car: "Boxster S" }, // hyphenated "verified" suffix form (M1.x normalizeMemberNum test)
     { id: 7, last: "Grant",  first: "Gina", num: "107", classId: 2, paxId: 2, memberNum: "MES-007", car: "911" },
   ],
   [
@@ -398,7 +239,7 @@ buildEventAxdb(
     { id: 2, last: "Barton", first: "Bea",  num: "102", classId: 1, paxId: 1, memberNum: "MES-002" },
     { id: 4, last: "Dumas",  first: "Dee",  num: "104", classId: 2, paxId: 2, memberNum: "MES-004" }, // CS
     { id: 6, last: "Farr",   first: "Fred", num: "106", classId: 2, paxId: 2, memberNum: "MES-006", car: "Boxster S" },
-    { id: 7, last: "Grant",  first: "Gina", num: "107", classId: 2, paxId: 2, memberNum: "MES-007", car: "Cayman" },
+    { id: 7, last: "Grant",  first: "Gina", num: "107", classId: 2, paxId: 2, memberNum: null, car: "Cayman" }, // blank member_num this event only — exercises nameOnlyHash merge-back (ingest.test.ts covers the mechanism directly)
   ],
   [
     { driverId: 1, deltaMs: 53000, cones: 0 },

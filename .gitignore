@@ -24,6 +24,7 @@ node_modules/
 apps/web/tests/fixtures/season-event-*.axdb
 apps/web/tests/fixtures/multi-event-rejection.axdb
 apps/web/tests/fixtures/synthetic.axdb
+apps/web/tests/fixtures/combined-event-*.axdb
 
 # local docs (private, not for public consumption)
 docs/private/

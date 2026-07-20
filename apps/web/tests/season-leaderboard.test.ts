@@ -8,6 +8,7 @@ import { ingestAxdb } from "@/lib/ingest";
 import {
   buildSeasonLeaderboard,
   listSeasonYears,
+  seasonScoringBasis,
 } from "@/lib/season-leaderboard";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 
@@ -50,6 +51,29 @@ beforeAll(async () => {
 afterAll(async () => {
   await prisma.$disconnect();
   rmSync(TEST_DB_PATH, { force: true });
+});
+
+describe("member_num normalization across events", () => {
+  it("collapses Fred's 'verified'-suffixed raw member_num forms to one Driver row", async () => {
+    // Fred's raw member_num is "MES-006 verified" at event 1 and "MES-006-verified"
+    // at event 2, but plain "MES-006" at events 3-6. normalizeMemberNum() must
+    // strip both suffix forms so all 6 events resolve to the same Driver.
+    const freds = await prisma.driver.findMany({ where: { firstName: "Fred" } });
+    expect(freds).toHaveLength(1);
+    expect(freds[0]!.memberNum).toBe("MES-006");
+  });
+});
+
+describe("nameOnlyHash merge-back across events", () => {
+  it("collapses Gina's blank-member_num event (event 4) into her one populated Driver row", async () => {
+    // Gina's member_num is "MES-007" at events 1-3, 5-6, but blank at event 4.
+    // The blank row must merge into the existing populated Driver by nameOnlyHash
+    // rather than splitting into a second Driver — ingest.test.ts covers the
+    // merge/adopt mechanism directly; this checks it holds across a full season.
+    const ginas = await prisma.driver.findMany({ where: { firstName: "Gina", lastInitial: "G." } });
+    expect(ginas).toHaveLength(1);
+    expect(ginas[0]!.memberNum).toBe("MES-007");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -278,6 +302,10 @@ describe("buildSeasonLeaderboard(2026)", () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     expect(result.totalEvents).toBe(6);
     expect(result.qualifyingEvents).toBe(4);
+    // M1.16: PLANNED_SEASON_EVENTS[2026] === 6 equals this fixture's actual
+    // group count, so max(planned, actual) = 6 and completedEvents = actual
+    // groups ingested — the planned/actual coincidence for this fixture year.
+    expect(result.completedEvents).toBe(6);
   });
 
   it("per-row qualifyingEvents matches season-level qualifyingEvents", async () => {
@@ -424,5 +452,56 @@ describe("buildSeasonLeaderboard empty year", () => {
     expect(result.sections).toEqual([]);
     expect(result.totalEvents).toBe(0);
     expect(result.qualifyingEvents).toBe(0);
+    expect(result.completedEvents).toBe(0);
+  });
+
+  // M1.16: a year mapped in PLANNED_SEASON_EVENTS but with no events ingested
+  // yet still reports the planned season size and threshold, with zero
+  // completed — e.g. /leaderboard/2026 on an empty DB reports 6/4/0.
+  it("a mapped-but-empty year reports the planned totals with zero completed", async () => {
+    const result = await buildSeasonLeaderboard(1999, prisma, { 1999: 6 });
+    expect(result).toEqual({
+      totalEvents: 6,
+      qualifyingEvents: 4,
+      completedEvents: 0,
+      sections: [],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M1.16 — seasonScoringBasis: pure function, no DB
+// ---------------------------------------------------------------------------
+describe("seasonScoringBasis", () => {
+  it("planned > actual: uses the planned size for total and threshold", () => {
+    expect(seasonScoringBasis(2026, 3, { 2026: 6 })).toEqual({
+      totalEvents: 6,
+      completedEvents: 3,
+      qualifyingEvents: 4,
+    });
+  });
+
+  it("actual > planned: uses the actual size for total and threshold", () => {
+    expect(seasonScoringBasis(2026, 8, { 2026: 6 })).toEqual({
+      totalEvents: 8,
+      completedEvents: 8,
+      qualifyingEvents: 5,
+    });
+  });
+
+  it("unlisted year: falls back to actual (derived) behavior", () => {
+    expect(seasonScoringBasis(2025, 6, { 2026: 6 })).toEqual({
+      totalEvents: 6,
+      completedEvents: 6,
+      qualifyingEvents: 4,
+    });
+  });
+
+  it("zero actual and no planned entry: all zero", () => {
+    expect(seasonScoringBasis(2025, 0, { 2026: 6 })).toEqual({
+      totalEvents: 0,
+      completedEvents: 0,
+      qualifyingEvents: 0,
+    });
   });
 });

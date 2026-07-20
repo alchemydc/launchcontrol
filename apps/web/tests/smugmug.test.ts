@@ -86,4 +86,32 @@ describe("matchEventFolder", () => {
     const result = matchEventFolder(folders, "Autocross AX", eventDate);
     expect(result).toBeNull();
   });
+
+  // M1.15: combined-event sessions are exported with an (A)/(B) suffix
+  // ("Cone in 60 Seconds (A)" / "(B)"), but both sessions share one calendar
+  // date and one SmugMug gallery. No code change was needed — the token side
+  // already tolerates the extra suffix token (reverse-direction overlap
+  // covers it), so both session names resolve to the same folder.
+  it("matches both (A) and (B) combined-event session names to the same single-day gallery", () => {
+    const combinedDate = new Date("2027-05-15T00:00:00Z");
+    const combinedFolders = [
+      {
+        urlName: "2027-05-15-Cone-in-60-Seconds",
+        webUri: "https://rmrpca.smugmug.com/Autocross/2027/2027-05-15-Cone-in-60-Seconds",
+        dateAdded: "2027-05-16T12:00:00Z",
+      },
+    ];
+
+    const sessionA = matchEventFolder(combinedFolders, "Cone in 60 Seconds (A)", combinedDate);
+    const sessionB = matchEventFolder(combinedFolders, "Cone in 60 Seconds (B)", combinedDate);
+
+    expect(sessionA).toBe(
+      "https://rmrpca.smugmug.com/Autocross/2027/2027-05-15-Cone-in-60-Seconds",
+    );
+    expect(sessionB).toBe(sessionA);
+
+    // The combined page's own label (stripped of the session suffix) matches too.
+    const combinedLabel = matchEventFolder(combinedFolders, "Cone in 60 Seconds", combinedDate);
+    expect(combinedLabel).toBe(sessionA);
+  });
 });

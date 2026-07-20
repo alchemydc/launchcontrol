@@ -23,7 +23,13 @@ export function BackButton({
             sameOrigin = false;
           }
         }
-        if (sameOrigin) {
+        // document.referrer is empty for typed/bookmarked initial loads and
+        // stays empty across App Router soft navigations, so it alone can't
+        // see in-app history. If there are history entries to go back to and
+        // no *external* referrer, prefer real history over the fallback.
+        const canGoBack =
+          sameOrigin || (document.referrer === "" && window.history.length > 1);
+        if (canGoBack) {
           router.back();
         } else {
           router.push(fallbackHref);
