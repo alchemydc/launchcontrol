@@ -64,6 +64,7 @@ export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
             height={50}
             interval="preserveStartEnd"
             minTickGap={24}
+            padding={{ left: 8, right: 8 }}
             className="fill-muted-foreground"
           />
           <YAxis
