@@ -67,12 +67,19 @@ export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
             >
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="min-w-0 flex-1">
-                  <Link
-                    href={`/events/${row.eventSlug}`}
-                    className="block text-sm font-medium hover:underline truncate"
-                  >
-                    {row.eventName}
-                  </Link>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Link
+                      href={row.href}
+                      className="block text-sm font-medium hover:underline truncate"
+                    >
+                      {row.eventName}
+                    </Link>
+                    {row.combined && (
+                      <Badge variant="secondary" className="text-[10px] shrink-0">
+                        Combined
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-[11px] text-muted-foreground tabular-nums mt-0.5">
                     {formatDate(row.eventDate)}
                   </p>
@@ -182,12 +189,16 @@ export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
                   {formatDate(row.eventDate)}
                 </TableCell>
                 <TableCell className="px-3">
-                  <Link
-                    href={`/events/${row.eventSlug}`}
-                    className="hover:underline"
-                  >
-                    {row.eventName}
-                  </Link>
+                  <div className="flex items-center gap-1.5">
+                    <Link href={row.href} className="hover:underline">
+                      {row.eventName}
+                    </Link>
+                    {row.combined && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        Combined
+                      </Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="px-3">
                   <div className="flex items-center gap-1.5">
