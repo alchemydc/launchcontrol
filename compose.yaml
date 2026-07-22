@@ -22,7 +22,7 @@ services:
       - lc-data:/data
     restart: unless-stopped
 
-  # RMsolo-specific: polls rmsolo.org once per interval (default: daily).
+  # RMsolo-specific: polls rmsolo.org once per interval (default: every 30 min).
   # Opt-in via `--profile ingest` — a club whose results arrive by admin
   # upload (e.g. PCA .axdb files) runs web only. The CLI is idempotent:
   # already-ingested PDFs skip by hash, new events ingest.
@@ -31,7 +31,7 @@ services:
     image: launchcontrol:latest
     depends_on:
       - web
-    command: sh -c 'sleep 30; while true; do pnpm --filter web ingest:rmsolo || true; sleep "$${INGEST_INTERVAL_SECONDS:-86400}"; done'
+    command: sh -c 'sleep 30; while true; do pnpm --filter web ingest:rmsolo || true; sleep "$${INGEST_INTERVAL_SECONDS:-1800}"; done'
     env_file: deploy/launchcontrol.env
     environment:
       DATABASE_URL: "file:/data/launchcontrol.db"
