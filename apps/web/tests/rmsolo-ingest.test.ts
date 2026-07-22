@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
@@ -100,5 +100,41 @@ describe("ingestRmsoloEvent", () => {
     expect(result.status).toBe("ingested");
     const drivers = await prisma.driver.findMany();
     expect(drivers).toHaveLength(2); // same identityHash → no duplicate drivers
+  });
+
+  it("leaves bestCommittedRunNumber null for unreconciled (e.g. PAX-indexed run-group) entries and warns once", async () => {
+    // A third entry whose printed Best (10.0) matches neither raw nor penalized
+    // given its own runs — real "M"/"N"/"S"/"P"/"X" run-group headings print a
+    // PAX-indexed Best like this (see rmsolo-pax.ts). It must not block the
+    // other two entries (which do reconcile) from ingesting normally.
+    const withIndexed = structuredClone(parsed);
+    withIndexed.classCodes = [...withIndexed.classCodes, "M"];
+    withIndexed.entries.push({
+      classCode: "M", position: 1, trophy: false, carNumber: "77", altCarNumber: null,
+      firstName: "Max", lastName: "Modified", carDescription: null, hometown: null,
+      bestSeconds: 10.0,
+      runs: [
+        { seconds: 20.0, cones: 0, disposition: "CLEAN" },
+        { seconds: 19.0, cones: 0, disposition: "CLEAN" },
+      ],
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await ingestRmsoloEvent({ parsed: withIndexed, sha256: "unreconciled1", date: "2026-04-18" }, prisma);
+    expect(result.status).toBe("ingested");
+
+    // Exactly one warning about the unreconciled entry itself — other warnings
+    // (e.g. rmsolo-pax's "no PAX factor for class 'M'", since this synthetic
+    // class code has no real-world factor) are unrelated and may also fire.
+    const unreconciledWarnings = warnSpy.mock.calls.filter(([msg]) => typeof msg === "string" && msg.includes("could not reconcile"));
+    expect(unreconciledWarnings).toHaveLength(1);
+    expect(unreconciledWarnings[0]![0]).toMatch(/M\/Max Modified/);
+    warnSpy.mockRestore();
+
+    const maxEntry = await prisma.entry.findFirst({ where: { carNumber: "77" } });
+    expect(maxEntry!.bestCommittedRunNumber).toBeNull();
+
+    const alexEntry = await prisma.entry.findFirst({ where: { carNumber: "88" } });
+    expect(alexEntry!.bestCommittedRunNumber).toBe(3); // unaffected — still reconciles normally
   });
 });

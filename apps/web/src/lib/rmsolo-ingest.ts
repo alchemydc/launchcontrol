@@ -38,7 +38,17 @@ export async function ingestRmsoloEvent(
   client: PrismaClient = defaultClient,
 ): Promise<IngestSummary> {
   const { parsed, sha256, date } = input;
-  const { interpretation } = reconcileTimes(parsed);
+  const { interpretation, unreconciled } = reconcileTimes(parsed);
+  const unreconciledSet = new Set(unreconciled);
+  if (unreconciled.length > 0) {
+    // One summary line per event, not per entry — real "run-group" headings
+    // (M/N/S/P/X; see rmsolo-pax.ts) can carry many PAX-indexed entries and we
+    // don't want to flood logs with one warning each.
+    const listed = unreconciled.map((e) => `${e.classCode}/${e.firstName} ${e.lastName}`).join(", ");
+    console.warn(
+      `[rmsolo-ingest] ${unreconciled.length} entr${unreconciled.length === 1 ? "y" : "ies"} could not reconcile printed Best against ${interpretation} run times (bestCommittedRunNumber left null): ${listed}`,
+    );
+  }
   const name = input.name ?? parsed.title.replace(/#/, " #").replace(/\s+/g, " ").trim();
   const slug = buildEventSlug(date, name);
   const eventDate = new Date(`${date}T00:00:00.000Z`);
@@ -190,8 +200,13 @@ export async function ingestRmsoloEvent(
       const driverId = driverIdByIdentity.get(identityHash);
       if (driverId == null) throw new Error(`Missing driver mapping for identity hash '${identityHash.slice(0, 12)}…'`);
 
+      // Unreconciled entries (e.g. a PAX-indexed run-group Best — see
+      // reconcileTimes) leave bestCommittedRunNumber null; downstream best-time
+      // logic already falls back to min over CLEAN runs of (rawTimeMs +
+      // cones*penalty), which is correct here since the stored run times
+      // themselves remain raw regardless of what the source printed as Best.
       const bestCommittedRunNumber =
-        e.bestSeconds == null
+        e.bestSeconds == null || unreconciledSet.has(e)
           ? null
           : (() => {
               const idx = e.runs.findIndex(

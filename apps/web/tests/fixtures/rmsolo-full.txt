@@ -41,3 +41,12 @@ T 1 118 Gray Novice               1997 BMW Z3 black           48.457     47.589+
  3      40 Indy Absent            2005 Subaru Impreza WRX S   DNS        DNS        DNS         DNS
            Faketown, CO                                       DNS        DNS        DNS
                                                               DNS
+ 4      22 Robin Merged           1997 BMW Z3 red            48.457     47.589+1   45.994 DNF   44.833
+      Faketown, CO                                          45.482+1   45.379     44.833
+                                                              DNS
+
+M
+Pos      # Name                                                 Runs                                Best
+T1     146 Max Modified            2002 Mystery Formula Car     43.783     43.347     42.468      37.037
+           Faketown, CO                                         41.125     40.933     40.389
+                                                                DNS

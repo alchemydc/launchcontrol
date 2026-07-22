@@ -14,7 +14,7 @@ describe("parseRmsoloFullText", () => {
   });
 
   it("finds all classes, merging across page breaks", () => {
-    expect(parsed.classCodes).toEqual(["AS", "BS", "XU"]);
+    expect(parsed.classCodes).toEqual(["AS", "BS", "XU", "M"]);
     expect(parsed.entries.filter((e) => e.classCode === "BS")).toHaveLength(3);
   });
 
@@ -74,17 +74,46 @@ describe("parseRmsoloFullText", () => {
     expect(indy.runs).toEqual([]);
     expect(indy.bestSeconds).toBeNull();
   });
+
+  it("merges a bare 'DNF' token onto the untagged clean time it follows (real layout: time then space-separated DNF)", () => {
+    // Robin Merged: line 1 prints "...45.994 DNF   44.833" — a bare DNF token
+    // (no digits of its own) immediately after an untagged clean time. Real
+    // RMsolo PDFs use this to mean "that run's recorded time was a DNF", not
+    // "one extra, separately-timed run" — so this must collapse to ONE run
+    // (DNF, seconds=45.994), not two (a phantom clean run plus a 0-second DNF).
+    const robin = byName("Merged");
+    expect(robin.runs).toHaveLength(6); // 3 (line 1) + 3 (line 2); the DNS on line 3 adds no row
+    expect(robin.runs[2]).toEqual({ seconds: 45.994, cones: 0, disposition: "DNF" });
+    expect(robin.runs.every((r) => r.seconds > 1)).toBe(true); // no phantom 0-second run
+    expect(robin.bestSeconds).toBe(44.833);
+  });
 });
 
 describe("reconcileTimes", () => {
-  it("confirms the fixture prints raw times (penalty added for scoring)", () => {
-    expect(reconcileTimes(parsed).interpretation).toBe("raw");
+  it("confirms the fixture prints raw times (penalty added for scoring), tolerating a PAX-indexed class", () => {
+    const { interpretation, unreconciled } = reconcileTimes(parsed);
+    expect(interpretation).toBe("raw");
+    // Max Modified (class "M") prints a PAX-indexed Best (real-world "M" run-group
+    // behavior — see rmsolo-pax.ts) that matches neither raw nor penalized; it must
+    // be reported, not silently dropped nor allowed to fail the whole event.
+    expect(unreconciled.map((e) => `${e.classCode}/${e.lastName}`)).toEqual(["M/Modified"]);
   });
 
-  it("throws when Best matches neither interpretation", () => {
+  it("still reconciles entries that DO fit, even with one PAX-indexed outlier present", () => {
+    const { unreconciled } = reconcileTimes(parsed);
+    const reconciledNames = parsed.entries
+      .filter((e) => e.bestSeconds != null)
+      .filter((e) => !unreconciled.includes(e))
+      .map((e) => e.lastName);
+    expect(reconciledNames).toContain("Driver");
+    expect(reconciledNames).toContain("Merged");
+  });
+
+  it("throws when NO interpretation fits a majority of best-bearing entries (garbage file protection)", () => {
     const broken = structuredClone(parsed);
-    const e = broken.entries.find((x) => x.bestSeconds != null)!;
-    e.bestSeconds = 1.234;
+    for (const e of broken.entries) {
+      if (e.bestSeconds != null) e.bestSeconds = 1.234;
+    }
     expect(() => reconcileTimes(broken)).toThrow(/Best column/);
   });
 });

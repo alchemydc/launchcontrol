@@ -46,13 +46,34 @@ function tokenize(line: string): Token[] {
   const out: Token[] = [];
   for (const m of line.matchAll(TOKEN_RE)) {
     const [, disp1, secs, cones, disp2] = m;
-    out.push({
+    const token: Token = {
       start: m.index,
       raw: m[0],
       disp: disp1 ?? disp2 ?? null,
       seconds: secs != null ? Number(secs) : null,
       cones: cones != null ? Number(cones.slice(1)) : 0,
-    });
+    };
+    // Real RMsolo PDFs sometimes print a run's time, then a *separate,
+    // space-delimited* bare "DNF" (as opposed to the concatenated "DNF45.993"
+    // prefix form, which is a distinct run and already handled above): e.g.
+    // "47.188 DNF   47.253" (RMsolo Summer 2026#1, CST class, Micah
+    // Schaubroeck). That bare DNF is not its own run slot — it retroactively
+    // marks the immediately preceding untagged time as the DNF, so the pair
+    // must collapse into ONE run (disposition DNF, seconds from that time),
+    // not two (a phantom clean run plus a spurious 0-second DNF run). Confirmed
+    // against real data: only this collapsed reading makes the entry's printed
+    // Best equal min-over-clean-runs; keeping them as two runs does not, and
+    // also overcounts the entry's run slots.
+    // Bare DNS never needs this: an untagged time followed by a bare DNS is
+    // legitimately two slots (a recorded run, then a separate not-started
+    // attempt) — DNS rows are dropped entirely downstream regardless, so no
+    // merge is needed or correct there.
+    const prev = out[out.length - 1];
+    if (token.disp === "DNF" && token.seconds == null && prev && prev.disp == null && prev.seconds != null) {
+      out[out.length - 1] = { start: prev.start, raw: `${prev.raw} ${token.raw}`, disp: "DNF", seconds: prev.seconds, cones: prev.cones };
+      continue;
+    }
+    out.push(token);
   }
   return out;
 }
@@ -181,25 +202,49 @@ export function parseRmsoloFullText(text: string): ParsedRmsoloEvent {
 const CONE_SECONDS = 2.0; // SCCA Solo standard; must stay consistent with CONE_PENALTY_MS
 const EPS = 0.0005;
 
+export type ReconcileResult = {
+  interpretation: "raw" | "penalized";
+  /** Best-bearing entries whose printed Best matched neither interpretation
+   * (e.g. real RMsolo "run-group" headings — M/N/S/P/X — print each driver's
+   * PAX-indexed Best rather than raw, mixing classes under one heading; see
+   * rmsolo-pax.ts). Callers should not commit a best run for these. */
+  unreconciled: ParsedEntry[];
+};
+
 /**
  * Determines whether printed run times are raw (penalty added for scoring) or
- * already penalized, by checking which interpretation makes every entry's
- * printed Best equal min over CLEAN runs. Throws if neither fits — a layout
- * or scoring change we must not guess through.
+ * already penalized, by checking which interpretation makes a clear majority
+ * of entries' printed Best equal min over CLEAN runs. Real RMsolo "Full" PDFs
+ * mix in run-group headings (observed: M, N, S, P, X) whose printed Best is
+ * PAX-indexed per-driver rather than raw/penalized — one uniform interpretation
+ * can never fit those entries, so they're reported back as unreconciled instead
+ * of failing the whole event. Only throws if no interpretation fits a majority
+ * of best-bearing entries — protection against a genuine layout/scoring change
+ * or a garbage file, which we must not guess through.
  */
-export function reconcileTimes(event: ParsedRmsoloEvent): { interpretation: "raw" | "penalized" } {
-  const fits = (total: (r: ParsedRun) => number): boolean =>
-    event.entries.every((e) => {
-      if (e.bestSeconds == null) return e.runs.every((r) => r.disposition !== "CLEAN") || e.runs.length === 0;
-      const clean = e.runs.filter((r) => r.disposition === "CLEAN");
-      if (clean.length === 0) return false;
-      const min = Math.min(...clean.map(total));
-      return Math.abs(min - e.bestSeconds) < EPS;
-    });
+export function reconcileTimes(event: ParsedRmsoloEvent): ReconcileResult {
+  const matches = (e: ParsedEntry, total: (r: ParsedRun) => number): boolean => {
+    if (e.bestSeconds == null) return e.runs.every((r) => r.disposition !== "CLEAN") || e.runs.length === 0;
+    const clean = e.runs.filter((r) => r.disposition === "CLEAN");
+    if (clean.length === 0) return false;
+    const min = Math.min(...clean.map(total));
+    return Math.abs(min - e.bestSeconds) < EPS;
+  };
 
-  if (fits((r) => r.seconds + r.cones * CONE_SECONDS)) return { interpretation: "raw" };
-  if (fits((r) => r.seconds)) return { interpretation: "penalized" };
+  const bestBearing = event.entries.filter((e) => e.bestSeconds != null);
+  const rawTotal = (r: ParsedRun): number => r.seconds + r.cones * CONE_SECONDS;
+  const penalizedTotal = (r: ParsedRun): number => r.seconds;
+  const isMajority = (count: number): boolean => bestBearing.length > 0 && count > bestBearing.length / 2;
+
+  const rawCount = bestBearing.filter((e) => matches(e, rawTotal)).length;
+  if (isMajority(rawCount)) {
+    return { interpretation: "raw", unreconciled: bestBearing.filter((e) => !matches(e, rawTotal)) };
+  }
+  const penalizedCount = bestBearing.filter((e) => matches(e, penalizedTotal)).length;
+  if (isMajority(penalizedCount)) {
+    return { interpretation: "penalized", unreconciled: bestBearing.filter((e) => !matches(e, penalizedTotal)) };
+  }
   throw new Error(
-    "[rmsolo-parse] Best column matches neither raw+penalty nor penalized interpretation — investigate before ingesting.",
+    "[rmsolo-parse] Best column matches neither raw+penalty nor penalized interpretation for a majority of entries — investigate before ingesting.",
   );
 }
