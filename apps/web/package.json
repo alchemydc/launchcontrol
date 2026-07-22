@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "ingest": "tsx --env-file=.env scripts/ingest.ts",
+    "ingest:rmsolo": "tsx --env-file=.env scripts/ingest-rmsolo.ts",
     "migrate:turso": "tsx --env-file=.env scripts/migrate-turso.ts",
     "wipe:db": "tsx --env-file=.env scripts/wipe-db.ts",
     "probe:msr": "tsx --env-file=.env scripts/msr-oauth-probe.ts",
