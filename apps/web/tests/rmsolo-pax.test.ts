@@ -18,6 +18,6 @@ describe("RMsolo PAX table", () => {
   });
 
   it("unknown classes fall back to 1.0", () => {
-    expect(getRmsoloPaxIndex("XU")).toBe(1.0);
+    expect(getRmsoloPaxIndex("N")).toBe(1.0);
   });
 });
