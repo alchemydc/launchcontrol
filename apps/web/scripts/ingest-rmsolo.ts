@@ -77,6 +77,18 @@ async function main() {
       console.warn(`[skip] event #${ev.eventNumber} (${ev.date}) — no Full PDF link`);
       continue;
     }
+    // "Pro Solo" events (RMsolo filename convention: starts with "pro", e.g.
+    // pro1-0530_full.pdf) use a structurally different results format
+    // (reaction-time/60ft columns, a two-run "Total" instead of "Best") that
+    // this parser does not support. Deferred like the Winter Series — skip
+    // gracefully rather than failing the whole run. A mislabeled file that
+    // slips past this filename check still fails loudly via the parser's own
+    // Pro Solo detection (see rmsolo-parse.ts), so this is a fast-path
+    // optimization, not the only safety net.
+    if (/(^|\/)pro/i.test(basename(ev.pdfUrls.full))) {
+      console.warn(`[skip] event #${ev.eventNumber} (${ev.date}) — Pro Solo format not yet supported`);
+      continue;
+    }
     try {
       await sleep(POLITE_DELAY_MS);
       const res = await fetch(ev.pdfUrls.full, { headers: { "User-Agent": UA } });

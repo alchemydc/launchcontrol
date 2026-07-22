@@ -137,4 +137,79 @@ describe("ingestRmsoloEvent", () => {
     const alexEntry = await prisma.entry.findFirst({ where: { carNumber: "88" } });
     expect(alexEntry!.bestCommittedRunNumber).toBe(3); // unaffected — still reconciles normally
   });
+
+  it("gives distinct blank-name ('anonymous') entries in the same class distinct drivers, keyed by car number", async () => {
+    // Real Full PDFs print entries with a car number and a full run set but no
+    // name/car description/hometown at all (confirmed against ss1-0418_Full.pdf
+    // DS class, cars #33 and #3). Both must ingest as real, distinct results.
+    const withAnonymous = structuredClone(parsed);
+    withAnonymous.entries.push(
+      {
+        classCode: "AS", position: 3, trophy: false, carNumber: "33", altCarNumber: null,
+        firstName: "", lastName: "", carDescription: null, hometown: null,
+        bestSeconds: 45.349,
+        runs: [
+          { seconds: 47.419, cones: 1, disposition: "CLEAN" },
+          { seconds: 45.734, cones: 0, disposition: "CLEAN" },
+          { seconds: 45.402, cones: 0, disposition: "CLEAN" },
+          { seconds: 45.349, cones: 0, disposition: "CLEAN" },
+          { seconds: 46.741, cones: 1, disposition: "CLEAN" },
+          { seconds: 45.693, cones: 0, disposition: "CLEAN" },
+        ],
+      },
+      {
+        classCode: "AS", position: 5, trophy: false, carNumber: "3", altCarNumber: null,
+        firstName: "", lastName: "", carDescription: null, hometown: null,
+        bestSeconds: 47.736,
+        runs: [
+          { seconds: 51.386, cones: 0, disposition: "CLEAN" },
+          { seconds: 52.045, cones: 0, disposition: "CLEAN" },
+          { seconds: 49.225, cones: 0, disposition: "DNF" },
+          { seconds: 47.797, cones: 1, disposition: "CLEAN" },
+          { seconds: 48.234, cones: 0, disposition: "CLEAN" },
+          { seconds: 47.736, cones: 0, disposition: "CLEAN" },
+        ],
+      },
+    );
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await ingestRmsoloEvent({ parsed: withAnonymous, sha256: "anon1", date: "2026-04-18" }, prisma);
+    expect(result.status).toBe("ingested");
+
+    const anonWarnings = warnSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("printed no driver name"),
+    );
+    expect(anonWarnings).toHaveLength(1);
+    expect(anonWarnings[0]![0]).toMatch(/2 entries/);
+    warnSpy.mockRestore();
+
+    const driver33 = await prisma.driver.findFirst({ where: { lastName: "#33" } });
+    const driver3 = await prisma.driver.findFirst({ where: { lastName: "#3" } });
+    expect(driver33).toMatchObject({ firstName: "Unknown", lastName: "#33" });
+    expect(driver3).toMatchObject({ firstName: "Unknown", lastName: "#3" });
+    expect(driver33!.id).not.toBe(driver3!.id); // distinct drivers, not collapsed to one
+
+    const entry33 = await prisma.entry.findFirst({ where: { carNumber: "33" }, include: { runs: true } });
+    expect(entry33!.driverId).toBe(driver33!.id);
+    expect(entry33!.runs).toHaveLength(6);
+    expect(entry33!.bestCommittedRunNumber).toBe(4); // printed Best 45.349 = run 4
+
+    const entry3 = await prisma.entry.findFirst({ where: { carNumber: "3" }, include: { runs: true } });
+    expect(entry3!.driverId).toBe(driver3!.id);
+    expect(entry3!.runs).toHaveLength(6);
+    expect(entry3!.bestCommittedRunNumber).toBe(6); // printed Best 47.736 = run 6 (a DNF sits at run 3)
+  });
+
+  it("is idempotent on sha for events containing anonymous entries", async () => {
+    const withAnonymous = structuredClone(parsed);
+    withAnonymous.entries.push({
+      classCode: "AS", position: 3, trophy: false, carNumber: "33", altCarNumber: null,
+      firstName: "", lastName: "", carDescription: null, hometown: null,
+      bestSeconds: 45.349,
+      runs: [{ seconds: 45.349, cones: 0, disposition: "CLEAN" }],
+    });
+    await ingestRmsoloEvent({ parsed: withAnonymous, sha256: "anon2", date: "2026-04-18" }, prisma);
+    const again = await ingestRmsoloEvent({ parsed: withAnonymous, sha256: "anon2", date: "2026-04-18" }, prisma);
+    expect(again.status).toBe("unchanged");
+  });
 });

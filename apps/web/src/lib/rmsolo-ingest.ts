@@ -33,6 +33,28 @@ function toDisposition(raw: ParsedRun["disposition"]): RunDisposition {
   }
 }
 
+// Real RMsolo Full PDFs contain genuine "blank co-drive placeholder" rows —
+// entries with a car number and a full run set but NO name, car description,
+// or hometown printed at all (confirmed byte-for-byte against source PDFs,
+// not a tokenizer artifact). They are real results and must ingest — official
+// leaderboards include them — so each is given a synthetic, car-number-keyed
+// identity ("Unknown", "#<carNumber>") before hashing/storage, rather than
+// being dropped or (as they were before this) all colliding onto one shared
+// "blank name" driver identity, which broke the (driverId, classId)
+// uniqueness invariant whenever two blank entries landed in the same class.
+// Cross-event linkage of anonymous drivers by car number is a best-effort
+// assumption (a number can be reassigned to a different anonymous entrant
+// across seasons) — acceptable since there is no other identifying data.
+function identityNameFor(e: Pick<ParsedEntry, "firstName" | "lastName" | "carNumber">): {
+  firstName: string;
+  lastName: string;
+} {
+  if (e.firstName.trim() === "" && e.lastName.trim() === "") {
+    return { firstName: "Unknown", lastName: `#${e.carNumber}` };
+  }
+  return { firstName: e.firstName, lastName: e.lastName };
+}
+
 export async function ingestRmsoloEvent(
   input: RmsoloIngestInput,
   client: PrismaClient = defaultClient,
@@ -40,11 +62,24 @@ export async function ingestRmsoloEvent(
   const { parsed, sha256, date } = input;
   const { interpretation, unreconciled } = reconcileTimes(parsed);
   const unreconciledSet = new Set(unreconciled);
+  const anonymousCount = parsed.entries.filter(
+    (e) => e.firstName.trim() === "" && e.lastName.trim() === "",
+  ).length;
+  if (anonymousCount > 0) {
+    console.warn(
+      `[rmsolo-ingest] ${anonymousCount} entr${anonymousCount === 1 ? "y" : "ies"} printed no driver name — ingested as "Unknown #<carNumber>"`,
+    );
+  }
   if (unreconciled.length > 0) {
     // One summary line per event, not per entry — real "run-group" headings
     // (M/N/S/P/X; see rmsolo-pax.ts) can carry many PAX-indexed entries and we
     // don't want to flood logs with one warning each.
-    const listed = unreconciled.map((e) => `${e.classCode}/${e.firstName} ${e.lastName}`).join(", ");
+    const listed = unreconciled
+      .map((e) => {
+        const { firstName, lastName } = identityNameFor(e);
+        return `${e.classCode}/${firstName} ${lastName}`;
+      })
+      .join(", ");
     console.warn(
       `[rmsolo-ingest] ${unreconciled.length} entr${unreconciled.length === 1 ? "y" : "ies"} could not reconcile printed Best against ${interpretation} run times (bestCommittedRunNumber left null): ${listed}`,
     );
@@ -132,15 +167,16 @@ export async function ingestRmsoloEvent(
     const identityByEntry = new Map<ParsedEntry, string>();
     const uniqueDriverIdentities = new Map<string, DriverIdentity>();
     for (const e of parsed.entries) {
-      const identityHash = computeIdentityHash(null, e.firstName, e.lastName);
+      const { firstName, lastName } = identityNameFor(e);
+      const identityHash = computeIdentityHash(null, firstName, lastName);
       identityByEntry.set(e, identityHash);
       // Last write wins on duplicate identityHash within one source.
       uniqueDriverIdentities.set(identityHash, {
         identityHash,
-        firstName: e.firstName,
-        lastName: e.lastName,
-        lastInitial: redactLastName(e.lastName),
-        nameOnlyHash: computeNameOnlyHash(e.firstName, e.lastName),
+        firstName,
+        lastName,
+        lastInitial: redactLastName(lastName),
+        nameOnlyHash: computeNameOnlyHash(firstName, lastName),
       });
     }
 

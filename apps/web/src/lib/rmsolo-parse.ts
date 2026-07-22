@@ -28,6 +28,10 @@ export function extractPdfText(pdfPath: string): string {
 }
 
 const HEADER_RE = /^Pos\s+#\s+Name\s+Runs\s+Best\s*$/;
+// "Pro Solo" results (RT/60ft-per-run, two-run "Total" instead of a "Best" of
+// up to 7) are a structurally different format this parser does not support —
+// detected by the same column header ending in "Total" instead of "Best".
+const PRO_HEADER_RE = /^Pos\s+#\s+Name\s+Runs\s+Total\s*$/;
 // Class heading lines are short, all-caps (plus digits), e.g. "AS", "BS", "XU", "N".
 const CLASS_RE = /^[A-Z][A-Z0-9]{0,5}$/;
 // One run/best token. Order matters: concatenated disposition prefix (e.g. DNF45.993) before bare disposition.
@@ -114,6 +118,11 @@ export function parseRmsoloFullText(text: string): ParsedRmsoloEvent {
         }
         i += 1; // consume header line
         continue;
+      }
+      if (PRO_HEADER_RE.test(next)) {
+        throw new Error(
+          "[rmsolo-parse] this file looks like a Pro Solo results PDF (column header ends in 'Total', not 'Best') — Pro Solo events are not supported by this parser.",
+        );
       }
     }
 

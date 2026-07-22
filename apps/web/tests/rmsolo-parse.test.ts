@@ -89,6 +89,27 @@ describe("parseRmsoloFullText", () => {
   });
 });
 
+describe("parseRmsoloFullText — Pro Solo format detection", () => {
+  it("throws a specific, actionable error for Pro Solo PDFs (header ends in 'Total', not 'Best')", () => {
+    // Minimal real-shape snippet (see rmsolo_data/pro1-0530_full.txt): the
+    // header's rightmost column is "Total" (a two-run sum), not "Best" — a
+    // structurally different results format this parser does not support.
+    const proText = [
+      "                               Results",
+      "                                 Pro#1 5/30",
+      "",
+      "AS",
+      "Pos    # Name                                                Runs                             Total",
+      "",
+      "",
+      "T1    99 Matt Villescas                                      40.096         38.850           78.946",
+      "                                                             RT       0.750 RT       0.556",
+      "                                                             60ft     2.020 60ft     2.063",
+    ].join("\n");
+    expect(() => parseRmsoloFullText(proText)).toThrow(/Pro Solo/);
+  });
+});
+
 describe("reconcileTimes", () => {
   it("confirms the fixture prints raw times (penalty added for scoring), tolerating a PAX-indexed class", () => {
     const { interpretation, unreconciled } = reconcileTimes(parsed);
