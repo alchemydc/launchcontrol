@@ -11,14 +11,14 @@ datasource db {
 }
 
 model Event {
-  id         Int      @id @default(autoincrement())
-  msrEventId String?  @unique
-  slug       String   @unique
-  name       String
-  date       DateTime
-  location   String?
-  axdbSha256 String?
-  createdAt  DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  msrEventId   String?  @unique
+  slug         String   @unique
+  name         String
+  date         DateTime
+  location     String?
+  sourceSha256 String? // sha256 of the ingested source artifact (.axdb file or results PDF) — idempotency key
+  createdAt    DateTime @default(now())
 
   entries Entry[]
   videos  Video[]

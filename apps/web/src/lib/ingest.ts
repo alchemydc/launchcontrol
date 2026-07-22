@@ -10,7 +10,7 @@ export type IngestSummary = {
   status: "ingested" | "unchanged";
   event: { id: number; slug: string; name: string };
   counts: { classes: number; drivers: number; entries: number; runs: number };
-  axdbSha256: string;
+  sourceSha256: string;
 };
 
 type SrcEvent = { id: number; event_name: string; event_date: string };
@@ -186,7 +186,7 @@ export async function ingestAxdb(
     return await client.$transaction(async (tx) => {
       const existing = await tx.event.findUnique({ where: { slug } });
 
-      if (existing && existing.axdbSha256 === sha) {
+      if (existing && existing.sourceSha256 === sha) {
         const entries = await tx.entry.count({ where: { eventId: existing.id } });
         const runs = await tx.run.count({ where: { entry: { eventId: existing.id } } });
         return {
@@ -198,17 +198,17 @@ export async function ingestAxdb(
             entries,
             runs,
           },
-          axdbSha256: sha,
+          sourceSha256: sha,
         };
       }
 
       const event = existing
         ? await tx.event.update({
             where: { id: existing.id },
-            data: { axdbSha256: sha, name: srcEvent.event_name, date: eventDate },
+            data: { sourceSha256: sha, name: srcEvent.event_name, date: eventDate },
           })
         : await tx.event.create({
-            data: { slug, name: srcEvent.event_name, date: eventDate, axdbSha256: sha },
+            data: { slug, name: srcEvent.event_name, date: eventDate, sourceSha256: sha },
           });
 
       if (existing) {
@@ -531,7 +531,7 @@ export async function ingestAxdb(
           entries: srcDrivers.length,
           runs: runsData.length,
         },
-        axdbSha256: sha,
+        sourceSha256: sha,
       };
     });
   } finally {
