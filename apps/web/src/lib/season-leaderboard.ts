@@ -37,6 +37,28 @@ function qualifyingEventCount(totalEventsInSeason: number): number {
 }
 
 /**
+ * How many scores count toward totalPoints right now (SEASON_DROPS).
+ *
+ * fixed (default, PCA): always the qualifying threshold — mid-season nothing
+ * drops because nobody has more than `qualifyingEvents` scores yet.
+ * proportional (RMsolo): drops accrue with season progress — at completed C
+ * of N events, floor(C × (N−K)/N) scores drop (K = qualifying threshold), so
+ * a half-run 10-event best-6 season counts best 3 of 5 ("half the season,
+ * half the drops"), converging on exactly best-K-of-N at season end.
+ */
+export function countedEventTarget(
+  totalEvents: number,
+  qualifyingEvents: number,
+  completedEvents: number,
+  mode: "fixed" | "proportional",
+): number {
+  if (mode === "fixed" || totalEvents === 0) return qualifyingEvents;
+  const totalDrops = totalEvents - qualifyingEvents;
+  const dropsNow = Math.floor((completedEvents * totalDrops) / totalEvents);
+  return Math.max(completedEvents === 0 ? 0 : 1, completedEvents - dropsNow);
+}
+
+/**
  * M1.16: derive the season's scoring basis — total (planned-vs-actual max),
  * completed (actual groups ingested so far), and the resulting qualifying
  * threshold. `planned` is injectable for tests; defaults to the real
@@ -253,9 +275,17 @@ export async function buildSeasonLeaderboard(
         byDriver = new Map();
         byClass.set(code, byDriver);
       }
+      // Class metric: raw best by default. Under PAX_STANDINGS, classes score
+      // on the PAX-indexed best instead — a pure rescale (identical order and
+      // points) for classes whose entries share one factor, and the official
+      // ordering for run-group classes (M/N/S/P/X) whose entries carry
+      // per-driver derived factors (the printed group results are indexed).
+      const classMetric = club.paxStandings
+        ? Math.round(best * Number(entry.paxClass.paxIndex))
+        : best;
       const existing = byDriver.get(d.id);
-      if (existing == null || best < existing) {
-        byDriver.set(d.id, best);
+      if (existing == null || classMetric < existing) {
+        byDriver.set(d.id, classMetric);
       }
 
       // Synthetic overall-PAX section (PAX_STANDINGS=1): index the same
@@ -413,8 +443,14 @@ export async function buildSeasonLeaderboard(
     if (info == null) continue;
 
     // Sort desc by points to decide which scores are counted vs. dropped.
+    // SEASON_DROPS=proportional scales the counted target with season
+    // progress (see countedEventTarget); fixed keeps the historical
+    // best-qualifyingEvents behavior.
     const sorted = [...rawScores].sort((a, b) => b.points - a.points);
-    const counted = sorted.slice(0, qualifyingEvents);
+    const counted = sorted.slice(
+      0,
+      countedEventTarget(totalEvents, qualifyingEvents, completedEvents, club.seasonDrops),
+    );
     const totalPoints = counted.reduce((sum, s) => sum + s.points, 0);
     const countedSet = new Set(counted.map((s) => s.key));
 

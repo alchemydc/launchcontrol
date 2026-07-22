@@ -201,12 +201,25 @@ export function LeaderboardTable({
   ]);
   const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
   const paxActive = classFilter === PAX_VIEW;
+  // Run-group class filters (M/N/S/P/X — heterogeneous per-entry factors)
+  // rank by indexed time in PAX-standings mode, matching the official printed
+  // group results. Uniform classes keep raw (identical order either way).
+  const usesPaxMetric = (filterValue: string): boolean => {
+    if (!showPaxView) return false;
+    if (filterValue === PAX_VIEW) return true;
+    if (filterValue === ALL_CLASSES) return false;
+    return (
+      new Set(rows.filter((r) => r.classCode === filterValue).map((r) => r.paxIndex)).size > 1
+    );
+  };
+  const paxMetric = usesPaxMetric(classFilter);
   // Switching views also resets the sort to that view's natural metric —
   // otherwise leaving the PAX view would strand the table sorted on a column
-  // that no longer exists.
+  // that no longer exists, and heterogeneous class views would show rank
+  // pills out of row order.
   const selectFilter = (value: string) => {
     setClassFilter(value);
-    setSorting([{ id: value === PAX_VIEW ? "bestPaxMs" : "bestRawMs", desc: false }]);
+    setSorting([{ id: usesPaxMetric(value) ? "bestPaxMs" : "bestRawMs", desc: false }]);
   };
   const filteredRows = useMemo(
     () =>
@@ -218,8 +231,8 @@ export function LeaderboardTable({
 
   const { deltaByRow, rankByRow } = useMemo(() => {
     // Rank and gaps use the active view's metric: PAX-indexed best in the
-    // PAX view, raw best everywhere else.
-    const metric = (r: LeaderboardRow) => (paxActive ? r.bestPaxMs : r.bestRawMs);
+    // PAX view and in heterogeneous (run-group) class views, raw elsewhere.
+    const metric = (r: LeaderboardRow) => (paxMetric ? r.bestPaxMs : r.bestRawMs);
     const delta = new Map<LeaderboardRow, { fromPrior: number | null; fromP1: number | null }>();
     const rank = new Map<LeaderboardRow, number>();
     const ranked = filteredRows
@@ -238,7 +251,7 @@ export function LeaderboardTable({
       }
     });
     return { deltaByRow: delta, rankByRow: rank };
-  }, [filteredRows, paxActive]);
+  }, [filteredRows, paxMetric]);
 
   const columns = useMemo<ColumnDef<LeaderboardRow>[]>(
     () => [
@@ -320,7 +333,7 @@ export function LeaderboardTable({
         ),
       },
       // PAX view only: the indexed time the ranking is based on.
-      ...(paxActive
+      ...(paxMetric
         ? [
             {
               id: "bestPaxMs",
@@ -368,7 +381,7 @@ export function LeaderboardTable({
         cell: ({ row }) => <RunChips runs={row.original.runs} />,
       },
     ],
-    [deltaByRow, rankByRow, paxActive],
+    [deltaByRow, rankByRow, paxMetric],
   );
 
   // React Compiler can't safely memoize TanStack Table's returned functions;
@@ -404,13 +417,13 @@ export function LeaderboardTable({
                 active={classFilter === ALL_CLASSES}
                 onClick={() => selectFilter(ALL_CLASSES)}
               >
-                All
+                {showPaxView ? "All Raw" : "All"}
               </ClassChip>
             </li>
             {showPaxView && (
               <li>
                 <ClassChip active={paxActive} onClick={() => selectFilter(PAX_VIEW)}>
-                  PAX
+                  All PAX
                 </ClassChip>
               </li>
             )}
@@ -439,7 +452,7 @@ export function LeaderboardTable({
           </li>
         ) : (
           sortedRows.map((row) => (
-            <DriverCard key={row.id} row={row.original} rank={rankByRow.get(row.original)} delta={deltaByRow.get(row.original)} paxView={paxActive} />
+            <DriverCard key={row.id} row={row.original} rank={rankByRow.get(row.original)} delta={deltaByRow.get(row.original)} paxView={paxMetric} />
           ))
         )}
       </ul>

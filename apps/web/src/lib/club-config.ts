@@ -24,6 +24,14 @@ export type ClubConfig = {
   paxStandings: boolean;
   /** Per-year planned event counts ("2026:10,2027:8") overriding the built-in PCA map; null = use the built-in. */
   plannedSeasonEvents: Record<number, number> | null;
+  /**
+   * fixed (default): count the best qualifying-threshold scores regardless of
+   * season progress (PCA behavior — mid-season, nothing drops).
+   * proportional: drops scale with completed events — counted = completed −
+   * floor(completed × seasonDrops / seasonSize) — so a half-run season carries
+   * half its total drops (RMsolo: best 3 of 5 mid-season, best 6 of 10 final).
+   */
+  seasonDrops: "fixed" | "proportional";
 };
 
 function parsePlannedSeasonEvents(raw: string | undefined): Record<number, number> | null {
@@ -68,6 +76,7 @@ export function getClubConfig(): ClubConfig {
     paxStandings:
       process.env.PAX_STANDINGS === "1" || process.env.PAX_STANDINGS === "true",
     plannedSeasonEvents: parsePlannedSeasonEvents(process.env.PLANNED_SEASON_EVENTS),
+    seasonDrops: oneOf("SEASON_DROPS", process.env.SEASON_DROPS, ["fixed", "proportional"] as const, "fixed"),
   };
 }
 

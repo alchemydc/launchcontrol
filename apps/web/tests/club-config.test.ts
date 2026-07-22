@@ -107,3 +107,20 @@ describe("season config (PAX section + planned events)", () => {
     expect(() => getClubConfig()).toThrow(/PLANNED_SEASON_EVENTS/);
   });
 });
+
+describe("SEASON_DROPS", () => {
+  afterEach(() => {
+    delete process.env.SEASON_DROPS;
+  });
+
+  it("defaults to fixed and accepts proportional", () => {
+    expect(getClubConfig().seasonDrops).toBe("fixed");
+    process.env.SEASON_DROPS = "proportional";
+    expect(getClubConfig().seasonDrops).toBe("proportional");
+  });
+
+  it("throws on invalid values", () => {
+    process.env.SEASON_DROPS = "half";
+    expect(() => getClubConfig()).toThrow(/SEASON_DROPS/);
+  });
+});
