@@ -29,7 +29,10 @@ export default async function EventPage({
   // Gate runs before notFound() so unauth viewers can't probe slug existence.
   await requireRmrMember(`/events/${slug}`);
 
-  const event = await prisma.event.findUnique({
+  // Slug is unique per-season now (@@unique([seasonId, slug])); event slugs are
+  // date-prefixed so they remain globally unique in practice. findFirst keeps the
+  // slug-only route lookup working until season-scoped routing arrives (PR 3).
+  const event = await prisma.event.findFirst({
     where: { slug },
     include: {
       entries: {

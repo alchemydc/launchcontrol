@@ -37,7 +37,10 @@ export async function updateEventMetadata(
 
   const newSlug = buildEventSlug(input.date, input.name);
   if (newSlug !== existing.slug) {
-    const collision = await client.event.findUnique({ where: { slug: newSlug } });
+    // Global slug-collision guard: slug is now unique per-season, but the public
+    // route addresses events by slug alone, so we still reject any cross-season
+    // slug reuse. findFirst because slug is no longer a standalone unique key.
+    const collision = await client.event.findFirst({ where: { slug: newSlug } });
     if (collision) throw new SlugCollisionError(newSlug);
   }
 

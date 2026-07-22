@@ -41,6 +41,18 @@ type SrcRegistration = {
 
 const REQUIRED_TABLES = ["events", "classes", "drivers", "registrations", "runs"] as const;
 
+// The deployment's league. PR 1 is single-league-per-deployment; Task 3's
+// getLeagueConfig() will centralize this env read. Kept here so ingest can
+// resolve its target League/Season without depending on unbuilt Task 3 code.
+const DEFAULT_LEAGUE_SLUG = process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
+
+// Default ScoringPolicy v1 snapshot for a Season auto-created at ingest when the
+// event's year has no seeded Season (PR 1 login-less self-heal). Matches the PCA
+// Classic preset seeded by the league-foundation migration. Task 7 replaces this
+// with a proper snapshot of the league's chosen ScoringSystem preset.
+const DEFAULT_SCORING_POLICY =
+  '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+
 
 export function slugify(s: string): string {
   return s
@@ -184,7 +196,36 @@ export async function ingestAxdb(
     const eventDate = new Date(`${srcEvent.event_date}T00:00:00.000Z`);
 
     return await client.$transaction(async (tx) => {
-      const existing = await tx.event.findUnique({ where: { slug } });
+      // Resolve the target League → Season for this event. The league is seeded by
+      // the league-foundation migration; a missing league means the DB was never
+      // migrated. The Season is resolved by (league, event year); if none exists
+      // it is auto-created as a bare default-policy Season (Task 7 refines this).
+      const league = await tx.league.findUnique({ where: { slug: DEFAULT_LEAGUE_SLUG } });
+      if (!league) {
+        throw new Error(
+          `[ingest] default league '${DEFAULT_LEAGUE_SLUG}' not found — run 'prisma migrate deploy' to seed it.`,
+        );
+      }
+      const eventYear = eventDate.getUTCFullYear();
+      let season = await tx.season.findFirst({
+        where: { leagueId: league.id, year: eventYear },
+      });
+      if (!season) {
+        season = await tx.season.create({
+          data: {
+            leagueId: league.id,
+            name: `${eventYear} Season`,
+            year: eventYear,
+            plannedEvents: 0,
+            scoringPolicy: DEFAULT_SCORING_POLICY,
+          },
+        });
+      }
+      const seasonId = season.id;
+
+      const existing = await tx.event.findUnique({
+        where: { seasonId_slug: { seasonId, slug } },
+      });
 
       if (existing && existing.sourceSha256 === sha) {
         const entries = await tx.entry.count({ where: { eventId: existing.id } });
@@ -208,7 +249,7 @@ export async function ingestAxdb(
             data: { sourceSha256: sha, name: srcEvent.event_name, date: eventDate },
           })
         : await tx.event.create({
-            data: { slug, name: srcEvent.event_name, date: eventDate, sourceSha256: sha },
+            data: { seasonId, slug, name: srcEvent.event_name, date: eventDate, sourceSha256: sha },
           });
 
       if (existing) {
@@ -218,13 +259,13 @@ export async function ingestAxdb(
       // CarClass: findMany existing, createMany new, update only paxIndex-changed rows, findMany to map IDs.
       const srcClassCodes = srcClasses.map((c) => c.class_name);
       const existingClasses = await tx.carClass.findMany({
-        where: { code: { in: srcClassCodes } },
+        where: { leagueId: league.id, code: { in: srcClassCodes } },
       });
       const existingClassByCode = new Map(existingClasses.map((c) => [c.code, c]));
 
       const newClassData = srcClasses
         .filter((c) => !existingClassByCode.has(c.class_name))
-        .map((c) => ({ code: c.class_name, paxIndex: c.pax }));
+        .map((c) => ({ leagueId: league.id, code: c.class_name, paxIndex: c.pax }));
       if (newClassData.length > 0) {
         await tx.carClass.createMany({ data: newClassData });
       }
@@ -235,7 +276,7 @@ export async function ingestAxdb(
         }
       }
       const allClasses = await tx.carClass.findMany({
-        where: { code: { in: srcClassCodes } },
+        where: { leagueId: league.id, code: { in: srcClassCodes } },
       });
       const classIdByCode = new Map(allClasses.map((c) => [c.code, c.id]));
       const classIdBySrc = new Map<number, number>();

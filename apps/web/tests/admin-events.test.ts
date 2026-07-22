@@ -127,7 +127,7 @@ describe("deleteEventWithSweep(synthetic) — video guard", () => {
   let syntheticEventId: number;
 
   beforeAll(async () => {
-    const syntheticEvent = await prisma.event.findUniqueOrThrow({ where: { slug: syntheticSlug } });
+    const syntheticEvent = await prisma.event.findFirstOrThrow({ where: { slug: syntheticSlug } });
     syntheticEventId = syntheticEvent.id;
 
     const entries = await prisma.entry.findMany({
@@ -196,8 +196,16 @@ describe("updateEventMetadata(season-event-2)", () => {
 
   it("throws SlugCollisionError and leaves the target + audit trail unchanged on collision", async () => {
     const collisionSlug = "2099-01-01-collision-target";
+    // Event.seasonId is required now; attach this throwaway collision fixture to
+    // the same season as the target event (any existing season works here).
+    const target = await prisma.event.findUniqueOrThrow({ where: { id: season2Id } });
     const dummy = await prisma.event.create({
-      data: { slug: collisionSlug, name: "Collision Target", date: new Date("2099-01-01T00:00:00.000Z") },
+      data: {
+        seasonId: target.seasonId,
+        slug: collisionSlug,
+        name: "Collision Target",
+        date: new Date("2099-01-01T00:00:00.000Z"),
+      },
     });
 
     const before = await prisma.event.findUniqueOrThrow({ where: { id: season2Id } });
