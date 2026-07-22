@@ -20,8 +20,8 @@ export type ClubConfig = {
   msrOrgId: string | null;
   /** Login UI renders only when MSR credentials exist and the gate allows sign-in. */
   loginEnabled: boolean;
-  /** Show the season leaderboard's overall "PAX" standings section (SEASON_PAX_SECTION=1). */
-  seasonPaxSection: boolean;
+  /** Enable overall-PAX standings views: the season leaderboard PAX section and the event-page PAX view (PAX_STANDINGS=1). */
+  paxStandings: boolean;
   /** Per-year planned event counts ("2026:10,2027:8") overriding the built-in PCA map; null = use the built-in. */
   plannedSeasonEvents: Record<number, number> | null;
 };
@@ -65,8 +65,8 @@ export function getClubConfig(): ClubConfig {
     nameDisplay,
     msrOrgId: process.env.MSR_ORG_ID || process.env.MSR_RMR_ORG_ID || null,
     loginEnabled: Boolean(process.env.MSR_CONSUMER_KEY) && accessGate !== "none",
-    seasonPaxSection:
-      process.env.SEASON_PAX_SECTION === "1" || process.env.SEASON_PAX_SECTION === "true",
+    paxStandings:
+      process.env.PAX_STANDINGS === "1" || process.env.PAX_STANDINGS === "true",
     plannedSeasonEvents: parsePlannedSeasonEvents(process.env.PLANNED_SEASON_EVENTS),
   };
 }

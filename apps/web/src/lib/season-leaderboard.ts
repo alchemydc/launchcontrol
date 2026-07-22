@@ -6,7 +6,7 @@ import { formatDriverName, getClubConfig } from "@/lib/club-config";
 
 /**
  * Synthetic class code for the overall PAX standings section
- * (SEASON_PAX_SECTION=1). Rendered pinned first; never stored in the DB.
+ * (PAX_STANDINGS=1). Rendered pinned first; never stored in the DB.
  */
 export const PAX_SECTION_CODE = "PAX";
 
@@ -220,8 +220,8 @@ export async function buildSeasonLeaderboard(
   const realPaxClassExists = events.some((ev) =>
     ev.entries.some((e) => e.class.code === PAX_SECTION_CODE),
   );
-  const paxSectionEnabled = club.seasonPaxSection && !realPaxClassExists;
-  if (club.seasonPaxSection && realPaxClassExists) {
+  const paxSectionEnabled = club.paxStandings && !realPaxClassExists;
+  if (club.paxStandings && realPaxClassExists) {
     console.warn(
       `[season-leaderboard] a real class named '${PAX_SECTION_CODE}' exists — skipping the synthetic overall-PAX section`,
     );
@@ -258,7 +258,7 @@ export async function buildSeasonLeaderboard(
         byDriver.set(d.id, best);
       }
 
-      // Synthetic overall-PAX section (SEASON_PAX_SECTION=1): index the same
+      // Synthetic overall-PAX section (PAX_STANDINGS=1): index the same
       // best-corrected time by the entry's paxClass factor and rank across
       // every class. Everything downstream (points formula, combined groups,
       // qualifying threshold, drops) treats it as one more class.

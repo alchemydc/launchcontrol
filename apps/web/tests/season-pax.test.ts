@@ -56,18 +56,18 @@ afterAll(async () => {
 });
 
 afterEach(() => {
-  delete process.env.SEASON_PAX_SECTION;
+  delete process.env.PAX_STANDINGS;
   delete process.env.PLANNED_SEASON_EVENTS;
 });
 
-describe("season PAX section (SEASON_PAX_SECTION)", () => {
+describe("season PAX section (PAX_STANDINGS)", () => {
   it("is absent by default — PCA leaderboard unchanged", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma, {});
     expect(result.sections.map((s) => s.classCode)).toEqual(["AS", "BST"]);
   });
 
   it("adds an overall PAX section pinned first when enabled", async () => {
-    process.env.SEASON_PAX_SECTION = "1";
+    process.env.PAX_STANDINGS = "1";
     const result = await buildSeasonLeaderboard(2026, prisma, {});
     expect(result.sections.map((s) => s.classCode)).toEqual(["PAX", "AS", "BST"]);
 
@@ -78,7 +78,7 @@ describe("season PAX section (SEASON_PAX_SECTION)", () => {
   });
 
   it("class sections are unaffected by the PAX section", async () => {
-    process.env.SEASON_PAX_SECTION = "1";
+    process.env.PAX_STANDINGS = "1";
     const result = await buildSeasonLeaderboard(2026, prisma, {});
     const as = result.sections.find((s) => s.classCode === "AS")!;
     expect(as.drivers[0]!.totalPoints).toBe(1000);

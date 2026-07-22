@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
 import { buildLeaderboard } from "@/lib/leaderboard";
+import { getClubConfig } from "@/lib/club-config";
 import { findSmugmugEventFolder } from "@/lib/smugmug";
 import { requireRmrMember } from "@/lib/session";
 import { LeaderboardTable } from "./leaderboard-table";
@@ -99,7 +100,11 @@ export default async function EventPage({
         )}
       </header>
 
-      <LeaderboardTable rows={rows} classCodes={classCodes} />
+      <LeaderboardTable
+        rows={rows}
+        classCodes={classCodes}
+        showPaxView={getClubConfig().paxStandings}
+      />
     </main>
   );
 }
