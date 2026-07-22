@@ -65,7 +65,7 @@ function toDisposition(raw: string | null): RunDisposition {
   }
 }
 
-function computeIdentityHash(
+export function computeIdentityHash(
   memberNum: string | null,
   firstName: string,
   lastName: string,
