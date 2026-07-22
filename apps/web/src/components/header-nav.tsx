@@ -19,9 +19,11 @@ const linkClass =
 export async function HeaderNav() {
   const club = getClubConfig();
   const publicMode = club.accessGate !== "required";
-  // Guard session read for secret-less public deploys.
+  // Guard session read for secret-less public deploys. Required-mode deploys
+  // always read the session (member gating depends on it); public deploys
+  // only read it when login is actually enabled.
   const session =
-    club.loginEnabled || !publicMode ? await getSession() : null;
+    !publicMode || club.loginEnabled ? await getSession() : null;
   const isSignedIn = Boolean(session?.msrUid);
   const displayName = isSignedIn
     ? `${session!.firstName ?? ""} ${session!.lastInitial ?? ""}`.trim()
@@ -51,7 +53,7 @@ export async function HeaderNav() {
           {displayName}
         </Link>
       )}
-      {!isSignedIn && club.loginEnabled && (
+      {!isSignedIn && (club.loginEnabled || club.accessGate === "required") && (
         <Link href="/login" className={linkClass}>
           Sign in
         </Link>

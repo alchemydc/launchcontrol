@@ -140,13 +140,13 @@ export function sanitizeReturnTo(raw: string | string[] | null | undefined): str
 
 export async function requireRmrMember(
   returnPath?: string
-): Promise<{ session: IronSession<SessionData> }> {
+): Promise<{ session: IronSession<SessionData> | null }> {
   // Public deployments (ACCESS_GATE=optional|none) never gate results pages.
   const club = getClubConfig();
   if (club.accessGate !== "required") {
     if (!process.env.SESSION_SECRET) {
       // No sessions configured at all (login disabled) — nothing to gate with.
-      return { session: undefined as unknown as IronSession<SessionData> };
+      return { session: null };
     }
     return { session: await getSession() };
   }

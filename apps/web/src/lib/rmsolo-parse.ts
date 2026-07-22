@@ -169,7 +169,8 @@ export function parseRmsoloFullText(text: string): ParsedRmsoloEvent {
         bestSeconds: null,
         runs: [],
       };
-      // Best column value on line 1 (may be DNS for all-DNS entries, handled below).
+      // Best column value on line 1 (may be DNS for all-DNS entries — bestSeconds
+      // already defaults to null above and is only overwritten when numeric).
       const best = rightTokens[rightTokens.length - 1];
       if (best?.seconds != null) entry.bestSeconds = best.seconds;
     } else if (entry) {

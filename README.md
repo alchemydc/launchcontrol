@@ -79,6 +79,8 @@ pnpm --filter web build && pnpm --filter web start
 15 6 * * * cd /path/to/launchcontrol && pnpm --filter web ingest:rmsolo >> /var/log/rmsolo-ingest.log 2>&1
 ```
 
+**Deploy note:** migration `20260722000000_driver_lastname_and_source_sha` renames `Event.axdbSha256` to `sourceSha256`. On the production Turso DB, run `pnpm --filter web migrate:turso` and promote the new deploy back-to-back — either order leaves a brief window where the live build's `Event` queries error until both sides match. Rollback: rename the column back.
+
 ## Project status
 
 M0–M1.12 shipped: ingest with PII redaction, styled leaderboards, GitHub Actions CI, per-driver progression at `/drivers/[id]`, SmugMug photo links, RMR season standings at `/leaderboard`, and ingest correctness pass. M2 (MSR OAuth) is blocked on credentials. See [docs/BUILD.md](docs/BUILD.md) for the full milestone history and [docs/PRD.md](docs/PRD.md) for requirements.

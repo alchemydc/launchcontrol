@@ -265,7 +265,15 @@ export async function ingestRmsoloEvent(
 
     if (entriesData.length > 0) {
       await tx.entry.createMany({
-        data: entriesData.map(({ _entry, ...rest }) => rest),
+        data: entriesData.map((e) => ({
+          eventId: e.eventId,
+          driverId: e.driverId,
+          classId: e.classId,
+          paxClassId: e.paxClassId,
+          carNumber: e.carNumber,
+          carDescription: e.carDescription,
+          bestCommittedRunNumber: e.bestCommittedRunNumber,
+        })),
       });
     }
 

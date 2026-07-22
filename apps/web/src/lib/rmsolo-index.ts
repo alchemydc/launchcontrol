@@ -115,10 +115,10 @@ export function parseResultsPage(html: string, baseUrl?: string): { season: numb
       pdfUrls[variant] = resolveUrl(href!, baseUrl);
     }
 
-    // A real event row always has at least one results PDF. The trailing
-    // sound-only row has an empty results cell (only a link in col-sound,
-    // which the loop above would classify as null since it matches none of
-    // the variant tokens) — skip it rather than emitting a bogus event.
+    // The trailing sound-only row is already skipped above by the !dateMatch
+    // check (its col-date cell is empty). This check is a defensive guard for
+    // any date-bearing row that nonetheless has no results PDFs, so ingest
+    // never emits a bogus event for it.
     if (!pdfUrls.full && !pdfUrls.index && !pdfUrls.raw && !pdfUrls.novice) continue;
 
     const day = (dayStr as string).padStart(2, "0");
