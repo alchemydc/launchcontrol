@@ -32,7 +32,7 @@ async function main() {
       targetId: result.event.id,
       targetSlug: result.event.slug,
       // basename only — the absolute path would leak local machine details into the shared DB
-      detail: { filename: basename(path), axdbSha256: result.axdbSha256, status: result.status, counts: result.counts },
+      detail: { filename: basename(path), sourceSha256: result.sourceSha256, status: result.status, counts: result.counts },
     });
   } catch (auditErr) {
     // Audit is best-effort — a logging hiccup must not fail a completed ingest.

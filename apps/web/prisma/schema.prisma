@@ -17,7 +17,7 @@ model Event {
   name       String
   date       DateTime
   location   String?
-  axdbSha256 String?
+  sourceSha256 String? // sha256 of the ingested source artifact (.axdb file or results PDF) — idempotency key
   createdAt  DateTime @default(now())
 
   entries Entry[]
@@ -29,6 +29,7 @@ model Driver {
   msrUid      String? @unique
   firstName    String
   lastInitial  String  // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest.ts redactLastName()
+  lastName     String? // Full last name — ONLY populated by sources whose results are already public (e.g. RMsolo PDFs). The .axdb ingest never writes it (PCA privacy posture).
   identityHash String  @unique
   memberNum    String?
   nameOnlyHash String?   // sha256(lower(first)|lower(last)) — full-name key for blank-member merging at ingest; nullable because pre-existing rows can't be backfilled (full surname is never stored)
