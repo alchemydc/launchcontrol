@@ -2,6 +2,7 @@ import { PrismaClient, type RunDisposition } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { PLANNED_SEASON_EVENTS } from "@/lib/constants";
 import { prisma as defaultClient } from "@/lib/prisma";
+import { formatDriverName } from "@/lib/club-config";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -80,7 +81,7 @@ export function combinedEventLabel(
 
 export type SeasonStandingsRow = {
   driverId: number;
-  driverName: string; // "First L." — lastInitial only, never full last name
+  driverName: string; // "First L." by default; "First Last" only when NAME_DISPLAY=full and a source stores lastName
   totalPoints: number;
   eligible: boolean; // false when driver has fewer than qualifyingEvents in this class
   eventsCountedInClass: number;
@@ -114,7 +115,7 @@ export type SeasonLeaderboardResult = {
 
 type LoadedEntry = {
   class: { code: string };
-  driver: { id: number; firstName: string; lastInitial: string };
+  driver: { id: number; firstName: string; lastInitial: string; lastName: string | null };
   bestCommittedRunNumber: number | null;
   runs: Array<{ runNumber: number; rawTimeMs: number | null; cones: number; disposition: RunDisposition }>;
 };
@@ -186,7 +187,7 @@ export async function buildSeasonLeaderboard(
       entries: {
         include: {
           class: { select: { code: true } },
-          driver: { select: { id: true, firstName: true, lastInitial: true } },
+          driver: { select: { id: true, firstName: true, lastInitial: true, lastName: true } },
           runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
         },
       },
@@ -198,7 +199,7 @@ export async function buildSeasonLeaderboard(
     return { ...basis, sections: [] };
   }
 
-  const driverInfo = new Map<number, { firstName: string; lastInitial: string }>();
+  const driverInfo = new Map<number, { firstName: string; lastInitial: string; lastName: string | null }>();
 
   // 2. Per (event, class, driver) best-corrected-ms table. Defense-in-depth:
   //    if a driver somehow has multiple entries in the same class at the same
@@ -214,7 +215,7 @@ export async function buildSeasonLeaderboard(
     for (const entry of event.entries) {
       const d = entry.driver;
       if (!driverInfo.has(d.id)) {
-        driverInfo.set(d.id, { firstName: d.firstName, lastInitial: d.lastInitial });
+        driverInfo.set(d.id, { firstName: d.firstName, lastInitial: d.lastInitial, lastName: d.lastName });
       }
 
       const best = bestCorrectedMsForEntry(entry);
@@ -392,7 +393,7 @@ export async function buildSeasonLeaderboard(
 
     const row: SeasonStandingsRow = {
       driverId,
-      driverName: `${info.firstName} ${info.lastInitial}`,
+      driverName: formatDriverName(info),
       totalPoints,
       eligible,
       eventsCountedInClass,

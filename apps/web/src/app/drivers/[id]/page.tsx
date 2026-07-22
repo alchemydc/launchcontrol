@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
 import { buildDriverHistory } from "@/lib/driver-history";
+import { formatDriverName } from "@/lib/club-config";
 import { ProgressionChart, type ProgressionPoint } from "./progression-chart";
 import { TimeDeltaChart } from "./time-delta-chart";
 import { BackButton } from "@/components/back-button";
@@ -42,7 +43,7 @@ export default async function DriverPage({
   if (!driver) notFound();
 
   const history = await buildDriverHistory(driverId);
-  const driverName = `${driver.firstName} ${driver.lastInitial}`;
+  const driverName = formatDriverName(driver);
 
   const cleanRows = history.filter((r) => r.position != null);
   const bestPosition =

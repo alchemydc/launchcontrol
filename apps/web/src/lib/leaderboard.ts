@@ -1,5 +1,6 @@
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { CONE_PENALTY_MS } from "@/lib/constants";
+import { formatDriverName } from "@/lib/club-config";
 
 // Mirrors the Prisma enum but as a string-literal union so this module stays
 // browser-safe (the client leaderboard component imports types from here).
@@ -10,7 +11,7 @@ type EntryWithRelations = {
   carNumber: string;
   carDescription: string | null;
   bestCommittedRunNumber: number | null;
-  driver: { id: number; firstName: string; lastInitial: string };
+  driver: { id: number; firstName: string; lastInitial: string; lastName: string | null };
   class: { code: string };
   paxClass: { code: string; paxIndex: { toString(): string } };
   runs: Array<{
@@ -62,7 +63,7 @@ export function buildLeaderboard(entries: EntryWithRelations[]): LeaderboardRow[
 
     return {
       driverId: entry.driver.id,
-      driverName: `${entry.driver.firstName} ${entry.driver.lastInitial}`,
+      driverName: formatDriverName(entry.driver),
       carNumber: entry.carNumber,
       classCode: entry.class.code,
       paxClassCode: entry.paxClass.code,

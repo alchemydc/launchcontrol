@@ -17,11 +17,12 @@
 import { CONE_PENALTY_MS } from "@/lib/constants";
 import { bestCorrectedMsForEntry, type EntryForBest, type RunForBest } from "@/lib/entry-best";
 import { combinedEventLabel } from "@/lib/season-leaderboard";
+import { formatDriverName } from "@/lib/club-config";
 
 export type CombinedEntry = EntryForBest & {
   carNumber: string;
   carDescription: string | null;
-  driver: { id: number; firstName: string; lastInitial: string };
+  driver: { id: number; firstName: string; lastInitial: string; lastName: string | null };
   class: { code: string };
 };
 
@@ -43,7 +44,7 @@ export type CombinedSessionResult = {
 
 export type CombinedResultRow = {
   driverId: number;
-  driverName: string; // "First L." — PII rule
+  driverName: string; // "First L." by default; "First Last" only when NAME_DISPLAY=full and lastName is stored
   classCode: string;
   carNumber: string;
   carDescription: string | null;
@@ -120,7 +121,7 @@ function buildClassSection(events: CombinedSessionEvent[], classCode: string): C
         continue;
       }
       if (driverName === "") {
-        driverName = `${entry.driver.firstName} ${entry.driver.lastInitial}`;
+        driverName = formatDriverName(entry.driver);
         carNumber = entry.carNumber;
         carDescription = entry.carDescription;
       }
@@ -177,7 +178,7 @@ function buildOverallSection(events: CombinedSessionEvent[]): CombinedSection {
       }, null);
 
       if (chosen != null && driverName === "") {
-        driverName = `${chosen.driver.firstName} ${chosen.driver.lastInitial}`;
+        driverName = formatDriverName(chosen.driver);
         carNumber = chosen.carNumber;
         carDescription = chosen.carDescription;
       }
