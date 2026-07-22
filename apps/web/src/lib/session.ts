@@ -14,6 +14,7 @@
 import { getIronSession, type IronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { getClubConfig } from "@/lib/club-config";
 
 // ---------------------------------------------------------------------------
 // SESSION_SECRET is checked lazily on first use — not at module load — so
@@ -140,6 +141,16 @@ export function sanitizeReturnTo(raw: string | string[] | null | undefined): str
 export async function requireRmrMember(
   returnPath?: string
 ): Promise<{ session: IronSession<SessionData> }> {
+  // Public deployments (ACCESS_GATE=optional|none) never gate results pages.
+  const club = getClubConfig();
+  if (club.accessGate !== "required") {
+    if (!process.env.SESSION_SECRET) {
+      // No sessions configured at all (login disabled) — nothing to gate with.
+      return { session: undefined as unknown as IronSession<SessionData> };
+    }
+    return { session: await getSession() };
+  }
+
   const session = await getSession();
 
   if (!session.msrUid || !session.isRmrMember) {

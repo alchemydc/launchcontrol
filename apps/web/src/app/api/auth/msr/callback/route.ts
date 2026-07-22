@@ -23,13 +23,15 @@ import { parseFormEncoded, signRequest, signedMsrFetch } from "@/lib/msr";
 import type { MsrMeResponse } from "@/lib/msr";
 import { getRequestTokenSession, getSession, sanitizeReturnTo } from "@/lib/session";
 import { redactLastName } from "@/lib/pii";
+import { getClubConfig } from "@/lib/club-config";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const rmrOrgId = process.env.MSR_RMR_ORG_ID;
-  if (!rmrOrgId) {
-    throw new Error("MSR_RMR_ORG_ID environment variable is not set");
+  const club = getClubConfig();
+  const orgId = club.msrOrgId;
+  if (!orgId && club.accessGate === "required") {
+    throw new Error("MSR_ORG_ID (or legacy MSR_RMR_ORG_ID) must be set when ACCESS_GATE=required");
   }
 
   const { searchParams } = request.nextUrl;
@@ -100,7 +102,7 @@ export async function GET(request: NextRequest) {
   const lastInitial = redactLastName(profile.lastName);
 
   // 7. Determine RMR membership.
-  const isRmrMember = profile.organizations.some((o) => o.id === rmrOrgId);
+  const isRmrMember = orgId != null && profile.organizations.some((o) => o.id === orgId);
 
   // 8. Persist session — only the seven approved fields; full lastName is never stored.
   const session = await getSession();
