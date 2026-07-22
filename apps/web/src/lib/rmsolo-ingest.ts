@@ -104,6 +104,12 @@ export async function ingestRmsoloEvent(
   // in the table keep paxClass = entered class (factor 1.0 fallback).
   const derivedPaxCodeByEntry = new Map<ParsedEntry, string>();
   for (const e of unreconciled) {
+    // Only run-group section headings (single letters: M/N/S/P/X) print
+    // indexed Bests; real classes are >=2 chars. Without this gate, any
+    // unreconciled normal-class entry (e.g. a printing glitch) whose
+    // best/raw ratio lands near a table factor would silently get a
+    // mislabeled paxClass — notably AM (1.000) for near-1.0 ratios.
+    if (!/^[A-Z]$/.test(e.classCode)) continue;
     if (e.bestSeconds == null) continue;
     const clean = e.runs.filter((r) => r.disposition === "CLEAN");
     if (clean.length === 0) continue;

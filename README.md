@@ -87,7 +87,7 @@ pnpm --filter web build && pnpm --filter web start
 15 6 * * * cd /path/to/launchcontrol && pnpm --filter web ingest:rmsolo >> /var/log/rmsolo-ingest.log 2>&1
 ```
 
-**Deploy note:** migration `20260722000000_driver_lastname_and_source_sha` renames `Event.axdbSha256` to `sourceSha256`. On the production Turso DB, run `pnpm --filter web migrate:turso` and promote the new deploy back-to-back — either order leaves a brief window where the live build's `Event` queries error until both sides match. Rollback: rename the column back.
+**Deploy note:** migration `20260722000000_driver_lastname_and_source_sha` renames `Event.axdbSha256` to `sourceSha256`. On the production Turso DB, run `pnpm --filter web migrate:turso` and promote the new deploy back-to-back — either order leaves a brief window where the live build's `Event` queries error until both sides match. Rollback: rename the column back. The same back-to-back rule applies to migration `20260723000000_drop_driver_lastname` — the prior build still selects `lastName` until the new deploy is promoted.
 
 ## Project status
 

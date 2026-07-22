@@ -219,7 +219,13 @@ export function LeaderboardTable({
   // pills out of row order.
   const selectFilter = (value: string) => {
     setClassFilter(value);
-    setSorting([{ id: usesPaxMetric(value) ? "bestPaxMs" : "bestRawMs", desc: false }]);
+    // Reset sorting only when the ranking metric actually changes —
+    // plain class-filter hops keep the user's chosen sort (pre-existing
+    // behavior for non-PAX deployments).
+    const nextPax = usesPaxMetric(value);
+    if (nextPax !== paxMetric) {
+      setSorting([{ id: nextPax ? "bestPaxMs" : "bestRawMs", desc: false }]);
+    }
   };
   const filteredRows = useMemo(
     () =>

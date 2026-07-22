@@ -464,6 +464,7 @@ describe("buildSeasonLeaderboard empty year", () => {
       totalEvents: 6,
       qualifyingEvents: 4,
       completedEvents: 0,
+      countedEvents: 4,
       sections: [],
     });
   });

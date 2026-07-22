@@ -134,6 +134,16 @@ describe("PLANNED_SEASON_EVENTS env override", () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     expect(result.totalEvents).toBe(10);
     expect(result.qualifyingEvents).toBe(6); // floor(10/2)+1 — best 6 of 10 count
+    expect(result.countedEvents).toBe(6); // fixed mode: counted == qualifying
+  });
+
+  it("exposes the proportional counted target for the view copy", async () => {
+    process.env.PLANNED_SEASON_EVENTS = "2026:10";
+    process.env.SEASON_DROPS = "proportional";
+    const result = await buildSeasonLeaderboard(2026, prisma);
+    // 1 completed event of 10: floor(1×4/10)=0 drops → counted 1.
+    expect(result.countedEvents).toBe(1);
+    delete process.env.SEASON_DROPS;
   });
 });
 

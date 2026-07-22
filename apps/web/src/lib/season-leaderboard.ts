@@ -134,6 +134,7 @@ export type SeasonLeaderboardResult = {
   totalEvents: number; // season size used for the threshold: max(planned, completedEvents) (M1.16)
   completedEvents: number; // actual scoring groups ingested so far
   qualifyingEvents: number;
+  countedEvents: number; // scores counted toward totals right now (== qualifyingEvents in fixed mode; scales with progress in proportional mode)
   sections: SeasonStandingsByClass[];
 };
 
@@ -232,7 +233,7 @@ export async function buildSeasonLeaderboard(
 
   if (events.length === 0) {
     const basis = seasonScoringBasis(year, 0, plannedEvents);
-    return { ...basis, sections: [] };
+    return { ...basis, countedEvents: basis.qualifyingEvents, sections: [] };
   }
 
   const driverInfo = new Map<number, { firstName: string; lastInitial: string }>();
@@ -326,6 +327,12 @@ export async function buildSeasonLeaderboard(
     year,
     scoringGroups.length,
     plannedEvents,
+  );
+  const countedEvents = countedEventTarget(
+    totalEvents,
+    qualifyingEvents,
+    completedEvents,
+    club.seasonDrops,
   );
 
   // 4. Score each scoring group, per class. Multi-event groups score on
@@ -447,10 +454,7 @@ export async function buildSeasonLeaderboard(
     // progress (see countedEventTarget); fixed keeps the historical
     // best-qualifyingEvents behavior.
     const sorted = [...rawScores].sort((a, b) => b.points - a.points);
-    const counted = sorted.slice(
-      0,
-      countedEventTarget(totalEvents, qualifyingEvents, completedEvents, club.seasonDrops),
-    );
+    const counted = sorted.slice(0, countedEvents);
     const totalPoints = counted.reduce((sum, s) => sum + s.points, 0);
     const countedSet = new Set(counted.map((s) => s.key));
 
@@ -505,5 +509,5 @@ export async function buildSeasonLeaderboard(
     if (b.classCode === PAX_SECTION_CODE) return 1;
     return a.classCode.localeCompare(b.classCode);
   });
-  return { totalEvents, completedEvents, qualifyingEvents, sections };
+  return { totalEvents, completedEvents, qualifyingEvents, countedEvents, sections };
 }
