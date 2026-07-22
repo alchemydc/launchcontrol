@@ -1,7 +1,10 @@
-# RMsolo self-hosted deployment: web app + daily results-ingest sidecar.
+# launchcontrol self-hosted deployment — club-agnostic artifact; the club
+# lives entirely in deploy/launchcontrol.env (see the .example template,
+# which ships RMsolo values as its example).
 #
-#   cp deploy/rmsolo.env.example deploy/rmsolo.env   # then edit
-#   docker compose up -d --build
+#   cp deploy/launchcontrol.env.example deploy/launchcontrol.env   # then edit
+#   docker compose up -d --build                     # web only
+#   docker compose --profile ingest up -d --build    # web + results poller
 #
 # The SQLite database lives on the named volume (survives image upgrades).
 # Migrations run automatically before the web process starts.
@@ -12,23 +15,26 @@ services:
     command: sh -c "pnpm --filter web exec prisma migrate deploy && pnpm --filter web start"
     ports:
       - "3000:3000"
-    env_file: deploy/rmsolo.env
+    env_file: deploy/launchcontrol.env
     environment:
-      DATABASE_URL: "file:/data/rmsolo.db"
+      DATABASE_URL: "file:/data/launchcontrol.db"
     volumes:
       - lc-data:/data
     restart: unless-stopped
 
-  # Polls rmsolo.org once per interval (default: daily). The CLI is
-  # idempotent — already-ingested PDFs skip by hash, new events ingest.
+  # RMsolo-specific: polls rmsolo.org once per interval (default: daily).
+  # Opt-in via `--profile ingest` — a club whose results arrive by admin
+  # upload (e.g. PCA .axdb files) runs web only. The CLI is idempotent:
+  # already-ingested PDFs skip by hash, new events ingest.
   ingest:
+    profiles: ["ingest"]
     image: launchcontrol:latest
     depends_on:
       - web
     command: sh -c 'sleep 30; while true; do pnpm --filter web ingest:rmsolo || true; sleep "$${INGEST_INTERVAL_SECONDS:-86400}"; done'
-    env_file: deploy/rmsolo.env
+    env_file: deploy/launchcontrol.env
     environment:
-      DATABASE_URL: "file:/data/rmsolo.db"
+      DATABASE_URL: "file:/data/launchcontrol.db"
     volumes:
       - lc-data:/data
     restart: unless-stopped

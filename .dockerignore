@@ -11,5 +11,5 @@ apps/web/test-*.db
 rmsolo_data
 real_season_data
 2026_season_data
-deploy/rmsolo.env
+deploy/launchcontrol.env
 docs
