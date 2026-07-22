@@ -109,7 +109,7 @@ export function combinedEventLabel(
 
 export type SeasonStandingsRow = {
   driverId: number;
-  driverName: string; // "First L." by default; "First Last" only when NAME_DISPLAY=full and a source stores lastName
+  driverName: string; // always "First L." (uniform PII posture; anonymous entries render "Unknown #<car>")
   totalPoints: number;
   eligible: boolean; // false when driver has fewer than qualifyingEvents in this class
   eventsCountedInClass: number;
@@ -147,7 +147,7 @@ type LoadedEntry = {
   // class for most entries; run-group RMsolo entries carry their derived true
   // class here (see rmsolo-ingest.ts), and .axdb entries their paxmult class.
   paxClass: { paxIndex: unknown };
-  driver: { id: number; firstName: string; lastInitial: string; lastName: string | null };
+  driver: { id: number; firstName: string; lastInitial: string };
   bestCommittedRunNumber: number | null;
   runs: Array<{ runNumber: number; rawTimeMs: number | null; cones: number; disposition: RunDisposition }>;
 };
@@ -223,7 +223,7 @@ export async function buildSeasonLeaderboard(
         include: {
           class: { select: { code: true } },
           paxClass: { select: { paxIndex: true } },
-          driver: { select: { id: true, firstName: true, lastInitial: true, lastName: true } },
+          driver: { select: { id: true, firstName: true, lastInitial: true } },
           runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
         },
       },
@@ -235,7 +235,7 @@ export async function buildSeasonLeaderboard(
     return { ...basis, sections: [] };
   }
 
-  const driverInfo = new Map<number, { firstName: string; lastInitial: string; lastName: string | null }>();
+  const driverInfo = new Map<number, { firstName: string; lastInitial: string }>();
 
   // The synthetic PAX section is skipped entirely if a real class named "PAX"
   // ever appears in the data — the real class wins, never silently merged.
@@ -263,7 +263,7 @@ export async function buildSeasonLeaderboard(
     for (const entry of event.entries) {
       const d = entry.driver;
       if (!driverInfo.has(d.id)) {
-        driverInfo.set(d.id, { firstName: d.firstName, lastInitial: d.lastInitial, lastName: d.lastName });
+        driverInfo.set(d.id, { firstName: d.firstName, lastInitial: d.lastInitial });
       }
 
       const best = bestCorrectedMsForEntry(entry);

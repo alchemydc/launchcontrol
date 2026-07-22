@@ -11,7 +11,7 @@ type EntryWithRelations = {
   carNumber: string;
   carDescription: string | null;
   bestCommittedRunNumber: number | null;
-  driver: { id: number; firstName: string; lastInitial: string; lastName: string | null };
+  driver: { id: number; firstName: string; lastInitial: string };
   class: { code: string };
   paxClass: { code: string; paxIndex: { toString(): string } };
   runs: Array<{

@@ -21,25 +21,19 @@ describe("getClubConfig", () => {
       "Built for PCA Rocky Mountain Region · Autocross results from VisualAX",
     );
     expect(c.accessGate).toBe("required");
-    expect(c.nameDisplay).toBe("initial");
   });
 
   it("reads overrides from env", () => {
     process.env.SITE_TITLE = "RM Solo Results";
     process.env.ACCESS_GATE = "optional";
-    process.env.NAME_DISPLAY = "full";
     const c = getClubConfig();
     expect(c.siteTitle).toBe("RM Solo Results");
     expect(c.accessGate).toBe("optional");
-    expect(c.nameDisplay).toBe("full");
   });
 
-  it("throws on invalid ACCESS_GATE / NAME_DISPLAY values", () => {
+  it("throws on invalid ACCESS_GATE values", () => {
     process.env.ACCESS_GATE = "sometimes";
     expect(() => getClubConfig()).toThrow(/ACCESS_GATE/);
-    delete process.env.ACCESS_GATE;
-    process.env.NAME_DISPLAY = "redacted";
-    expect(() => getClubConfig()).toThrow(/NAME_DISPLAY/);
   });
 
   it("msrOrgId prefers MSR_ORG_ID, falls back to MSR_RMR_ORG_ID, else null", () => {
@@ -60,21 +54,12 @@ describe("getClubConfig", () => {
 });
 
 describe("formatDriverName", () => {
-  it("initial mode renders First L.", () => {
-    expect(formatDriverName({ firstName: "Ken", lastInitial: "P.", lastName: "Pike" }))
-      .toBe("Ken P.");
+  it("always renders First L. (uniform PII posture)", () => {
+    expect(formatDriverName({ firstName: "Ken", lastInitial: "P." })).toBe("Ken P.");
   });
 
-  it("full mode renders First Last when lastName present", () => {
-    process.env.NAME_DISPLAY = "full";
-    expect(formatDriverName({ firstName: "Ken", lastInitial: "P.", lastName: "Pike" }))
-      .toBe("Ken Pike");
-  });
-
-  it("full mode falls back to lastInitial when lastName missing", () => {
-    process.env.NAME_DISPLAY = "full";
-    expect(formatDriverName({ firstName: "Ken", lastInitial: "P.", lastName: null }))
-      .toBe("Ken P.");
+  it("renders anonymous entries as Unknown #<car> via the car-number initial", () => {
+    expect(formatDriverName({ firstName: "Unknown", lastInitial: "#33" })).toBe("Unknown #33");
   });
 });
 

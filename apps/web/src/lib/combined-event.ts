@@ -22,7 +22,7 @@ import { formatDriverName } from "@/lib/club-config";
 export type CombinedEntry = EntryForBest & {
   carNumber: string;
   carDescription: string | null;
-  driver: { id: number; firstName: string; lastInitial: string; lastName: string | null };
+  driver: { id: number; firstName: string; lastInitial: string };
   class: { code: string };
 };
 
@@ -44,7 +44,7 @@ export type CombinedSessionResult = {
 
 export type CombinedResultRow = {
   driverId: number;
-  driverName: string; // "First L." by default; "First Last" only when NAME_DISPLAY=full and lastName is stored
+  driverName: string; // always "First L." (uniform PII posture; anonymous entries render "Unknown #<car>")
   classCode: string;
   carNumber: string;
   carDescription: string | null;

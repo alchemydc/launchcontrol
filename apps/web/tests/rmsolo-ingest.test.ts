@@ -59,14 +59,14 @@ const parsed: ParsedRmsoloEvent = {
 };
 
 describe("ingestRmsoloEvent", () => {
-  it("creates event, classes, drivers with full lastName, entries, runs", async () => {
+  it("creates event, classes, drivers with redacted initials, entries, runs", async () => {
     const result = await ingestRmsoloEvent({ parsed, sha256: "abc123", date: "2026-04-18" }, prisma);
     expect(result.status).toBe("ingested");
     expect(result.event.slug).toBe("2026-04-18-summer-2026-1");
 
     const drivers = await prisma.driver.findMany({ orderBy: { id: "asc" } });
     expect(drivers).toHaveLength(2); // same last name, different first → distinct identityHash
-    expect(drivers[0]).toMatchObject({ firstName: "Alex", lastName: "Driver", lastInitial: "D." });
+    expect(drivers[0]).toMatchObject({ firstName: "Alex", lastInitial: "D." });
     expect(drivers[0]!.memberNum).toBeNull();
     expect(drivers[0]!.nameOnlyHash).not.toBeNull();
 
@@ -183,10 +183,10 @@ describe("ingestRmsoloEvent", () => {
     expect(anonWarnings[0]![0]).toMatch(/2 entries/);
     warnSpy.mockRestore();
 
-    const driver33 = await prisma.driver.findFirst({ where: { lastName: "#33" } });
-    const driver3 = await prisma.driver.findFirst({ where: { lastName: "#3" } });
-    expect(driver33).toMatchObject({ firstName: "Unknown", lastName: "#33" });
-    expect(driver3).toMatchObject({ firstName: "Unknown", lastName: "#3" });
+    const driver33 = await prisma.driver.findFirst({ where: { lastInitial: "#33" } });
+    const driver3 = await prisma.driver.findFirst({ where: { lastInitial: "#3" } });
+    expect(driver33).toMatchObject({ firstName: "Unknown", lastInitial: "#33" });
+    expect(driver3).toMatchObject({ firstName: "Unknown", lastInitial: "#3" });
     expect(driver33!.id).not.toBe(driver3!.id); // distinct drivers, not collapsed to one
 
     const entry33 = await prisma.entry.findFirst({ where: { carNumber: "33" }, include: { runs: true } });

@@ -5,7 +5,6 @@
  */
 
 export type AccessGate = "required" | "optional" | "none";
-export type NameDisplay = "initial" | "full";
 
 export type ClubConfig = {
   siteTitle: string;
@@ -14,8 +13,6 @@ export type ClubConfig = {
   landingDescription: string;
   /** required: session+org membership gates results (PCA). optional: public results, login offered. none: public, no login UI. */
   accessGate: AccessGate;
-  /** initial: "First L." (PCA privacy posture). full: "First Last" where lastName is stored. */
-  nameDisplay: NameDisplay;
   /** MSR org UUID for membership display/gating. MSR_ORG_ID preferred; MSR_RMR_ORG_ID honored as legacy alias. */
   msrOrgId: string | null;
   /** Login UI renders only when MSR credentials exist and the gate allows sign-in. */
@@ -57,7 +54,6 @@ function oneOf<T extends string>(name: string, raw: string | undefined, allowed:
 
 export function getClubConfig(): ClubConfig {
   const accessGate = oneOf("ACCESS_GATE", process.env.ACCESS_GATE, ["required", "optional", "none"] as const, "required");
-  const nameDisplay = oneOf("NAME_DISPLAY", process.env.NAME_DISPLAY, ["initial", "full"] as const, "initial");
   return {
     siteTitle: process.env.SITE_TITLE || "Launch Control · PCA RMR",
     siteDescription:
@@ -70,7 +66,6 @@ export function getClubConfig(): ClubConfig {
       process.env.LANDING_DESCRIPTION ||
       "Sign in with your MotorsportReg account to access Rocky Mountain Region autocross results, sortable event leaderboards, season standings, and driver profiles.",
     accessGate,
-    nameDisplay,
     msrOrgId: process.env.MSR_ORG_ID || process.env.MSR_RMR_ORG_ID || null,
     loginEnabled: Boolean(process.env.MSR_CONSUMER_KEY) && accessGate !== "none",
     paxStandings:
@@ -80,13 +75,12 @@ export function getClubConfig(): ClubConfig {
   };
 }
 
-export function formatDriverName(d: {
-  firstName: string;
-  lastInitial: string;
-  lastName?: string | null;
-}): string {
-  if (getClubConfig().nameDisplay === "full" && d.lastName) {
-    return `${d.firstName} ${d.lastName}`;
-  }
+/**
+ * Single render point for driver names. PCA PII posture applies to every
+ * source (project decision 2026-07-22): always "First L." — full surnames
+ * are never stored. Anonymous entries render "Unknown #33" via their
+ * car-number lastInitial.
+ */
+export function formatDriverName(d: { firstName: string; lastInitial: string }): string {
   return `${d.firstName} ${d.lastInitial}`;
 }

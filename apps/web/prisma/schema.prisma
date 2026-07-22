@@ -28,8 +28,7 @@ model Driver {
   id          Int     @id @default(autoincrement())
   msrUid      String? @unique
   firstName    String
-  lastInitial  String  // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest.ts redactLastName()
-  lastName     String? // Full last name — ONLY populated by sources whose results are already public (e.g. RMsolo PDFs). The .axdb ingest never writes it (PCA privacy posture).
+  lastInitial  String  // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest redaction. One exception: anonymous RMsolo entries (no printed name) store their car-number label ("#33") here so they render "Unknown #33".
   identityHash String  @unique
   memberNum    String?
   nameOnlyHash String?   // sha256(lower(first)|lower(last)) — full-name key for blank-member merging at ingest; nullable because pre-existing rows can't be backfilled (full surname is never stored)

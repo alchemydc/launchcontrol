@@ -173,20 +173,24 @@ export async function ingestRmsoloEvent(
     const allClasses = await tx.carClass.findMany({ where: { code: { in: classCodes } } });
     const classIdByCode = new Map(allClasses.map((c) => [c.code, c.id]));
 
-    // Driver: RMsolo results are public, so we store the full lastName (not just the
-    // redacted initial). All RMsolo drivers have a null memberNum, so identityHash is
-    // effectively name-keyed already — no blank-member merge/adopt machinery needed
-    // (unlike ingestAxdb's .axdb path).
+    // Driver: PCA PII posture applies to every source (project decision,
+    // 2026-07-22) — the full lastName is HASHED for identity but never
+    // stored; only the redacted lastInitial persists. Anonymous entries are
+    // the one exception to the "single letter + period" initial format:
+    // they store their car-number label ("#33") so they render as
+    // "Unknown #33". All RMsolo drivers have a null memberNum, so
+    // identityHash is effectively name-keyed already — no blank-member
+    // merge/adopt machinery needed (unlike ingestAxdb's .axdb path).
     type DriverIdentity = {
       identityHash: string;
       firstName: string;
-      lastName: string;
       lastInitial: string;
       nameOnlyHash: string;
     };
     const identityByEntry = new Map<ParsedEntry, string>();
     const uniqueDriverIdentities = new Map<string, DriverIdentity>();
     for (const e of parsed.entries) {
+      const anonymous = e.firstName.trim() === "" && e.lastName.trim() === "";
       const { firstName, lastName } = identityNameFor(e);
       const identityHash = computeIdentityHash(null, firstName, lastName);
       identityByEntry.set(e, identityHash);
@@ -194,8 +198,7 @@ export async function ingestRmsoloEvent(
       uniqueDriverIdentities.set(identityHash, {
         identityHash,
         firstName,
-        lastName,
-        lastInitial: redactLastName(lastName),
+        lastInitial: anonymous ? lastName : redactLastName(lastName),
         nameOnlyHash: computeNameOnlyHash(firstName, lastName),
       });
     }
@@ -220,7 +223,6 @@ export async function ingestRmsoloEvent(
         if (
           cur.firstName !== info.firstName ||
           cur.lastInitial !== info.lastInitial ||
-          cur.lastName !== info.lastName ||
           cur.nameOnlyHash !== info.nameOnlyHash
         ) {
           await tx.driver.update({
@@ -228,7 +230,6 @@ export async function ingestRmsoloEvent(
             data: {
               firstName: info.firstName,
               lastInitial: info.lastInitial,
-              lastName: info.lastName,
               nameOnlyHash: info.nameOnlyHash,
             },
           });
