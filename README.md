@@ -69,7 +69,16 @@ pnpm --filter web ingest:rmsolo --file event.pdf --date 2026-04-12 [--name "Apri
 
 Pro Solo events are auto-skipped (unsupported results format, deferred alongside the Winter Series). Entries with no printed driver name ingest as anonymous drivers named "Unknown #\<car\>" — these are real scoring entries in the official results. Classes whose printed Best is PAX-indexed (M/N/S/P/X run-groups) ingest with the best time computed from runs (`bestCommittedRunNumber` left null); results remain correct.
 
-For a self-hosted deployment, build once and run the server, then poll for new results on a schedule:
+For a self-hosted deployment, the simplest path is Docker Compose — one `web` service (runs migrations on boot) plus an ingest sidecar that polls rmsolo.org daily (interval configurable via `INGEST_INTERVAL_SECONDS`):
+
+```sh
+cp deploy/rmsolo.env.example deploy/rmsolo.env   # edit branding/flags as needed
+docker compose up -d --build
+```
+
+The SQLite database lives on the `lc-data` named volume and survives image upgrades. The image is multi-arch — it builds natively on Apple Silicon and on amd64 hosts; to cross-build for an amd64 server from an ARM machine: `docker buildx build --platform linux/amd64 -t launchcontrol .`
+
+Without Docker, build once and run the server, then poll on a schedule (the ingest CLI runs independently of the built server — no rebuild needed for the cron job):
 
 ```sh
 pnpm --filter web build && pnpm --filter web start

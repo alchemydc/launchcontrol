@@ -1,0 +1,37 @@
+# RMsolo self-hosted deployment: web app + daily results-ingest sidecar.
+#
+#   cp deploy/rmsolo.env.example deploy/rmsolo.env   # then edit
+#   docker compose up -d --build
+#
+# The SQLite database lives on the named volume (survives image upgrades).
+# Migrations run automatically before the web process starts.
+services:
+  web:
+    build: .
+    image: launchcontrol:latest
+    command: sh -c "pnpm --filter web exec prisma migrate deploy && pnpm --filter web start"
+    ports:
+      - "3000:3000"
+    env_file: deploy/rmsolo.env
+    environment:
+      DATABASE_URL: "file:/data/rmsolo.db"
+    volumes:
+      - lc-data:/data
+    restart: unless-stopped
+
+  # Polls rmsolo.org once per interval (default: daily). The CLI is
+  # idempotent — already-ingested PDFs skip by hash, new events ingest.
+  ingest:
+    image: launchcontrol:latest
+    depends_on:
+      - web
+    command: sh -c 'sleep 30; while true; do pnpm --filter web ingest:rmsolo || true; sleep "$${INGEST_INTERVAL_SECONDS:-86400}"; done'
+    env_file: deploy/rmsolo.env
+    environment:
+      DATABASE_URL: "file:/data/rmsolo.db"
+    volumes:
+      - lc-data:/data
+    restart: unless-stopped
+
+volumes:
+  lc-data:
