@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { HeaderNav } from "@/components/header-nav";
+import { getClubConfig } from "@/lib/club-config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,11 +15,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: { default: "Launch Control · PCA RMR", template: "%s · Launch Control" },
-  description:
-    "Rocky Mountain Region autocross results, calendar, and community media.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const club = getClubConfig();
+  return {
+    title: { default: club.siteTitle, template: "%s · Launch Control" },
+    description: club.siteDescription,
+  };
+}
 
 export default function RootLayout({
   children,
@@ -45,7 +48,7 @@ export default function RootLayout({
         {children}
 
         <footer className="mt-auto border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
-          Built for PCA Rocky Mountain Region · Autocross results from VisualAX
+          {getClubConfig().footerText}
         </footer>
       </body>
     </html>
