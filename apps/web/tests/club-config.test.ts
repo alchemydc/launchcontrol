@@ -77,3 +77,33 @@ describe("formatDriverName", () => {
       .toBe("Ken P.");
   });
 });
+
+describe("season config (PAX section + planned events)", () => {
+  afterEach(() => {
+    delete process.env.SEASON_PAX_SECTION;
+    delete process.env.PLANNED_SEASON_EVENTS;
+  });
+
+  it("seasonPaxSection defaults off and enables on '1' or 'true'", () => {
+    expect(getClubConfig().seasonPaxSection).toBe(false);
+    process.env.SEASON_PAX_SECTION = "1";
+    expect(getClubConfig().seasonPaxSection).toBe(true);
+    process.env.SEASON_PAX_SECTION = "true";
+    expect(getClubConfig().seasonPaxSection).toBe(true);
+    process.env.SEASON_PAX_SECTION = "0";
+    expect(getClubConfig().seasonPaxSection).toBe(false);
+  });
+
+  it("plannedSeasonEvents defaults null and parses 'year:count' pairs", () => {
+    expect(getClubConfig().plannedSeasonEvents).toBeNull();
+    process.env.PLANNED_SEASON_EVENTS = "2026:10";
+    expect(getClubConfig().plannedSeasonEvents).toEqual({ 2026: 10 });
+    process.env.PLANNED_SEASON_EVENTS = "2026:10,2027:8";
+    expect(getClubConfig().plannedSeasonEvents).toEqual({ 2026: 10, 2027: 8 });
+  });
+
+  it("throws on malformed PLANNED_SEASON_EVENTS", () => {
+    process.env.PLANNED_SEASON_EVENTS = "ten";
+    expect(() => getClubConfig()).toThrow(/PLANNED_SEASON_EVENTS/);
+  });
+});

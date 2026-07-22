@@ -2,7 +2,13 @@ import { PrismaClient, type RunDisposition } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { PLANNED_SEASON_EVENTS } from "@/lib/constants";
 import { prisma as defaultClient } from "@/lib/prisma";
-import { formatDriverName } from "@/lib/club-config";
+import { formatDriverName, getClubConfig } from "@/lib/club-config";
+
+/**
+ * Synthetic class code for the overall PAX standings section
+ * (SEASON_PAX_SECTION=1). Rendered pinned first; never stored in the DB.
+ */
+export const PAX_SECTION_CODE = "PAX";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -115,6 +121,10 @@ export type SeasonLeaderboardResult = {
 
 type LoadedEntry = {
   class: { code: string };
+  // Prisma Decimal — Number() before arithmetic. paxClass equals the entered
+  // class for most entries; run-group RMsolo entries carry their derived true
+  // class here (see rmsolo-ingest.ts), and .axdb entries their paxmult class.
+  paxClass: { paxIndex: unknown };
   driver: { id: number; firstName: string; lastInitial: string; lastName: string | null };
   bestCommittedRunNumber: number | null;
   runs: Array<{ runNumber: number; rawTimeMs: number | null; cones: number; disposition: RunDisposition }>;
@@ -172,8 +182,11 @@ export async function listSeasonYears(
 export async function buildSeasonLeaderboard(
   year: number,
   client: PrismaClient = defaultClient,
-  plannedEvents: Record<number, number> = PLANNED_SEASON_EVENTS,
+  plannedEventsOverride?: Record<number, number>,
 ): Promise<SeasonLeaderboardResult> {
+  const club = getClubConfig();
+  // Explicit param (tests) > env override (PLANNED_SEASON_EVENTS) > built-in PCA map.
+  const plannedEvents = plannedEventsOverride ?? club.plannedSeasonEvents ?? PLANNED_SEASON_EVENTS;
   // 1. Load all events + entries + runs for the season in chronological order.
   const events: LoadedEvent[] = await client.event.findMany({
     where: {
@@ -187,6 +200,7 @@ export async function buildSeasonLeaderboard(
       entries: {
         include: {
           class: { select: { code: true } },
+          paxClass: { select: { paxIndex: true } },
           driver: { select: { id: true, firstName: true, lastInitial: true, lastName: true } },
           runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
         },
@@ -200,6 +214,18 @@ export async function buildSeasonLeaderboard(
   }
 
   const driverInfo = new Map<number, { firstName: string; lastInitial: string; lastName: string | null }>();
+
+  // The synthetic PAX section is skipped entirely if a real class named "PAX"
+  // ever appears in the data — the real class wins, never silently merged.
+  const realPaxClassExists = events.some((ev) =>
+    ev.entries.some((e) => e.class.code === PAX_SECTION_CODE),
+  );
+  const paxSectionEnabled = club.seasonPaxSection && !realPaxClassExists;
+  if (club.seasonPaxSection && realPaxClassExists) {
+    console.warn(
+      `[season-leaderboard] a real class named '${PAX_SECTION_CODE}' exists — skipping the synthetic overall-PAX section`,
+    );
+  }
 
   // 2. Per (event, class, driver) best-corrected-ms table. Defense-in-depth:
   //    if a driver somehow has multiple entries in the same class at the same
@@ -230,6 +256,23 @@ export async function buildSeasonLeaderboard(
       const existing = byDriver.get(d.id);
       if (existing == null || best < existing) {
         byDriver.set(d.id, best);
+      }
+
+      // Synthetic overall-PAX section (SEASON_PAX_SECTION=1): index the same
+      // best-corrected time by the entry's paxClass factor and rank across
+      // every class. Everything downstream (points formula, combined groups,
+      // qualifying threshold, drops) treats it as one more class.
+      if (paxSectionEnabled) {
+        const paxMs = Math.round(best * Number(entry.paxClass.paxIndex));
+        let paxByDriver = byClass.get(PAX_SECTION_CODE);
+        if (paxByDriver == null) {
+          paxByDriver = new Map();
+          byClass.set(PAX_SECTION_CODE, paxByDriver);
+        }
+        const existingPax = paxByDriver.get(d.id);
+        if (existingPax == null || paxMs < existingPax) {
+          paxByDriver.set(d.id, paxMs);
+        }
       }
     }
     bestByEventClassDriver.set(event.id, byClass);
@@ -420,6 +463,11 @@ export async function buildSeasonLeaderboard(
     sections.push({ classCode, drivers });
   }
 
-  sections.sort((a, b) => a.classCode.localeCompare(b.classCode));
+  sections.sort((a, b) => {
+    // Overall PAX standings pin first; real classes stay alphabetical.
+    if (a.classCode === PAX_SECTION_CODE) return -1;
+    if (b.classCode === PAX_SECTION_CODE) return 1;
+    return a.classCode.localeCompare(b.classCode);
+  });
   return { totalEvents, completedEvents, qualifyingEvents, sections };
 }

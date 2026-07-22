@@ -240,11 +240,10 @@ function ClassJumpBar({
   const sections = standings.filter((s) => s.drivers.length > 0);
   if (sections.length < 2) return null;
   return (
-    <nav
-      aria-label="Jump to class"
-      className="-mx-4 sm:-mx-6 px-4 sm:px-6 mb-6 overflow-x-auto"
-    >
-      <ul className="flex gap-1.5 w-max">
+    <nav aria-label="Jump to class" className="mb-6">
+      {/* flex-wrap (not overflow-x-auto) so the class list wraps to multiple
+          lines like the event page's class filter. */}
+      <ul className="flex flex-wrap gap-1.5">
         {sections.map((s) => (
           <li key={s.classCode}>
             <a

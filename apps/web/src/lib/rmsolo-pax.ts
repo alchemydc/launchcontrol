@@ -52,7 +52,44 @@ export const RMSOLO_PAX_2026: Record<string, number> = {
   SMF: 0.857,
   SSM: 0.878,
   BM: 0.966,
+  // Added 2026-07-22 from the club's "RmSolo 2026 Unofficial Season Points"
+  // sheet (Index column, events SS1-SS5) — classes the club scores that had
+  // not yet appeared in the sampled Index PDF. Cross-checked against the
+  // 2026 SCCA PAX table where applicable; AM is the PAX baseline (1.000).
+  AM: 1.0,
+  CP: 0.862,
+  CSP: 0.858,
+  CSX: 0.803,
+  DM: 0.906,
+  EP: 0.865,
+  EST: 0.815,
 };
+
+/**
+ * Match a factor derived from a results PDF (printed indexed Best ÷ best
+ * penalized raw time) to the class whose PAX index it came from.
+ *
+ * Run-group sections (M/N/S/P/X) in RMsolo Full PDFs never print a driver's
+ * underlying class, but they do print a PAX-indexed Best — so the applied
+ * factor is recoverable to ~5 decimal places, far tighter than the ~0.002
+ * spacing between adjacent PAX values. Returns null when nothing in the
+ * table is within `tolerance` (e.g. a factor from a class we don't know).
+ */
+export function nearestPaxClass(
+  derivedFactor: number,
+  tolerance = 0.003,
+): { code: string; pax: number } | null {
+  let best: { code: string; pax: number } | null = null;
+  let bestDiff = Infinity;
+  for (const [code, pax] of Object.entries(RMSOLO_PAX_2026)) {
+    const diff = Math.abs(pax - derivedFactor);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = { code, pax };
+    }
+  }
+  return bestDiff <= tolerance ? best : null;
+}
 
 const warned = new Set<string>();
 

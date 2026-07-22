@@ -20,7 +20,26 @@ export type ClubConfig = {
   msrOrgId: string | null;
   /** Login UI renders only when MSR credentials exist and the gate allows sign-in. */
   loginEnabled: boolean;
+  /** Show the season leaderboard's overall "PAX" standings section (SEASON_PAX_SECTION=1). */
+  seasonPaxSection: boolean;
+  /** Per-year planned event counts ("2026:10,2027:8") overriding the built-in PCA map; null = use the built-in. */
+  plannedSeasonEvents: Record<number, number> | null;
 };
+
+function parsePlannedSeasonEvents(raw: string | undefined): Record<number, number> | null {
+  if (raw == null || raw === "") return null;
+  const out: Record<number, number> = {};
+  for (const pair of raw.split(",")) {
+    const m = pair.trim().match(/^(\d{4}):(\d{1,3})$/);
+    if (!m) {
+      throw new Error(
+        `PLANNED_SEASON_EVENTS must be comma-separated "year:count" pairs (e.g. "2026:10") — got ${JSON.stringify(raw)}`,
+      );
+    }
+    out[Number(m[1])] = Number(m[2]);
+  }
+  return out;
+}
 
 function oneOf<T extends string>(name: string, raw: string | undefined, allowed: readonly T[], fallback: T): T {
   if (raw == null || raw === "") return fallback;
@@ -46,6 +65,9 @@ export function getClubConfig(): ClubConfig {
     nameDisplay,
     msrOrgId: process.env.MSR_ORG_ID || process.env.MSR_RMR_ORG_ID || null,
     loginEnabled: Boolean(process.env.MSR_CONSUMER_KEY) && accessGate !== "none",
+    seasonPaxSection:
+      process.env.SEASON_PAX_SECTION === "1" || process.env.SEASON_PAX_SECTION === "true",
+    plannedSeasonEvents: parsePlannedSeasonEvents(process.env.PLANNED_SEASON_EVENTS),
   };
 }
 

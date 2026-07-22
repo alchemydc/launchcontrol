@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RMSOLO_PAX_2026, getRmsoloPaxIndex } from "@/lib/rmsolo-pax";
+import { RMSOLO_PAX_2026, getRmsoloPaxIndex, nearestPaxClass } from "@/lib/rmsolo-pax";
 
 describe("RMsolo PAX table", () => {
   it("covers every class code seen in the 2026 Full-PDF fixture", () => {
@@ -19,5 +19,37 @@ describe("RMsolo PAX table", () => {
 
   it("unknown classes fall back to 1.0", () => {
     expect(getRmsoloPaxIndex("N")).toBe(1.0);
+  });
+});
+
+describe("2026 season-sheet reconciliation additions", () => {
+  // Sourced from the club's own "RmSolo 2026 Unofficial Season Points" sheet
+  // (Index column, SS1-SS5), cross-checked against the 2026 SCCA PAX table.
+  const SHEET_SOURCED: Record<string, number> = {
+    AM: 1.0,
+    CP: 0.862,
+    CSP: 0.858,
+    CSX: 0.803,
+    DM: 0.906,
+    EP: 0.865,
+    EST: 0.815,
+  };
+
+  it("includes every class the club season sheet scores", () => {
+    for (const [code, pax] of Object.entries(SHEET_SOURCED)) {
+      expect(RMSOLO_PAX_2026[code], `missing/${code}`).toBe(pax);
+    }
+  });
+
+  it("nearestPaxClass matches a derived factor to its class", () => {
+    // David Fauth, SS1: printed indexed Best 33.460 / raw best 40.024 = 0.83600 → AST
+    expect(nearestPaxClass(33.46 / 40.024)).toEqual({ code: "AST", pax: 0.836 });
+    // Bud Smith (M run group): 37.037 / 40.389 = 0.91700… → FM
+    expect(nearestPaxClass(37.037 / 40.389)).toEqual({ code: "FM", pax: 0.917 });
+  });
+
+  it("nearestPaxClass rejects factors far from any class", () => {
+    expect(nearestPaxClass(0.5)).toBeNull();
+    expect(nearestPaxClass(1.0 - 0.05)).toBeNull();
   });
 });

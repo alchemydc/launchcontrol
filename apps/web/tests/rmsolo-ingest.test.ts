@@ -213,3 +213,58 @@ describe("ingestRmsoloEvent", () => {
     expect(again.status).toBe("unchanged");
   });
 });
+
+describe("run-group paxClass derivation", () => {
+  // An "X" run-group section prints PAX-indexed Best values. The driver's
+  // underlying class is never printed, but factor = printedBest / bestPenalizedRaw
+  // recovers it: 33.460 / 40.024 = 0.83600 → AST (see nearestPaxClass).
+  const withRunGroup: ParsedRmsoloEvent = {
+    title: "Summer 2026#9",
+    classCodes: ["AS", "X"],
+    entries: [
+      {
+        classCode: "AS", position: 1, trophy: true, carNumber: "1", altCarNumber: null,
+        firstName: "Alice", lastName: "Fast", carDescription: null, hometown: null,
+        bestSeconds: 40.0,
+        runs: [
+          { seconds: 40.0, cones: 0, disposition: "CLEAN" },
+          { seconds: 41.0, cones: 0, disposition: "CLEAN" },
+        ],
+      },
+      {
+        classCode: "AS", position: 2, trophy: false, carNumber: "2", altCarNumber: null,
+        firstName: "Bob", lastName: "Quick", carDescription: null, hometown: null,
+        bestSeconds: 41.5,
+        runs: [{ seconds: 41.5, cones: 0, disposition: "CLEAN" }],
+      },
+      {
+        classCode: "X", position: 1, trophy: true, carNumber: "198", altCarNumber: null,
+        firstName: "David", lastName: "Fauth", carDescription: null, hometown: null,
+        bestSeconds: 33.46, // 40.024 × 0.836 (AST) — indexed Best, unreconcilable as raw
+        runs: [
+          { seconds: 40.024, cones: 0, disposition: "CLEAN" },
+          { seconds: 41.787, cones: 1, disposition: "CLEAN" },
+        ],
+      },
+    ],
+  };
+
+  it("assigns the derived class as paxClass while the entered class stays the run group", async () => {
+    await ingestRmsoloEvent({ parsed: withRunGroup, sha256: "paxderive1", date: "2026-09-01" }, prisma);
+    const entry = await prisma.entry.findFirst({
+      where: { carNumber: "198", event: { slug: "2026-09-01-summer-2026-9" } },
+      include: { class: true, paxClass: true },
+    });
+    expect(entry!.class.code).toBe("X");
+    expect(entry!.paxClass.code).toBe("AST");
+    expect(Number(entry!.paxClass.paxIndex)).toBe(0.836);
+  });
+
+  it("reconciled entries keep paxClass = entered class", async () => {
+    const entry = await prisma.entry.findFirst({
+      where: { carNumber: "1", event: { slug: "2026-09-01-summer-2026-9" } },
+      include: { class: true, paxClass: true },
+    });
+    expect(entry!.paxClass.code).toBe("AS");
+  });
+});

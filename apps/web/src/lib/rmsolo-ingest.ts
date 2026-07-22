@@ -7,7 +7,7 @@ import {
   redactLastName,
   type IngestSummary,
 } from "@/lib/ingest";
-import { getRmsoloPaxIndex } from "@/lib/rmsolo-pax";
+import { getRmsoloPaxIndex, nearestPaxClass } from "@/lib/rmsolo-pax";
 import { reconcileTimes, type ParsedEntry, type ParsedRmsoloEvent, type ParsedRun } from "@/lib/rmsolo-parse";
 
 const CONE_SECONDS = 2.0;
@@ -95,6 +95,23 @@ export async function ingestRmsoloEvent(
   // bestCommittedRunNumber regardless of which interpretation the source used.
   const penalizedTotal = (r: ParsedRun): number => rawSeconds(r) + r.cones * CONE_SECONDS;
 
+  // Run-group sections (M/N/S/P/X) print a PAX-indexed Best but never the
+  // driver's underlying class. The applied factor is recoverable as
+  // printedBest / bestPenalizedRaw, and nearestPaxClass maps it back to the
+  // class it belongs to — giving the entry its true paxClass while the
+  // entered class remains the run group (mirroring the .axdb class/paxmult
+  // split this schema was built for). Entries whose factor matches nothing
+  // in the table keep paxClass = entered class (factor 1.0 fallback).
+  const derivedPaxCodeByEntry = new Map<ParsedEntry, string>();
+  for (const e of unreconciled) {
+    if (e.bestSeconds == null) continue;
+    const clean = e.runs.filter((r) => r.disposition === "CLEAN");
+    if (clean.length === 0) continue;
+    const minPenal = Math.min(...clean.map(penalizedTotal));
+    const match = nearestPaxClass(e.bestSeconds / minPenal);
+    if (match) derivedPaxCodeByEntry.set(e, match.code);
+  }
+
   return await client.$transaction(async (tx) => {
     const existing = await tx.event.findUnique({ where: { slug } });
 
@@ -133,7 +150,10 @@ export async function ingestRmsoloEvent(
     }
 
     // CarClass: findMany existing, createMany new, update only paxIndex-changed rows, findMany to map IDs.
-    const classCodes = parsed.classCodes;
+    // Includes classes referenced only as a derived paxClass (see derivedPaxCodeByEntry).
+    const classCodes = Array.from(
+      new Set([...parsed.classCodes, ...derivedPaxCodeByEntry.values()]),
+    );
     const existingClasses = await tx.carClass.findMany({ where: { code: { in: classCodes } } });
     const existingClassByCode = new Map(existingClasses.map((c) => [c.code, c]));
 
@@ -232,6 +252,9 @@ export async function ingestRmsoloEvent(
     const entriesData = parsed.entries.map((e) => {
       const classId = classIdByCode.get(e.classCode);
       if (classId == null) throw new Error(`Entry references unknown class code '${e.classCode}'`);
+      const paxCode = derivedPaxCodeByEntry.get(e) ?? e.classCode;
+      const paxClassId = classIdByCode.get(paxCode);
+      if (paxClassId == null) throw new Error(`Entry references unknown pax class code '${paxCode}'`);
       const identityHash = identityByEntry.get(e)!;
       const driverId = driverIdByIdentity.get(identityHash);
       if (driverId == null) throw new Error(`Missing driver mapping for identity hash '${identityHash.slice(0, 12)}…'`);
@@ -255,7 +278,7 @@ export async function ingestRmsoloEvent(
         eventId: event.id,
         driverId,
         classId,
-        paxClassId: classId,
+        paxClassId,
         carNumber: e.carNumber,
         carDescription: e.carDescription,
         bestCommittedRunNumber,
