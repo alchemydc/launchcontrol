@@ -47,6 +47,8 @@ describe("fresh migrate deploy seeds", () => {
     expect(league.siteDescription).toBe(
       "Rocky Mountain Region autocross results, calendar, and community media.",
     );
+    // footerText is nullable (leagues without one get a code-side platform fallback,
+    // rendered in Task 3), but the PCA seed keeps the exact production string for parity.
     expect(league.footerText).toBe(
       "Built for PCA Rocky Mountain Region · Autocross results from VisualAX",
     );
@@ -57,6 +59,21 @@ describe("fresh migrate deploy seeds", () => {
     expect(league.msrOrgId).toBeNull();
     expect(league.smugmugUser).toBe("rmrpca");
     expect(league.smugmugDisciplinePath).toBe("Autocross");
+  });
+
+  it("accepts a NULL footerText (nullable column)", async () => {
+    const created = await prisma.league.create({
+      data: {
+        slug: "nullfooter-league",
+        name: "No Footer League",
+        siteTitle: "x",
+        siteDescription: "x",
+        footerText: null,
+        landingDescription: "x",
+      },
+    });
+    expect(created.footerText).toBeNull();
+    await prisma.league.delete({ where: { id: created.id } });
   });
 
   it("creates the PCA Classic scoring system with the v1 policy", async () => {

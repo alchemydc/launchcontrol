@@ -125,7 +125,7 @@ model League {
   name                  String
   siteTitle             String
   siteDescription       String
-  footerText            String
+  footerText            String?
   landingDescription    String
   accessGate            String   @default("required") // "required" | "optional" | "none"
   msrOrgId              String?

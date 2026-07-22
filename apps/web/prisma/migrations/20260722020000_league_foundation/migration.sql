@@ -17,7 +17,7 @@ CREATE TABLE "League" (
     "name" TEXT NOT NULL,
     "siteTitle" TEXT NOT NULL,
     "siteDescription" TEXT NOT NULL,
-    "footerText" TEXT NOT NULL,
+    "footerText" TEXT,
     "landingDescription" TEXT NOT NULL,
     "accessGate" TEXT NOT NULL DEFAULT 'required',
     "msrOrgId" TEXT,
