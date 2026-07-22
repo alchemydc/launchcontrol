@@ -48,26 +48,48 @@ type Token = { start: number; raw: string; disp: string | null; seconds: number 
 
 function tokenize(line: string): Token[] {
   const out: Token[] = [];
+  const rawTokens: Token[] = [];
   for (const m of line.matchAll(TOKEN_RE)) {
     const [, disp1, secs, cones, disp2] = m;
-    const token: Token = {
+    if (disp1 != null && secs != null) {
+      // Concatenated form ("29.153 DNF46.403" → token "DNF46.403"): column
+      // squeeze ate the space between a suffix disposition marker (which
+      // belongs to the PRECEDING time — see the merge rule below) and the
+      // NEXT run's time. Split into two logical tokens so the marker merges
+      // backward and the digits stand alone as their own (clean) run slot.
+      // Proven against real data (RMsolo Summer 2026#2, AST, Patryk Matecki):
+      // "50.151  29.153 DNF46.403  46.751+1" with printed Best 46.403 — only
+      // the split reading (29.153 DNF'd; 46.403 clean) reconciles, since a
+      // clean 29.153 would have to BE the Best.
+      rawTokens.push({ start: m.index, raw: disp1, disp: disp1, seconds: null, cones: 0 });
+      rawTokens.push({
+        start: m.index + disp1.length,
+        raw: m[0].slice(disp1.length),
+        disp: null,
+        seconds: Number(secs),
+        cones: cones != null ? Number(cones.slice(1)) : 0,
+      });
+      continue;
+    }
+    rawTokens.push({
       start: m.index,
       raw: m[0],
       disp: disp1 ?? disp2 ?? null,
       seconds: secs != null ? Number(secs) : null,
       cones: cones != null ? Number(cones.slice(1)) : 0,
-    };
-    // Real RMsolo PDFs sometimes print a run's time, then a *separate,
-    // space-delimited* bare "DNF" (as opposed to the concatenated "DNF45.993"
-    // prefix form, which is a distinct run and already handled above): e.g.
-    // "47.188 DNF   47.253" (RMsolo Summer 2026#1, CST class, Micah
-    // Schaubroeck). That bare DNF is not its own run slot — it retroactively
-    // marks the immediately preceding untagged time as the DNF, so the pair
-    // must collapse into ONE run (disposition DNF, seconds from that time),
-    // not two (a phantom clean run plus a spurious 0-second DNF run). Confirmed
-    // against real data: only this collapsed reading makes the entry's printed
-    // Best equal min-over-clean-runs; keeping them as two runs does not, and
-    // also overcounts the entry's run slots.
+    });
+  }
+  for (const token of rawTokens) {
+    // The DNF marker is a SUFFIX of the run it belongs to: RMsolo PDFs print
+    // a run's elapsed time, then "DNF" — either space-delimited ("47.188 DNF
+    // 47.253", Summer 2026#1, CST, Micah Schaubroeck) or with the following
+    // run's time squeezed against it ("29.153 DNF46.403", split into marker +
+    // time tokens above). Either way the bare marker is not its own run slot —
+    // it retroactively marks the immediately preceding untagged time as the
+    // DNF, so the pair collapses into ONE run (disposition DNF, seconds from
+    // that time), never two (a phantom clean run plus a spurious 0-second DNF
+    // run). Confirmed against real data: only this collapsed reading makes
+    // every entry's printed Best equal min-over-clean-runs.
     // Bare DNS never needs this: an untagged time followed by a bare DNS is
     // legitimately two slots (a recorded run, then a separate not-started
     // attempt) — DNS rows are dropped entirely downstream regardless, so no
