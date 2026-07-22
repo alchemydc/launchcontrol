@@ -177,3 +177,29 @@ export function parseRmsoloFullText(text: string): ParsedRmsoloEvent {
   if (entries.length === 0) throw new Error("[rmsolo-parse] no entries parsed — layout change?");
   return { title, classCodes, entries };
 }
+
+const CONE_SECONDS = 2.0; // SCCA Solo standard; must stay consistent with CONE_PENALTY_MS
+const EPS = 0.0005;
+
+/**
+ * Determines whether printed run times are raw (penalty added for scoring) or
+ * already penalized, by checking which interpretation makes every entry's
+ * printed Best equal min over CLEAN runs. Throws if neither fits — a layout
+ * or scoring change we must not guess through.
+ */
+export function reconcileTimes(event: ParsedRmsoloEvent): { interpretation: "raw" | "penalized" } {
+  const fits = (total: (r: ParsedRun) => number): boolean =>
+    event.entries.every((e) => {
+      if (e.bestSeconds == null) return e.runs.every((r) => r.disposition !== "CLEAN") || e.runs.length === 0;
+      const clean = e.runs.filter((r) => r.disposition === "CLEAN");
+      if (clean.length === 0) return false;
+      const min = Math.min(...clean.map(total));
+      return Math.abs(min - e.bestSeconds) < EPS;
+    });
+
+  if (fits((r) => r.seconds + r.cones * CONE_SECONDS)) return { interpretation: "raw" };
+  if (fits((r) => r.seconds)) return { interpretation: "penalized" };
+  throw new Error(
+    "[rmsolo-parse] Best column matches neither raw+penalty nor penalized interpretation — investigate before ingesting.",
+  );
+}

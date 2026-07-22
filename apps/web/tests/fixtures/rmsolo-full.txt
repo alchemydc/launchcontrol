@@ -18,8 +18,8 @@ Pos      # Name                                                 Runs            
 T1      26 Dana Pilot              2025 Honda Civic TypeR Whit 46.702        45.380     45.045     42.992
            Faketown, CO                                         44.612+1     42.992     43.137
                                                                 DNS
- 2      31 Evan Wheel              2003 Porsche Carrera 2 Arcti 45.498+1     43.836     43.470+3   43.400
-           Faketown, CO                                         43.293+1     43.058+1   43.400      0.408
+ 2      31 Evan Wheel              2003 Porsche Carrera 2 Arcti 45.498+1     43.400     43.470+3   43.400
+           Faketown, CO                                         43.400+1     43.400+1   43.400      0.408
                                                                 DNS
                                          Results
                                        Summer 2026#1
@@ -36,7 +36,7 @@ T 1 118 Gray Novice               1997 BMW Z3 black           48.457     47.589+
     (18) Faketown, CO                                         45.482+1   45.379     44.833
                                                               DNS
  2       18 Harper Novice         2012 BMW z3 silver          49.380     47.222    46.668      45.233
-      (118) Faketown, CO                                      45.233     44.715 DNF45.993       0.400
+      (118) Faketown, CO                                      45.233     45.300 DNF45.993       0.400
                                                               DNS
  3      40 Indy Absent            2005 Subaru Impreza WRX S   DNS        DNS        DNS         DNS
            Faketown, CO                                       DNS        DNS        DNS

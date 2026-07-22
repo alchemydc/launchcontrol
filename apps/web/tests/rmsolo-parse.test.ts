@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseRmsoloFullText } from "@/lib/rmsolo-parse";
+import { parseRmsoloFullText, reconcileTimes } from "@/lib/rmsolo-parse";
 
 const text = readFileSync(join(__dirname, "fixtures", "rmsolo-full.txt"), "utf8");
 const parsed = parseRmsoloFullText(text);
@@ -73,5 +73,18 @@ describe("parseRmsoloFullText", () => {
     const indy = parsed.entries.find((e) => e.firstName === "Indy")!;
     expect(indy.runs).toEqual([]);
     expect(indy.bestSeconds).toBeNull();
+  });
+});
+
+describe("reconcileTimes", () => {
+  it("confirms the fixture prints raw times (penalty added for scoring)", () => {
+    expect(reconcileTimes(parsed).interpretation).toBe("raw");
+  });
+
+  it("throws when Best matches neither interpretation", () => {
+    const broken = structuredClone(parsed);
+    const e = broken.entries.find((x) => x.bestSeconds != null)!;
+    e.bestSeconds = 1.234;
+    expect(() => reconcileTimes(broken)).toThrow(/Best column/);
   });
 });
