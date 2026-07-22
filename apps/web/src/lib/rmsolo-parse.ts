@@ -65,12 +65,10 @@ export function parseRmsoloFullText(text: string): ParsedRmsoloEvent {
   const classCodes: string[] = [];
   const entries: ParsedEntry[] = [];
   let entry: ParsedEntry | null = null;
-  let entryLine = 0; // count of lines consumed by the current entry block (1 = just started)
 
   const flush = () => {
     if (entry) entries.push(entry);
     entry = null;
-    entryLine = 0;
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -121,7 +119,6 @@ export function parseRmsoloFullText(text: string): ParsedRmsoloEvent {
 
     if (looksLikeStart) {
       flush();
-      entryLine = 1;
       const [, trophy, pos, num, rest] = startMatch;
       // rest = "Name   Car description" — split on 2+ spaces (column padding).
       const parts = (rest ?? "").trim().split(/\s{2,}/);
@@ -146,7 +143,6 @@ export function parseRmsoloFullText(text: string): ParsedRmsoloEvent {
       const best = rightTokens[rightTokens.length - 1];
       if (best?.seconds != null) entry.bestSeconds = best.seconds;
     } else if (entry) {
-      entryLine += 1;
       // Continuation line: optional "(alt-number)" + optional hometown in the identity zone.
       const alt = identityZone.match(/\((\d+)\)/);
       if (alt) entry.altCarNumber = alt[1]!;
