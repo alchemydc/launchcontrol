@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { League, PrismaClient } from "@/generated/prisma/client";
+import type { League, Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 
@@ -7,6 +7,26 @@ const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export type AccessGate = "required" | "optional" | "none";
 const ACCESS_GATES: readonly AccessGate[] = ["required", "optional", "none"];
+
+/** Shared by `createLeague` and `updateLeague` — throws if `gate` isn't a recognized AccessGate. */
+function validateAccessGate(gate: string): asserts gate is AccessGate {
+  if (!ACCESS_GATES.includes(gate as AccessGate)) {
+    throw new Error(`[create-league] --gate must be one of ${ACCESS_GATES.join(", ")} (got '${gate}').`);
+  }
+}
+
+/** Shared by `createLeague` and `updateLeague` — throws unless `logoUrl` is a valid http(s) URL. */
+function validateLogoUrl(logoUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(logoUrl);
+  } catch {
+    throw new Error(`[create-league] --logo-url must be a valid http(s) URL (got '${logoUrl}').`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`[create-league] --logo-url must be a valid http(s) URL (got '${logoUrl}').`);
+  }
+}
 
 // A new league needs a default policy to snapshot when neither --preset-name
 // (there IS no preset yet — this call creates the first one) nor
@@ -66,9 +86,7 @@ export async function createLeague(
   }
 
   const gate = opts.gate ?? "optional";
-  if (!ACCESS_GATES.includes(gate)) {
-    throw new Error(`[create-league] --gate must be one of ${ACCESS_GATES.join(", ")} (got '${gate}').`);
-  }
+  validateAccessGate(gate);
 
   const existing = await client.league.findUnique({ where: { slug } });
   if (existing) {
@@ -77,15 +95,7 @@ export async function createLeague(
 
   const logoUrl = opts.logoUrl?.trim() || null;
   if (logoUrl) {
-    let parsed: URL;
-    try {
-      parsed = new URL(logoUrl);
-    } catch {
-      throw new Error(`[create-league] --logo-url must be a valid http(s) URL (got '${logoUrl}').`);
-    }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error(`[create-league] --logo-url must be a valid http(s) URL (got '${logoUrl}').`);
-    }
+    validateLogoUrl(logoUrl);
   }
 
   let rawPolicy: string;
@@ -135,4 +145,94 @@ export async function createLeague(
   });
 
   return { league, scoringSystemName: presetName };
+}
+
+export type UpdateLeaguePatch = Partial<{
+  name: string;
+  siteTitle: string;
+  siteDescription: string;
+  footerText: string | null;
+  landingDescription: string;
+  accessGate: AccessGate;
+  msrOrgId: string | null;
+  logoUrl: string | null;
+  smugmugUser: string | null;
+  smugmugDisciplinePath: string | null;
+}>;
+
+/**
+ * Patches a League row's branding/config fields. Only keys present in
+ * `patch` are touched — `undefined` means "leave as-is", `null` (on the
+ * nullable fields) means "clear it". Validates `accessGate` and `logoUrl`
+ * with the same rules `createLeague` uses (shared helpers above).
+ *
+ * Superuser-only gating is enforced by the caller (the admin REST route),
+ * not here — this function is transport-free.
+ */
+export async function updateLeague(
+  client: PrismaClient,
+  slug: string,
+  patch: UpdateLeaguePatch,
+): Promise<League> {
+  const league = await client.league.findUnique({ where: { slug } });
+  if (!league) {
+    throw new Error(`[update-league] unknown league '${slug}' — check the slug.`);
+  }
+
+  if (patch.accessGate !== undefined) {
+    validateAccessGate(patch.accessGate);
+  }
+
+  let logoUrl: string | null | undefined;
+  if (patch.logoUrl !== undefined) {
+    logoUrl = patch.logoUrl?.trim() || null;
+    if (logoUrl) {
+      validateLogoUrl(logoUrl);
+    }
+  }
+
+  const data: Prisma.LeagueUpdateInput = {};
+  if (patch.name !== undefined) data.name = patch.name;
+  if (patch.siteTitle !== undefined) data.siteTitle = patch.siteTitle;
+  if (patch.siteDescription !== undefined) data.siteDescription = patch.siteDescription;
+  if (patch.footerText !== undefined) data.footerText = patch.footerText;
+  if (patch.landingDescription !== undefined) data.landingDescription = patch.landingDescription;
+  if (patch.accessGate !== undefined) data.accessGate = patch.accessGate;
+  if (patch.msrOrgId !== undefined) data.msrOrgId = patch.msrOrgId;
+  if (patch.smugmugUser !== undefined) data.smugmugUser = patch.smugmugUser;
+  if (patch.smugmugDisciplinePath !== undefined) data.smugmugDisciplinePath = patch.smugmugDisciplinePath;
+  if (logoUrl !== undefined) data.logoUrl = logoUrl;
+
+  return client.league.update({ where: { id: league.id }, data });
+}
+
+/**
+ * Deletes a League row along with its ScoringSystem presets and
+ * LeagueMemberships (both `ON DELETE CASCADE` at the DB level) and its
+ * Season rows (deleted explicitly here since `Season.leagueId` is
+ * `ON DELETE RESTRICT` — a league is never dropped out from under events).
+ * Refuses (throwing, without deleting anything) if any Event exists under
+ * any of the league's seasons — the existence check and the delete happen
+ * in one transaction so a concurrent ingest can't sneak an Event in between.
+ *
+ * Superuser-only gating is enforced by the caller (the admin REST route),
+ * not here — this function is transport-free.
+ */
+export async function deleteLeague(client: PrismaClient, slug: string): Promise<void> {
+  await client.$transaction(async (tx) => {
+    const league = await tx.league.findUnique({
+      where: { slug },
+      include: { seasons: { include: { events: { select: { id: true }, take: 1 } } } },
+    });
+    if (!league) {
+      throw new Error(`[delete-league] unknown league '${slug}' — check the slug.`);
+    }
+    const hasEvents = league.seasons.some((season) => season.events.length > 0);
+    if (hasEvents) {
+      throw new Error(`[delete-league] league '${slug}' has events — delete its events first.`);
+    }
+
+    await tx.season.deleteMany({ where: { leagueId: league.id } });
+    await tx.league.delete({ where: { id: league.id } });
+  });
 }

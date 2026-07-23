@@ -1,10 +1,14 @@
 import { readFileSync } from "node:fs";
-import type { PrismaClient, Season } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient, Season } from "@/generated/prisma/client";
 import { slugify } from "@/lib/ingest";
 import { prisma as defaultClient } from "@/lib/prisma";
+import { parseSeasonPaxTableStrict } from "@/lib/rmsolo-pax";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+export type SeasonStatus = "active" | "completed";
+const SEASON_STATUSES: readonly SeasonStatus[] = ["active", "completed"];
 
 export type CreateSeasonOptions = {
   leagueSlug: string;
@@ -124,4 +128,92 @@ export async function createSeason(
       scoringPolicy: JSON.stringify(policy),
     },
   });
+}
+
+export type SeasonRef = { leagueSlug: string; seasonSlug: string };
+
+export type UpdateSeasonPatch = Partial<{
+  name: string;
+  slug: string;
+  year: number;
+  plannedEvents: number;
+  status: SeasonStatus;
+  /** Raw JSON string, strict-parsed via `parseSeasonPaxTableStrict` and re-serialized in canonical form before writing. */
+  paxTable: string;
+}>;
+
+/**
+ * Patches a Season row's editable fields. Only keys present in `patch` are
+ * touched. `slug`, if given, must already be valid slug shape (same rule
+ * `createSeason` uses — NOT re-slugified) and, like `name`, is checked for
+ * a duplicate within the league before writing.
+ *
+ * Deliberately never touches `scoringPolicy` — a Season's policy is a
+ * snapshot taken once at creation/adoption time (see `createSeason`'s
+ * doc comment); there is no "re-adopt the preset" operation. Editing a
+ * ScoringSystem preset (`scoring-system.ts`) never reaches back to update
+ * seasons that previously snapshotted it.
+ */
+export async function updateSeason(
+  client: PrismaClient,
+  ref: SeasonRef,
+  patch: UpdateSeasonPatch,
+): Promise<Season> {
+  const { leagueSlug, seasonSlug } = ref;
+
+  const league = await client.league.findUnique({ where: { slug: leagueSlug } });
+  if (!league) {
+    throw new Error(`[update-season] unknown league '${leagueSlug}' — check the slug.`);
+  }
+
+  const season = await client.season.findFirst({ where: { leagueId: league.id, slug: seasonSlug } });
+  if (!season) {
+    throw new Error(`[update-season] league '${leagueSlug}' has no season with slug '${seasonSlug}'.`);
+  }
+
+  if (patch.status !== undefined && !SEASON_STATUSES.includes(patch.status)) {
+    throw new Error(`[update-season] status must be one of ${SEASON_STATUSES.join(", ")} (got '${patch.status}').`);
+  }
+
+  if (patch.name !== undefined && patch.name !== season.name) {
+    const dup = await client.season.findFirst({ where: { leagueId: league.id, name: patch.name } });
+    if (dup) {
+      throw new Error(
+        `[update-season] league '${leagueSlug}' already has a season named '${patch.name}' (id=${dup.id}).`,
+      );
+    }
+  }
+
+  let newSlug: string | undefined;
+  if (patch.slug !== undefined && patch.slug !== season.slug) {
+    const slug = patch.slug.trim();
+    if (!SLUG_PATTERN.test(slug)) {
+      throw new Error(
+        `[update-season] --slug must be lowercase alphanumeric, hyphen-separated (got '${patch.slug}').`,
+      );
+    }
+    const dupSlug = await client.season.findFirst({ where: { leagueId: league.id, slug } });
+    if (dupSlug) {
+      throw new Error(
+        `[update-season] league '${leagueSlug}' already has a season with slug '${slug}' ` +
+          `(name='${dupSlug.name}', id=${dupSlug.id}).`,
+      );
+    }
+    newSlug = slug;
+  }
+
+  // Throws a field-level error on invalid JSON or a malformed table shape —
+  // never write a Season row with a paxTable scoring code can't parse.
+  const newPaxTable =
+    patch.paxTable !== undefined ? JSON.stringify(parseSeasonPaxTableStrict(patch.paxTable)) : undefined;
+
+  const data: Prisma.SeasonUpdateInput = {};
+  if (patch.name !== undefined) data.name = patch.name;
+  if (newSlug !== undefined) data.slug = newSlug;
+  if (patch.year !== undefined) data.year = patch.year;
+  if (patch.plannedEvents !== undefined) data.plannedEvents = patch.plannedEvents;
+  if (patch.status !== undefined) data.status = patch.status;
+  if (newPaxTable !== undefined) data.paxTable = newPaxTable;
+
+  return client.season.update({ where: { id: season.id }, data });
 }
