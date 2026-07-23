@@ -114,6 +114,7 @@ export type SeasonStandingsRow = {
   driverId: number;
   driverName: string; // "First L." — lastInitial only, never the full last name
   totalPoints: number;
+  averagePoints: number; // totalPoints / counted scores (championship average; dropped scores excluded), 2dp
   eligible: boolean; // false when driver has fewer than qualifyingEvents in this class
   eventsCountedInClass: number;
   qualifyingEvents: number; // threshold for this season (duplicated for per-driver badge rendering)
@@ -574,6 +575,11 @@ export async function buildSeasonLeaderboard(
     const sorted = [...rawScores].sort((a, b) => b.points - a.points);
     const counted = sorted.slice(0, countedEvents);
     const totalPoints = counted.reduce((sum, s) => sum + s.points, 0);
+    // Championship average: counted scores only (BJ, 2026-07-23) — a dropped
+    // score never dilutes it. Mirrors the club sheet's per-event pace metric
+    // but over the counted set, matching what totalPoints is built from.
+    const averagePoints =
+      counted.length === 0 ? 0 : Math.round((totalPoints / counted.length) * 100) / 100;
     const countedSet = new Set(counted.map((s) => s.key));
 
     const scores = rawScores
@@ -596,6 +602,7 @@ export async function buildSeasonLeaderboard(
       driverId,
       driverName: `${info.firstName} ${info.lastInitial}`,
       totalPoints,
+      averagePoints,
       eligible,
       eventsCountedInClass,
       qualifyingEvents,

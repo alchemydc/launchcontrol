@@ -110,7 +110,7 @@ function DriverCard({
             {driver.totalPoints}
           </div>
           <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-            points
+            points · avg {formatAvg(driver.averagePoints)}
           </div>
         </div>
       </div>
@@ -155,6 +155,9 @@ function DriverTableRow({
       <TableCell className="px-3 py-3 text-right tabular-nums font-semibold whitespace-nowrap">
         {driver.totalPoints}
       </TableCell>
+      <TableCell className="px-3 py-3 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+        {formatAvg(driver.averagePoints)}
+      </TableCell>
       <TableCell className="px-3 py-3">
         <EventScoreStrip scores={driver.scores} />
       </TableCell>
@@ -175,6 +178,11 @@ function scoringNote(
     return `Best ${qualifyingEvents} of ${totalEvents} scores count toward the season total.`;
   }
   return `Best ${countedEvents} scores currently count toward the season total (best ${qualifyingEvents} of ${totalEvents} at season end).`;
+}
+
+// "998" / "993.25" — trims trailing zeros like the club sheet's column.
+function formatAvg(avg: number): string {
+  return String(Math.round(avg * 100) / 100);
 }
 
 function classAnchorId(classCode: string): string {
@@ -239,6 +247,12 @@ function ClassSection({
               </TableHead>
               <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right">
                 Points
+              </TableHead>
+              <TableHead
+                className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right"
+                title="Average points per counted championship event (dropped scores excluded)"
+              >
+                Avg
               </TableHead>
               <TableHead
                 className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
