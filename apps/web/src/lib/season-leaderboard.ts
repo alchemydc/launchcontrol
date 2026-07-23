@@ -1,6 +1,7 @@
 import { PrismaClient, type RunDisposition } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { PLANNED_SEASON_EVENTS } from "@/lib/constants";
+import { getLeagueConfig } from "@/lib/league-config";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 // ---------------------------------------------------------------------------
@@ -132,14 +133,33 @@ type LoadedEvent = {
 // ---------------------------------------------------------------------------
 
 /**
- * Return every distinct calendar year that has at least one event in the DB,
- * sorted descending (most recent first).  Powers the season switcher.
+ * Resolve the id of the deployment's default League (per `getLeagueConfig`).
+ * Returns `null` only if the League row named by DEFAULT_LEAGUE_SLUG has
+ * vanished between `getLeagueConfig`'s read and this one — `getLeagueConfig`
+ * itself already throws a clear error when the row is entirely missing, so
+ * in practice this always resolves.
+ */
+async function resolveDefaultLeagueId(client: PrismaClient): Promise<number | null> {
+  const config = await getLeagueConfig(client);
+  const league = await client.league.findUnique({ where: { slug: config.slug } });
+  return league?.id ?? null;
+}
+
+/**
+ * Return every year with a Season row under the default league, sorted
+ * descending (most recent first). Powers the season switcher. Season-driven,
+ * not event dates — a league with no Season rows yet returns `[]`.
  */
 export async function listSeasonYears(
   client: PrismaClient = defaultClient,
 ): Promise<number[]> {
-  const events = await client.event.findMany({ select: { date: true } });
-  const years = Array.from(new Set(events.map((e) => e.date.getUTCFullYear())));
+  const leagueId = await resolveDefaultLeagueId(client);
+  if (leagueId == null) return [];
+  const seasons = await client.season.findMany({
+    where: { leagueId },
+    select: { year: true },
+  });
+  const years = Array.from(new Set(seasons.map((s) => s.year)));
   return years.sort((a, b) => b - a);
 }
 
@@ -164,34 +184,49 @@ export async function listSeasonYears(
  *
  * Returns total scoring-group count and computed qualifying threshold
  * alongside sections. `plannedEvents` (M1.16) raises the threshold's season
- * size to a configured planned count when it exceeds the actual ingested
- * group count, so a mid-season standing doesn't drop scores it shouldn't;
- * see `seasonScoringBasis`.
+ * size to the Season row's configured planned count when it exceeds the
+ * actual ingested group count, so a mid-season standing doesn't drop scores
+ * it shouldn't; see `seasonScoringBasis`.
+ *
+ * League Foundation: events are scoped to the (default league, year) Season
+ * row rather than a raw date range, and `plannedEvents` comes from that row
+ * instead of the `PLANNED_SEASON_EVENTS` constant. A year with no Season row
+ * returns the original empty-year shape (all zero, no sections) — same as a
+ * year with a Season row but zero ingested events, except `totalEvents` there
+ * reflects the Season's planned count instead of 0.
  */
 export async function buildSeasonLeaderboard(
   year: number,
   client: PrismaClient = defaultClient,
-  plannedEvents: Record<number, number> = PLANNED_SEASON_EVENTS,
 ): Promise<SeasonLeaderboardResult> {
-  // 1. Load all events + entries + runs for the season in chronological order.
-  const events: LoadedEvent[] = await client.event.findMany({
-    where: {
-      date: {
-        gte: new Date(Date.UTC(year, 0, 1)),
-        lt: new Date(Date.UTC(year + 1, 0, 1)),
-      },
-    },
-    orderBy: { date: "asc" },
-    include: {
-      entries: {
+  const leagueId = await resolveDefaultLeagueId(client);
+  const season = leagueId == null
+    ? null
+    : await client.season.findFirst({
+        where: { leagueId, year },
         include: {
-          class: { select: { code: true } },
-          driver: { select: { id: true, firstName: true, lastInitial: true } },
-          runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
+          events: {
+            orderBy: { date: "asc" },
+            include: {
+              entries: {
+                include: {
+                  class: { select: { code: true } },
+                  driver: { select: { id: true, firstName: true, lastInitial: true } },
+                  runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
+                },
+              },
+            },
+          },
         },
-      },
-    },
-  });
+      });
+
+  if (season == null) {
+    return { totalEvents: 0, completedEvents: 0, qualifyingEvents: 0, sections: [] };
+  }
+
+  // 1. Events for the season, already loaded in chronological order.
+  const events: LoadedEvent[] = season.events;
+  const plannedEvents: Record<number, number> = { [year]: season.plannedEvents };
 
   if (events.length === 0) {
     const basis = seasonScoringBasis(year, 0, plannedEvents);

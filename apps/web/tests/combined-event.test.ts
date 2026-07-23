@@ -7,6 +7,7 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { ingestAxdb } from "@/lib/ingest";
 import { buildSeasonLeaderboard, combinedEventLabel } from "@/lib/season-leaderboard";
 import { buildCombinedResults } from "@/lib/combined-event";
+import { ensureLeagueAndSeasons } from "./helpers/league-fixture";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-combined-event.db");
 const TEST_DB_URL = "file:./test-combined-event.db";
@@ -84,9 +85,11 @@ describe("buildSeasonLeaderboard(2027) — combined-event scoring groups", () =>
     const result = await buildSeasonLeaderboard(2027, prisma);
     expect(result.totalEvents).toBe(3);
     expect(result.qualifyingEvents).toBe(2);
-    // 2027 is intentionally absent from PLANNED_SEASON_EVENTS, so this is a
-    // pure fallback-to-actual regression case (M1.16): completedEvents ===
-    // totalEvents === actual scoring groups, unaffected by the planned map.
+    // The 2027 Season row is auto-created by ingestAxdb with plannedEvents=0,
+    // so this is a pure fallback-to-actual regression case (M1.16):
+    // completedEvents === totalEvents === actual scoring groups. Must run
+    // before the "planned-season override" describe block below, which
+    // mutates this Season row's plannedEvents.
     expect(result.completedEvents).toBe(3);
   });
 
@@ -169,15 +172,18 @@ describe("buildSeasonLeaderboard(2027) — combined-event scoring groups", () =>
 });
 
 // ---------------------------------------------------------------------------
-// M1.16 — planned-season threshold override, via injected map (2027 is
-// intentionally unlisted in the real PLANNED_SEASON_EVENTS; injection lets
-// us exercise the new behavior against this existing 3-group fixture without
-// regenerating it).
+// M1.16 — planned-season threshold override. plannedEvents now lives on the
+// Season row (League Foundation) rather than an injected map, so these
+// mutate the auto-created 2027 Season's plannedEvents directly (ingestAxdb's
+// beforeAll auto-create left it at 0) to exercise the same two branches of
+// max(planned, actual) against this existing 3-group fixture without
+// regenerating it.
 // ---------------------------------------------------------------------------
 
-describe("buildSeasonLeaderboard(2027) — planned-season override via injected map", () => {
+describe("buildSeasonLeaderboard(2027) — planned-season override via Season row", () => {
   it("planned=6 > actual=3: totalEvents=6, qualifyingEvents=4, every driver Provisional, nothing dropped", async () => {
-    const result = await buildSeasonLeaderboard(2027, prisma, { 2027: 6 });
+    await prisma.season.updateMany({ where: { year: 2027 }, data: { plannedEvents: 6 } });
+    const result = await buildSeasonLeaderboard(2027, prisma);
     expect(result.totalEvents).toBe(6);
     expect(result.completedEvents).toBe(3);
     expect(result.qualifyingEvents).toBe(4);
@@ -202,10 +208,16 @@ describe("buildSeasonLeaderboard(2027) — planned-season override via injected 
     expect(quinn.totalPoints).toBe(2000 + combinedScore.points);
   });
 
-  it("planned=2 < actual=3: max(2,3)=3, identical to the no-map run", async () => {
-    const withMap = await buildSeasonLeaderboard(2027, prisma, { 2027: 2 });
-    const withoutMap = await buildSeasonLeaderboard(2027, prisma);
-    expect(withMap).toEqual(withoutMap);
+  it("planned=2 < actual=3: max(2,3)=3, identical to the actual-only (plannedEvents=0) run", async () => {
+    await prisma.season.updateMany({ where: { year: 2027 }, data: { plannedEvents: 2 } });
+    const withPlanned2 = await buildSeasonLeaderboard(2027, prisma);
+
+    await prisma.season.updateMany({ where: { year: 2027 }, data: { plannedEvents: 0 } });
+    const withPlanned0 = await buildSeasonLeaderboard(2027, prisma);
+
+    expect(withPlanned2).toEqual(withPlanned0);
+    expect(withPlanned2.totalEvents).toBe(3);
+    expect(withPlanned2.qualifyingEvents).toBe(2);
   });
 });
 
