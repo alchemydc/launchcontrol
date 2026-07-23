@@ -27,9 +27,9 @@ export type CreateLeagueOptions = {
   footer?: string | null;
   /** Defaults to `Public results and standings for <name>.` */
   landing?: string;
-  /** Defaults to "optional". Every league created here is non-default by construction (the default
-   *  league only ever comes from the seed), and only the default league may use "required" — see
-   *  league-config.ts's `toLeagueConfig` guard — so "required" is refused below, not just undefaulted. */
+  /** Defaults to "optional". "required" is allowed: per-league membership gating
+   *  (decideLeagueAccess) resolves access at request time, so a created league may
+   *  carry a "required" gate like the default league. */
   gate?: AccessGate;
   /** Name for the auto-created default ScoringSystem preset. Defaults to `<name> Default`. */
   presetName?: string;
@@ -68,16 +68,6 @@ export async function createLeague(
   const gate = opts.gate ?? "optional";
   if (!ACCESS_GATES.includes(gate)) {
     throw new Error(`[create-league] --gate must be one of ${ACCESS_GATES.join(", ")} (got '${gate}').`);
-  }
-  // Every league created here is non-default by definition — the default league comes solely
-  // from the seed — and only the default league may use accessGate "required" (per-league MSR
-  // membership isn't wired into login yet; see league-config.ts's `toLeagueConfig` guard).
-  if (gate === "required") {
-    throw new Error(
-      "[create-league] --gate required is not allowed — every league created via league:create is " +
-        "non-default, and only the default league may use accessGate \"required\" until per-league " +
-        "membership ships (PR 3). Use --gate optional or --gate none.",
-    );
   }
 
   const existing = await client.league.findUnique({ where: { slug } });

@@ -73,29 +73,14 @@ export async function resolveDefaultLeague(
  * env-fallback resolution (msrOrgId, loginEnabled), etc. happen. Shared by
  * `loadLeagueConfig` (the default-league path) and `getLeagueConfigForSlug`
  * (Task 5's arbitrary-league path for `/l/[league]` routes) so both produce
- * an identically-shaped config from a raw League row. Being the single
- * choke point every League row passes through to become a LeagueConfig,
- * this is also where the non-default + "required" combination is refused
- * (see the throw below) — it covers the `/l/[league]` layout, every
- * `/l/[league]` page, and the league home's inline gate branch at once,
- * and cannot affect the default league (whose slug is exempt by construction).
+ * an identically-shaped config from a raw League row. Any league may carry
+ * accessGate "required": per-league membership gating (`decideLeagueAccess`,
+ * backed by the `LeagueMembership` table + MSR org match) is resolved at
+ * request time in `session.ts`, so a non-default "required" league is mapped
+ * through here like any other and gated correctly downstream.
  */
 function toLeagueConfig(league: League): LeagueConfig {
   const accessGate = coerceAccessGate(league.accessGate);
-
-  // Per-login MSR membership (`isRmrMember`) is computed at OAuth callback
-  // time against only the DEFAULT league's `msrOrgId` — per-league
-  // membership (`LeagueMembership`) isn't wired into login yet (PR 3
-  // territory). A non-default league with accessGate "required" would
-  // therefore silently gate on the wrong org's membership, so refuse it
-  // outright rather than let it ship mis-gated.
-  if (accessGate === "required" && league.slug !== defaultLeagueSlug()) {
-    throw new Error(
-      `[league-config] league '${league.slug}' has accessGate "required", but only the default league ` +
-        `(DEFAULT_LEAGUE_SLUG=${JSON.stringify(defaultLeagueSlug())}) may use "required" until per-league ` +
-        `membership ships (PR 3). Set '${league.slug}' to accessGate "optional" or "none".`,
-    );
-  }
 
   const msrOrgId =
     league.msrOrgId || process.env.MSR_ORG_ID || process.env.MSR_RMR_ORG_ID || null;

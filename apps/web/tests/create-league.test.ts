@@ -158,11 +158,14 @@ describe("createLeague", () => {
     ).rejects.toThrow(/--gate must be one of required, optional, none/);
   });
 
-  it("rejects --gate required — every created league is non-default, and only the default league may use it", async () => {
-    await expect(
-      createLeague({ slug: "required-gate-league", name: "Required Gate League", gate: "required" }, prisma),
-    ).rejects.toThrow(/--gate required is not allowed/);
-    expect(await prisma.league.findUnique({ where: { slug: "required-gate-league" } })).toBeNull();
+  it("accepts --gate required and persists accessGate 'required' (Task 7: per-league membership gating)", async () => {
+    const result = await createLeague(
+      { slug: "required-gate-league", name: "Required Gate League", gate: "required" },
+      prisma,
+    );
+    expect(result.league.accessGate).toBe("required");
+    const persisted = await prisma.league.findUnique({ where: { slug: "required-gate-league" } });
+    expect(persisted?.accessGate).toBe("required");
   });
 
   it("rejects an invalid --policy-file (fails parseScoringPolicy)", async () => {

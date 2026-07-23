@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
-import { getSession, sanitizeReturnTo } from "@/lib/session";
+import { checkLeagueAccess, getSession, sanitizeReturnTo } from "@/lib/session";
 import { EventsHome } from "@/app/_events-home";
 import { Landing } from "@/components/landing";
 
@@ -37,11 +37,10 @@ export default async function LeagueHomePage({
     );
   }
 
-  const session = await getSession();
-  const { returnTo: rawReturnTo } = await searchParams;
-  const returnTo = sanitizeReturnTo(rawReturnTo);
-
-  if (session.isRmrMember) {
+  // Required gate: membership decision (superuser / role / org match) via the
+  // shared wrapper, not a raw session flag — same rule requireMember enforces
+  // on the league's inner pages, so home and inner pages agree on who's in.
+  if ((await checkLeagueAccess(league)) === "allow") {
     return (
       <EventsHome
         searchParams={searchParams}
@@ -52,6 +51,10 @@ export default async function LeagueHomePage({
       />
     );
   }
+
+  const session = await getSession();
+  const { returnTo: rawReturnTo } = await searchParams;
+  const returnTo = sanitizeReturnTo(rawReturnTo);
 
   return (
     <Landing

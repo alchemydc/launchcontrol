@@ -11,10 +11,14 @@
  * redactLastName() and stores only lastInitial.
  */
 
-import { getIronSession, type IronSession } from "iron-session";
+import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getLeagueConfig, type AccessGate } from "@/lib/league-config";
+import { getLeagueConfig, type AccessGate, type LeagueConfig } from "@/lib/league-config";
+import { decideLeagueAccess, type LeagueAccessDecision } from "@/lib/league-access";
+import { getMembershipRole } from "@/lib/membership";
+import { isSuperUser } from "@/lib/super-user";
+import { prisma } from "@/lib/prisma";
 
 // ---------------------------------------------------------------------------
 // SESSION_SECRET is checked lazily on first use — not at module load — so
@@ -22,14 +26,18 @@ import { getLeagueConfig, type AccessGate } from "@/lib/league-config";
 // data) does not require the secret to be present in the build environment.
 // ---------------------------------------------------------------------------
 
-function getSessionSecret(): string {
+function hasSessionSecret(): boolean {
   const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) {
+  return typeof secret === "string" && secret.length >= 32;
+}
+
+function getSessionSecret(): string {
+  if (!hasSessionSecret()) {
     throw new Error(
       "SESSION_SECRET environment variable must be set and at least 32 characters long"
     );
   }
-  return secret;
+  return process.env.SESSION_SECRET as string;
 }
 
 const isProd = process.env.NODE_ENV === "production";
@@ -157,60 +165,91 @@ export function decideMemberGate(
 }
 
 /**
- * League-aware page gate (Task 5): identical rule to the original
- * `requireRmrMember`, parameterized on an arbitrary league's `accessGate`
- * instead of always reading the deployment's default league via
- * `getLeagueConfig()` — so `/l/[league]` routes gate on THAT league's
- * config, not the default league's.
+ * Resolve one league's access decision for the current session, without
+ * redirecting — the value form that `l/[league]/page.tsx` branches on
+ * (Landing vs EventsHome) and that `requireMember` turns into a redirect.
  *
- * `homeHref` is where a failed gate redirects to; every caller passes
- * `/l/[slug]` explicitly (league-scoped routes their own league's slug,
- * `requireRmrMember` the deployment's default league's slug) so a bounced
- * viewer lands on that league's own home — which still renders the Landing
- * sign-in view for a required gate — rather than on ROOT `/`, which is now
- * always the league gate (card grid) and has no sign-in prompt.
+ * Decision chain (all handled by the pure `decideLeagueAccess`, spec
+ * §Access decision order): superuser > BLOCKED > explicit membership row
+ * (ADMIN/MEMBER) > public gate > MSR org match > redirect. Public gates
+ * ("optional"/"none") short-circuit to "allow" WITHOUT any session or DB
+ * read, so a BLOCKED row only bites on a "required" gate.
  *
- * Note: `session.isRmrMember` is computed at MSR OAuth login time against
- * only the DEFAULT league's `msrOrgId` (see api/auth/msr/callback/route.ts)
- * — per-league membership (the unused `LeagueMembership` table) isn't wired
- * into login yet, so a non-default league with accessGate "required" would
- * gate on default-league membership. This can't actually reach here: a
- * League row in that state is refused up front by `league-config.ts`'s
- * `toLeagueConfig` (and `league:create --gate required` is refused too), so
- * every `league` passed to `requireMember` is already guaranteed "optional"
- * or "none" unless it's the default league. Wiring login to per-league org
- * membership is PR 3 territory (roles UI).
+ * For a "required" gate this reads the session cookie and, in parallel,
+ * looks up superuser status and this viewer's `LeagueMembership` role for
+ * THIS league (`league.id`). Org matching uses `session.msrOrgIds`, captured
+ * at MSR login (PR 3, Task 5); sessions minted before that field shipped
+ * lack it and fall through to "redirect" (re-login) — accepted per spec.
  */
-export async function requireMember(
-  league: { accessGate: AccessGate },
-  returnPath: string | undefined,
-  homeHref: string,
-): Promise<{ session: IronSession<SessionData> | null }> {
-  // Public leagues (accessGate optional|none) never gate results pages.
-  if (league.accessGate !== "required") {
-    if (!process.env.SESSION_SECRET) {
-      // No sessions configured at all (login disabled) — nothing to gate with.
-      return { session: null };
-    }
-    return { session: await getSession() };
-  }
+export async function checkLeagueAccess(
+  league: LeagueConfig,
+): Promise<LeagueAccessDecision> {
+  // Public leagues never gate — return before any session/DB read so a
+  // BLOCKED membership row can't deny access on a public gate.
+  if (league.accessGate !== "required") return "allow";
 
   const session = await getSession();
+  const [superUser, membershipRole] = await Promise.all([
+    isSuperUser(session.msrUid),
+    session.msrUid
+      ? getMembershipRole(prisma, league.id, session.msrUid)
+      : Promise.resolve(null),
+  ]);
 
-  if (decideMemberGate(league.accessGate, session) === "redirect") {
-    const safe = returnPath ? sanitizeReturnTo(returnPath) : null;
-    redirect(safe ? `${homeHref}?returnTo=${encodeURIComponent(safe)}` : homeHref);
-  }
-
-  return { session };
+  return decideLeagueAccess({
+    accessGate: league.accessGate,
+    msrOrgId: league.msrOrgId,
+    membershipRole,
+    superUser,
+    session: { msrUid: session.msrUid, msrOrgIds: session.msrOrgIds },
+  });
 }
 
-export async function requireRmrMember(
-  returnPath?: string
-): Promise<{ session: IronSession<SessionData> | null }> {
+/**
+ * League-aware page gate: redirects a viewer who fails `checkLeagueAccess`
+ * for `league`, and returns otherwise. Parameterized on an arbitrary
+ * league's config so `/l/[league]` routes gate on THAT league (and
+ * `requireRmrMember` on the deployment default).
+ *
+ * `homeHref` is where a failed gate lands; every caller passes `/l/[slug]`
+ * so a bounced viewer reaches that league's own home (which renders the
+ * Landing sign-in view under a "required" gate) rather than ROOT `/`, which
+ * is now always the league gate (card grid) with no sign-in prompt.
+ *
+ * `checkLeagueAccess` outcomes map to:
+ *   - "allow"    → return (let the page render).
+ *   - "deny"     → redirect to `homeHref` with NO returnTo — the viewer is
+ *                  signed in but explicitly BLOCKED, so a sign-in loop is
+ *                  pointless.
+ *   - "redirect" → redirect to `homeHref?returnTo=…` so a successful sign-in
+ *                  bounces back to the page they wanted.
+ *
+ * Callers MUST NOT wrap this in try/catch — redirect() throws NEXT_REDIRECT.
+ */
+export async function requireMember(
+  league: LeagueConfig,
+  returnPath: string | undefined,
+  homeHref: string,
+): Promise<void> {
+  // Public leagues (accessGate optional|none) never gate results pages.
+  if (league.accessGate !== "required") return;
+
+  // Gated, but no session secret configured (login disabled on this deploy):
+  // there is nothing to authenticate with, so never admit.
+  if (!hasSessionSecret()) redirect(homeHref);
+
+  const decision = await checkLeagueAccess(league);
+  if (decision === "allow") return;
+  if (decision === "deny") redirect(homeHref);
+
+  const safe = returnPath ? sanitizeReturnTo(returnPath) : null;
+  redirect(safe ? `${homeHref}?returnTo=${encodeURIComponent(safe)}` : homeHref);
+}
+
+export async function requireRmrMember(returnPath?: string): Promise<void> {
   const league = await getLeagueConfig();
   // ROOT `/` is now always the league gate (no sign-in prompt) — bounce to
   // the default league's own scoped home instead, same pattern every
   // `/l/[league]` route already uses.
-  return requireMember(league, returnPath, `/l/${league.slug}`);
+  await requireMember(league, returnPath, `/l/${league.slug}`);
 }
