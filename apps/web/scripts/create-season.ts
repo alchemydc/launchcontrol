@@ -68,6 +68,10 @@ function parseArgs(argv: string[]): Args {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.league || !args.name || args.year == null || Number.isNaN(args.year)) usage();
+  if (args.planned != null && Number.isNaN(args.planned)) {
+    console.error("--planned must be a number.");
+    usage();
+  }
   if (args.preset && args.policyFile) {
     console.error("Specify at most one of --preset or --policy-file, not both.");
     process.exit(2);

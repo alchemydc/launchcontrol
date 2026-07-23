@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
+import { resolveOrCreateSeason } from "@/lib/season-resolve";
 import { redactLastName } from "./pii";
 export { redactLastName };
 
@@ -41,9 +42,11 @@ type SrcRegistration = {
 
 const REQUIRED_TABLES = ["events", "classes", "drivers", "registrations", "runs"] as const;
 
-// The deployment's league. PR 1 is single-league-per-deployment; Task 3's
-// getLeagueConfig() will centralize this env read. Kept here so ingest can
-// resolve its target League/Season without depending on unbuilt Task 3 code.
+// The deployment's league. PR 1 is single-league-per-deployment: this module-level
+// env read is static in practice (one process, one deployment, one league) and is
+// duplicated in league-config.ts's getLeagueConfig() for app-facing config; the
+// season-resolution logic that used to live here is centralized in
+// season-resolve.ts's resolveOrCreateSeason(), shared with admin-events.ts.
 const DEFAULT_LEAGUE_SLUG = process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
 
 
@@ -191,14 +194,11 @@ export async function ingestAxdb(
     return await client.$transaction(async (tx) => {
       // Resolve the target League → Season for this event. The league is seeded by
       // the league-foundation migration; a missing league means the DB was never
-      // migrated. The Season is resolved by (league, event year); if none exists,
-      // it is auto-created (login-less self-heal — seasons otherwise come from
-      // seeds or `pnpm --filter web season:create`). The auto-created row snapshots
-      // the league's OLDEST ScoringSystem preset (deterministic; seeded leagues
-      // carry exactly one) rather than any hardcoded policy, so a league with a
-      // non-default preset self-heals correctly too. It carries plannedEvents=0
-      // until an operator edits it (via create-season or a future admin UI) — the
-      // ingest boundary has no signal for the season's actual event count.
+      // migrated. The Season is resolved by (league, event year) — auto-created
+      // (login-less self-heal — seasons otherwise come from seeds or
+      // `pnpm --filter web season:create`) if none exists — via the shared
+      // resolveOrCreateSeason(), also used by admin-events.ts's cross-year
+      // re-resolution on a date edit.
       const league = await tx.league.findUnique({ where: { slug: DEFAULT_LEAGUE_SLUG } });
       if (!league) {
         throw new Error(
@@ -206,29 +206,7 @@ export async function ingestAxdb(
         );
       }
       const eventYear = eventDate.getUTCFullYear();
-      let season = await tx.season.findFirst({
-        where: { leagueId: league.id, year: eventYear },
-      });
-      if (!season) {
-        const preset = await tx.scoringSystem.findFirst({
-          where: { leagueId: league.id },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        });
-        if (!preset) {
-          throw new Error(
-            `[ingest] league '${league.slug}' has no ScoringSystem presets — create a scoring system for league '${league.slug}' first (e.g. 'pnpm --filter web season:create').`,
-          );
-        }
-        season = await tx.season.create({
-          data: {
-            leagueId: league.id,
-            name: `${eventYear} Season`,
-            year: eventYear,
-            plannedEvents: 0,
-            scoringPolicy: preset.policy,
-          },
-        });
-      }
+      const season = await resolveOrCreateSeason(tx, league, eventYear);
       const seasonId = season.id;
 
       const existing = await tx.event.findUnique({

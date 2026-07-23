@@ -251,6 +251,7 @@ export async function buildSeasonLeaderboard(
     ? null
     : await client.season.findFirst({
         where: { leagueId, year },
+        orderBy: { id: "asc" },
         include: {
           events: {
             orderBy: { date: "asc" },

@@ -7,7 +7,6 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { ingestAxdb } from "@/lib/ingest";
 import { buildSeasonLeaderboard, combinedEventLabel } from "@/lib/season-leaderboard";
 import { buildCombinedResults } from "@/lib/combined-event";
-import { ensureLeagueAndSeasons } from "./helpers/league-fixture";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-combined-event.db");
 const TEST_DB_URL = "file:./test-combined-event.db";

@@ -64,8 +64,8 @@ describe("createSeason", () => {
     const season = await createSeason(
       {
         leagueSlug: "pca-rmr",
-        name: "2030 Named Preset Season",
-        year: 2030,
+        name: "2041 Named Preset Season",
+        year: 2041,
         plannedEvents: 8,
         presetName: "PCA Classic",
       },
@@ -96,6 +96,21 @@ describe("createSeason", () => {
     await expect(
       createSeason({ leagueSlug: "pca-rmr", name: "2032 Dup Season", year: 2032 }, prisma),
     ).rejects.toThrow(/already has a season named '2032 Dup Season'/);
+  });
+
+  it("rejects a duplicate (leagueId, year) season, even under a different name", async () => {
+    const first = await createSeason(
+      { leagueSlug: "pca-rmr", name: "2040 First Season", year: 2040 },
+      prisma,
+    );
+    await expect(
+      createSeason({ leagueSlug: "pca-rmr", name: "2040 Second Season", year: 2040 }, prisma),
+    ).rejects.toThrow(
+      new RegExp(
+        `already has a season for year 2040 \\('2040 First Season', id=${first.id}\\).*` +
+          "multi-season-per-year support needs season-aware routing",
+      ),
+    );
   });
 
   it("rejects an unknown league", async () => {

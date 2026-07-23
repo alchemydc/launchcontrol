@@ -6,6 +6,7 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { buildEventSlug, ingestAxdb } from "@/lib/ingest";
 import { writeAudit } from "@/lib/audit";
+import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
 import {
   deleteEventWithSweep,
   updateEventMetadata,
@@ -234,6 +235,99 @@ describe("updateEventMetadata(season-event-2)", () => {
     await expect(
       updateEventMetadata(prisma, 999_999, { name: "Nope", date: "2026-01-01", location: null }, ACTOR),
     ).rejects.toBeInstanceOf(EventNotFoundError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateEventMetadata — cross-year season re-resolution. season-event-2
+// (season2Id) is still standing at this point, dated 2026-04-06 (renamed by
+// the describe block above). Season.year is an invariant every event must
+// satisfy — a date edit that crosses a calendar year must move the event to
+// the right Season row, not just update its date column.
+// ---------------------------------------------------------------------------
+describe("updateEventMetadata — cross-year season re-resolution", () => {
+  let season2026Id: number;
+  let leagueId: number;
+
+  beforeAll(async () => {
+    const event = await prisma.event.findUniqueOrThrow({ where: { id: season2Id } });
+    season2026Id = event.seasonId;
+    const season2026 = await prisma.season.findUniqueOrThrow({ where: { id: season2026Id } });
+    leagueId = season2026.leagueId;
+  });
+
+  it("same-year edit leaves seasonId unchanged", async () => {
+    const before = await prisma.event.findUniqueOrThrow({ where: { id: season2Id } });
+    const updated = await updateEventMetadata(
+      prisma,
+      season2Id,
+      { name: before.name, date: "2026-05-01", location: before.location },
+      ACTOR,
+    );
+    expect(updated.seasonId).toBe(season2026Id);
+  });
+
+  it("moves the event into an already-existing season when the new date crosses into that year", async () => {
+    const season2026 = await prisma.season.findUniqueOrThrow({ where: { id: season2026Id } });
+    const season2025 = await prisma.season.create({
+      data: {
+        leagueId,
+        name: "2025 Season",
+        year: 2025,
+        plannedEvents: 0,
+        scoringPolicy: season2026.scoringPolicy,
+      },
+    });
+
+    const before = await prisma.event.findUniqueOrThrow({ where: { id: season2Id } });
+    const updated = await updateEventMetadata(
+      prisma,
+      season2Id,
+      { name: before.name, date: "2025-06-01", location: before.location },
+      ACTOR,
+    );
+
+    expect(updated.seasonId).toBe(season2025.id);
+    expect(await prisma.season.count({ where: { leagueId, year: 2025 } })).toBe(1);
+
+    const auditRow = await prisma.adminAuditLog.findFirst({
+      where: { action: "event.update", targetId: season2Id },
+      orderBy: { id: "desc" },
+    });
+    const detail = JSON.parse(auditRow!.detail) as {
+      before: { seasonId: number };
+      after: { seasonId: number };
+    };
+    expect(detail.before.seasonId).toBe(season2026Id);
+    expect(detail.after.seasonId).toBe(season2025.id);
+  });
+
+  it("auto-creates the target season, snapshotting the league's preset, when moving into a year with no season row yet", async () => {
+    expect(await prisma.season.count({ where: { leagueId, year: 2027 } })).toBe(0);
+
+    const before = await prisma.event.findUniqueOrThrow({ where: { id: season2Id } });
+    const updated = await updateEventMetadata(
+      prisma,
+      season2Id,
+      { name: before.name, date: "2027-07-04", location: before.location },
+      ACTOR,
+    );
+
+    const season2027 = await prisma.season.findFirstOrThrow({ where: { leagueId, year: 2027 } });
+    expect(updated.seasonId).toBe(season2027.id);
+    expect(season2027.plannedEvents).toBe(0);
+    expect(season2027.name).toBe("2027 Season");
+
+    const preset = await prisma.scoringSystem.findFirstOrThrow({
+      where: { leagueId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    expect(season2027.scoringPolicy).toBe(preset.policy);
+  });
+
+  it("the moved event scores in the target year's leaderboard", async () => {
+    const result2027 = await buildSeasonLeaderboard(2027, prisma);
+    expect(result2027.sections.some((section) => section.drivers.length > 0)).toBe(true);
   });
 });
 

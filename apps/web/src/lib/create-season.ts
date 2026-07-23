@@ -53,6 +53,23 @@ export async function createSeason(
     );
   }
 
+  // One season per (league, year) — the season-leaderboard and admin cross-year
+  // re-resolution logic both key season lookups strictly on (league, year), so
+  // a second season for the same year would be ambiguous (which one is the
+  // ingest/admin target?). Multi-season-per-year needs season-aware routing
+  // (see PR 2+); until then, refuse rather than create an ambiguous row.
+  const existingByYear = await client.season.findFirst({
+    where: { leagueId: league.id, year },
+    orderBy: { id: "asc" },
+  });
+  if (existingByYear) {
+    throw new Error(
+      `[create-season] league '${leagueSlug}' already has a season for year ${year} ` +
+        `('${existingByYear.name}', id=${existingByYear.id}) — multi-season-per-year support ` +
+        `needs season-aware routing (PR 2+).`,
+    );
+  }
+
   let rawPolicy: string;
   if (policyFilePath) {
     try {
