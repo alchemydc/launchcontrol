@@ -37,6 +37,15 @@ interface SeasonLeaderboardViewProps {
    *  page for a big league is megabytes of HTML; see ClassJumpBar). Unknown
    *  or omitted → the first non-empty section (PAX when present). */
   activeClassCode?: string | null;
+  /** `?sort=` query value — row order within the class. Rank pills always
+   *  show the CHAMPIONSHIP position (by points) regardless of sort. */
+  sortBy?: string | null;
+}
+
+type SortKey = "points" | "avg";
+
+function resolveSort(sortBy: string | null | undefined): SortKey {
+  return sortBy === "avg" ? "avg" : "points";
 }
 
 type EventScore = SeasonStandingsRow["scores"][number];
@@ -210,20 +219,67 @@ function resolveActiveSection(
   );
 }
 
+function SortHeaderLink({
+  label,
+  sortKey,
+  currentSort,
+  activeClassCode,
+  title,
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentSort: SortKey;
+  activeClassCode: string;
+  title?: string;
+}) {
+  const active = currentSort === sortKey;
+  const query =
+    sortKey === "points"
+      ? `?class=${encodeURIComponent(activeClassCode)}`
+      : `?class=${encodeURIComponent(activeClassCode)}&sort=avg`;
+  return (
+    <Link
+      href={query}
+      scroll={false}
+      title={title}
+      className={
+        "inline-flex items-center gap-1 transition-colors hover:text-foreground " +
+        (active ? "text-foreground" : "")
+      }
+    >
+      {label}
+      <span aria-hidden className={active ? "" : "invisible"}>
+        ↓
+      </span>
+    </Link>
+  );
+}
+
 function ClassSection({
   section,
   totalEvents,
   qualifyingEvents,
   countedEvents,
+  sort,
 }: {
   section: SeasonStandingsByClass;
   totalEvents: number;
   qualifyingEvents: number;
   countedEvents: number;
+  sort: SortKey;
 }) {
   if (section.drivers.length === 0) return null;
   const leader = section.drivers[0];
   const driverCount = section.drivers.length;
+  // Championship rank is the position in the incoming (points-sorted) order;
+  // re-sorting by Avg reorders rows but keeps each driver's rank pill.
+  const rankByDriverId = new Map(
+    section.drivers.map((d, i) => [d.driverId, i + 1]),
+  );
+  const rows =
+    sort === "avg"
+      ? [...section.drivers].sort((a, b) => b.averagePoints - a.averagePoints)
+      : section.drivers;
 
   return (
     <section
@@ -250,8 +306,12 @@ function ClassSection({
 
       {/* Mobile: card list */}
       <ul className="md:hidden divide-y divide-border/60">
-        {section.drivers.map((d, i) => (
-          <DriverCard key={d.driverId} driver={d} rank={i + 1} />
+        {rows.map((d) => (
+          <DriverCard
+            key={d.driverId}
+            driver={d}
+            rank={rankByDriverId.get(d.driverId)!}
+          />
         ))}
       </ul>
 
@@ -267,13 +327,21 @@ function ClassSection({
                 Driver
               </TableHead>
               <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right">
-                Points
+                <SortHeaderLink
+                  label="Points"
+                  sortKey="points"
+                  currentSort={sort}
+                  activeClassCode={section.classCode}
+                />
               </TableHead>
-              <TableHead
-                className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right"
-                title="Average points per counted championship event (dropped scores excluded)"
-              >
-                Avg
+              <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right">
+                <SortHeaderLink
+                  label="Avg"
+                  sortKey="avg"
+                  currentSort={sort}
+                  activeClassCode={section.classCode}
+                  title="Average points per counted championship event (dropped scores excluded)"
+                />
               </TableHead>
               <TableHead
                 className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
@@ -284,8 +352,12 @@ function ClassSection({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {section.drivers.map((d, i) => (
-              <DriverTableRow key={d.driverId} driver={d} rank={i + 1} />
+            {rows.map((d) => (
+              <DriverTableRow
+                key={d.driverId}
+                driver={d}
+                rank={rankByDriverId.get(d.driverId)!}
+              />
             ))}
           </TableBody>
         </Table>
@@ -297,12 +369,15 @@ function ClassSection({
 function ClassJumpBar({
   standings,
   activeClassCode,
+  sort,
 }: {
   standings: SeasonStandingsByClass[];
   activeClassCode: string | null;
+  sort: SortKey;
 }) {
   const sections = standings.filter((s) => s.drivers.length > 0);
   if (sections.length < 2) return null;
+  const sortSuffix = sort === "avg" ? "&sort=avg" : "";
   return (
     <nav aria-label="Select class" className="mb-6">
       {/* flex-wrap (not overflow-x-auto) so the class list wraps to multiple
@@ -314,7 +389,7 @@ function ClassJumpBar({
           return (
             <li key={s.classCode}>
               <Link
-                href={`?class=${encodeURIComponent(s.classCode)}`}
+                href={`?class=${encodeURIComponent(s.classCode)}${sortSuffix}`}
                 scroll={false}
                 className={
                   "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide transition-colors focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none " +
@@ -343,8 +418,10 @@ export function SeasonLeaderboardView({
   qualifyingEvents,
   countedEvents,
   activeClassCode,
+  sortBy,
 }: SeasonLeaderboardViewProps) {
   const activeSection = resolveActiveSection(standings, activeClassCode);
+  const sort = resolveSort(sortBy);
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <header className="mb-6 sm:mb-8">
@@ -385,6 +462,7 @@ export function SeasonLeaderboardView({
       <ClassJumpBar
         standings={standings}
         activeClassCode={activeSection?.classCode ?? null}
+        sort={sort}
       />
 
       {activeSection == null ? (
@@ -401,6 +479,7 @@ export function SeasonLeaderboardView({
           totalEvents={totalEvents}
           qualifyingEvents={qualifyingEvents}
           countedEvents={countedEvents}
+          sort={sort}
         />
       )}
     </main>

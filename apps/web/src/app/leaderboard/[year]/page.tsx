@@ -12,10 +12,10 @@ export default async function LeaderboardYearPage({
   searchParams,
 }: {
   params: Promise<{ year: string }>;
-  searchParams: Promise<{ class?: string }>;
+  searchParams: Promise<{ class?: string; sort?: string }>;
 }) {
   const { year: yearStr } = await params;
-  const { class: activeClassCode } = await searchParams;
+  const { class: activeClassCode, sort } = await searchParams;
 
   // Gate runs before the year range check so unauth viewers can't probe valid vs invalid years.
   await requireRmrMember(`/leaderboard/${yearStr}`);
@@ -36,6 +36,7 @@ export default async function LeaderboardYearPage({
       <SeasonLeaderboardView
         title={`${year} Season Leaderboard`}
         activeClassCode={activeClassCode}
+        sortBy={sort}
         switcher={
           years.length > 1 ? (
             <div className="sm:shrink-0 sm:ml-4">

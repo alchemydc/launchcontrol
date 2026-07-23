@@ -15,10 +15,12 @@ export async function renderLeagueSeasonLeaderboard({
   leagueName,
   season,
   activeClassCode,
+  sortBy,
 }: {
   leagueName: string;
   season: { id: number; slug: string; name: string } | null;
   activeClassCode?: string | null;
+  sortBy?: string | null;
 }) {
   if (!season) {
     return (
@@ -43,6 +45,7 @@ export async function renderLeagueSeasonLeaderboard({
       title={`${season.name} Leaderboard`}
       periodLabel={season.name}
       activeClassCode={activeClassCode}
+      sortBy={sortBy}
       standings={result.sections}
       totalEvents={result.totalEvents}
       completedEvents={result.completedEvents}

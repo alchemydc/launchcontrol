@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function LeaderboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ class?: string }>;
+  searchParams: Promise<{ class?: string; sort?: string }>;
 }) {
   await requireRmrMember("/leaderboard");
-  const { class: activeClassCode } = await searchParams;
+  const { class: activeClassCode, sort } = await searchParams;
 
   const years = await listSeasonYears();
   const currentYear = years[0] ?? new Date().getUTCFullYear();
@@ -24,6 +24,7 @@ export default async function LeaderboardPage({
       <SeasonLeaderboardView
         title={`${currentYear} Season Leaderboard`}
         activeClassCode={activeClassCode}
+        sortBy={sort}
         switcher={
           years.length > 1 ? (
             <div className="sm:shrink-0 sm:ml-4">

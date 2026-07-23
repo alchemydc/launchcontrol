@@ -17,10 +17,10 @@ export default async function LeagueLeaderboardPage({
   searchParams,
 }: {
   params: Promise<{ league: string }>;
-  searchParams: Promise<{ class?: string }>;
+  searchParams: Promise<{ class?: string; sort?: string }>;
 }) {
   const { league: slug } = await params;
-  const { class: activeClassCode } = await searchParams;
+  const { class: activeClassCode, sort } = await searchParams;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) notFound();
 
@@ -34,5 +34,6 @@ export default async function LeagueLeaderboardPage({
     leagueName: league.name,
     season,
     activeClassCode,
+    sortBy: sort,
   });
 }
