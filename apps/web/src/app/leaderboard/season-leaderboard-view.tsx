@@ -180,9 +180,9 @@ function scoringNote(
   return `Best ${countedEvents} scores currently count toward the season total (best ${qualifyingEvents} of ${totalEvents} at season end).`;
 }
 
-// "998" / "993.25" — trims trailing zeros like the club sheet's column.
+// "998" / "993.3" — nearest tenth, trailing zeros trimmed.
 function formatAvg(avg: number): string {
-  return String(Math.round(avg * 100) / 100);
+  return String(Math.round(avg * 10) / 10);
 }
 
 function classAnchorId(classCode: string): string {

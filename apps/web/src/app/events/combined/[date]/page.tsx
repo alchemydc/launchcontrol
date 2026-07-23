@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveLeague } from "@/lib/league-config";
 import { requireRmrMember } from "@/lib/session";
 import { CombinedEventPageView } from "./combined-event-view";
+import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 
 export const dynamic = "force-dynamic";
 
@@ -24,5 +25,10 @@ export default async function CombinedEventPage({
   const league = await resolveLeague(undefined, prisma);
   if (!league) notFound();
 
-  return <CombinedEventPageView league={league} date={date} />;
+  return (
+    <>
+      <DefaultLeagueSubnav />
+      <CombinedEventPageView league={league} date={date} />
+    </>
+  );
 }

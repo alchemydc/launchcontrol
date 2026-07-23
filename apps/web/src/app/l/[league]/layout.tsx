@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
+import { LeagueSubnav } from "@/components/league-subnav";
+import { activeSeason, listSeasonsForLeague } from "@/lib/season-resolve";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Per-league <title>/<meta description> for the /l/[league] subtree — without
@@ -41,5 +44,19 @@ export default async function LeagueLayout({
   const { league: slug } = await params;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) notFound();
-  return <>{children}</>;
+  const [seasons, active] = await Promise.all([
+    listSeasonsForLeague(prisma, league.id),
+    activeSeason(prisma, league.id),
+  ]);
+  return (
+    <>
+      <LeagueSubnav
+        slug={league.slug}
+        name={league.name}
+        seasons={seasons}
+        activeSeasonSlug={active?.slug ?? null}
+      />
+      {children}
+    </>
+  );
 }

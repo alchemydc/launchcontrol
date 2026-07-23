@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveLeague } from "@/lib/league-config";
 import { requireRmrMember } from "@/lib/session";
 import { EventPageView } from "./event-page-view";
+import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 
 export const dynamic = "force-dynamic";
 
@@ -23,5 +24,10 @@ export default async function EventPage({
   const league = await resolveLeague(undefined, prisma);
   if (!league) notFound();
 
-  return <EventPageView league={league} slug={slug} />;
+  return (
+    <>
+      <DefaultLeagueSubnav />
+      <EventPageView league={league} slug={slug} />
+    </>
+  );
 }

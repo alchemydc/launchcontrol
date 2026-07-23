@@ -1,8 +1,6 @@
 import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
-import { listSeasonsForLeague } from "@/lib/season-resolve";
 import { prisma } from "@/lib/prisma";
 import { SeasonLeaderboardView } from "@/app/leaderboard/season-leaderboard-view";
-import { LeagueSeasonSwitcher } from "./league-season-switcher";
 
 /**
  * Shared render body for both /l/[league]/leaderboard (bare — active season)
@@ -38,23 +36,13 @@ export async function renderLeagueSeasonLeaderboard({
     );
   }
 
-  const seasons = await listSeasonsForLeague(prisma, leagueId);
   const result = await buildSeasonLeaderboard({ seasonId: season.id }, prisma);
 
+  // Season navigation lives in the league subnav (layout-mounted), so no
+  // in-page switcher here — one navigation surface per league page.
   return (
     <SeasonLeaderboardView
       title={`${season.name} Leaderboard`}
-      switcher={
-        seasons.length > 1 ? (
-          <div className="sm:shrink-0 sm:ml-4">
-            <LeagueSeasonSwitcher
-              seasons={seasons}
-              currentSlug={season.slug}
-              basePath={`/l/${leagueSlug}/leaderboard/s`}
-            />
-          </div>
-        ) : null
-      }
       periodLabel={season.name}
       standings={result.sections}
       totalEvents={result.totalEvents}
