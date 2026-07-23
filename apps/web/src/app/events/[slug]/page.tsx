@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
 import { buildLeaderboard } from "@/lib/leaderboard";
+import { countSiblingEventsByDate, findEventBySlug } from "@/lib/event-queries";
+import { resolveLeague } from "@/lib/league-config";
 import { findSmugmugEventFolder } from "@/lib/smugmug";
 import { requireRmrMember } from "@/lib/session";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
@@ -30,24 +32,15 @@ export default async function EventPage({
   // Gate runs before notFound() so unauth viewers can't probe slug existence.
   await requireRmrMember(`/events/${slug}`);
 
-  // Slug is unique per-season now (@@unique([seasonId, slug])); event slugs are
-  // date-prefixed so they remain globally unique in practice. findFirst keeps the
-  // slug-only route lookup working until season-scoped routing arrives (PR 3).
-  const event = await prisma.event.findFirst({
-    where: { slug },
-    include: {
-      season: { select: { scoringPolicy: true } },
-      entries: {
-        include: {
-          driver: true,
-          class: true,
-          paxClass: true,
-          runs: true,
-        },
-      },
-    },
-  });
+  // This route serves the deployment's default league (legacy URL — league-
+  // scoped routes arrive in Task 5). Slug is unique per-season now
+  // (@@unique([seasonId, slug])); findEventBySlug scopes the lookup by
+  // season.leagueId so a same-slug event in a different league can never
+  // cross-resolve here.
+  const league = await resolveLeague(undefined, prisma);
+  if (!league) notFound();
 
+  const event = await findEventBySlug(league.id, slug, prisma);
   if (!event) notFound();
 
   // showPaxView is server-resolved from this event's season policy — the
@@ -56,10 +49,8 @@ export default async function EventPage({
   const showPaxView = parseScoringPolicy(event.season.scoringPolicy).paxSection;
 
   // Combined-event cross-link (M1.15): any other events sharing this event's
-  // calendar date form one combined scoring event.
-  const siblingCount = await prisma.event.count({
-    where: { date: event.date, id: { not: event.id } },
-  });
+  // calendar date (within the same league) form one combined scoring event.
+  const siblingCount = await countSiblingEventsByDate(league.id, event.date, event.id, prisma);
   const dateKey = event.date.toISOString().slice(0, 10);
 
   const rows = buildLeaderboard(event.entries);

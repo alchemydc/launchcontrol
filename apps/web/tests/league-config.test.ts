@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
-import { getLeagueConfig } from "@/lib/league-config";
+import { getLeagueConfig, resolveLeague } from "@/lib/league-config";
 
 // getLeagueConfig() resolves branding/gate/smugmug config from the League row
 // named by DEFAULT_LEAGUE_SLUG (default "pca-rmr"), replacing the archive's
@@ -152,6 +152,56 @@ describe("getLeagueConfig — footerText NULL fallback", () => {
     // never set its own footer text does not inherit another league's copy.
     expect(config.footerText).toBeNull();
     await prisma.league.delete({ where: { id: league.id } });
+  });
+});
+
+describe("resolveLeague — Task 4 shared league-resolution rule", () => {
+  it("with no slug, resolves the default league (DEFAULT_LEAGUE_SLUG)", async () => {
+    const league = await resolveLeague(undefined, prisma);
+    expect(league?.slug).toBe("pca-rmr");
+  });
+
+  it("respects DEFAULT_LEAGUE_SLUG when resolving with no slug", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "resolve-league-default-test",
+        name: "x",
+        siteTitle: "x",
+        siteDescription: "x",
+        footerText: "x",
+        landingDescription: "x",
+      },
+    });
+    process.env.DEFAULT_LEAGUE_SLUG = "resolve-league-default-test";
+    const resolved = await resolveLeague(undefined, prisma);
+    expect(resolved?.id).toBe(league.id);
+    await prisma.league.delete({ where: { id: league.id } });
+  });
+
+  it("with an explicit slug, resolves that league regardless of DEFAULT_LEAGUE_SLUG", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "resolve-league-explicit-test",
+        name: "Explicit League",
+        siteTitle: "x",
+        siteDescription: "x",
+        footerText: "x",
+        landingDescription: "x",
+      },
+    });
+    // DEFAULT_LEAGUE_SLUG stays "pca-rmr" (unset) — the explicit slug wins.
+    const resolved = await resolveLeague("resolve-league-explicit-test", prisma);
+    expect(resolved?.id).toBe(league.id);
+    await prisma.league.delete({ where: { id: league.id } });
+  });
+
+  it("returns null (never throws) for an unknown explicit slug", async () => {
+    await expect(resolveLeague("no-such-league", prisma)).resolves.toBeNull();
+  });
+
+  it("returns null (never throws) when the default league is unseeded", async () => {
+    process.env.DEFAULT_LEAGUE_SLUG = "does-not-exist";
+    await expect(resolveLeague(undefined, prisma)).resolves.toBeNull();
   });
 });
 

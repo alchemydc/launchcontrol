@@ -105,3 +105,24 @@ export const getLeagueConfig = cache(
   (client: PrismaClient = defaultClient): Promise<LeagueConfig> =>
     loadLeagueConfig(client),
 );
+
+/**
+ * The one shared league-resolution rule (spec "Key design points": route
+ * param wins; legacy routes use DEFAULT_LEAGUE_SLUG). Pass a `slug` to
+ * resolve that specific League row (`null` if it doesn't exist — the
+ * League-scoped routes arriving in Task 5 404 on that); omit it to resolve
+ * the deployment's default league via `resolveDefaultLeague`, which every
+ * legacy (non-league-prefixed) route keeps doing today. Unlike
+ * `getLeagueConfig`, this never throws — callers here already handle a
+ * missing league by 404ing or rendering an empty result, so the friendlier
+ * "config unresolvable" error stays solely `getLeagueConfig`'s concern.
+ */
+export async function resolveLeague(
+  slug?: string,
+  client: PrismaClient = defaultClient,
+): Promise<League | null> {
+  if (slug != null) {
+    return client.league.findUnique({ where: { slug } });
+  }
+  return resolveDefaultLeague(client);
+}
