@@ -178,3 +178,17 @@ describe("countedEventTarget (scoringPolicy.drops)", () => {
     expect(countedEventTarget(2, 2, 1, "proportional")).toBe(1);
   });
 });
+
+describe("conePenaltyMs enforcement (unwired per-season cone math)", () => {
+  it("rejects a policy whose conePenaltyMs differs from the shared CONE_PENALTY_MS constant", async () => {
+    await setPolicy(
+      '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":1000}',
+    );
+    await expect(buildSeasonLeaderboard(YEAR, prisma)).rejects.toThrow(
+      /scoringPolicy\.conePenaltyMs=1000 differs from the shared CONE_PENALTY_MS constant \(2000ms\)/,
+    );
+    // Restore a valid policy so this mutation doesn't leak into any other
+    // test that reuses this season row.
+    await setPolicy(FIXED_RAW_POLICY);
+  });
+});

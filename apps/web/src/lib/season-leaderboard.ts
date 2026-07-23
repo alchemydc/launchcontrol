@@ -232,13 +232,16 @@ export async function listSeasonYears(
  * sections) — same as a year with a Season row but zero ingested events,
  * except `totalEvents` there reflects the Season's planned count instead of 0.
  *
- * Cone-penalty boundary: `scoringPolicy.conePenaltyMs` is read and checked
- * against the shared `CONE_PENALTY_MS` constant, but per-run cone math itself
+ * Cone-penalty boundary: `scoringPolicy.conePenaltyMs` is read and enforced
+ * against the shared `CONE_PENALTY_MS` constant — per-run cone math itself
  * still lives in `entry-best.ts` (and `combined-event.ts`/`leaderboard.ts` for
- * event pages), which stays constant-based this PR — every seeded policy's
- * `conePenaltyMs` is 2000, matching the constant, so this is a no-op check
- * today. Full policy threading of that shared cone math is out of scope here
- * (event-page policy threading beyond PAX display is Task 6+ territory).
+ * event pages), which stays constant-based this PR, so a season whose policy
+ * disagrees with the constant would silently score wrong rather than apply
+ * its configured value; this throws instead of allowing that mismatch to
+ * pass quietly. Every seeded policy today is 2000, matching the constant, so
+ * this never fires in production. Full policy threading of that shared cone
+ * math is out of scope here (event-page policy threading beyond PAX display
+ * is Task 6+ territory).
  */
 export async function buildSeasonLeaderboard(
   year: number,
@@ -272,8 +275,8 @@ export async function buildSeasonLeaderboard(
 
   const policy = parseScoringPolicy(season.scoringPolicy);
   if (policy.conePenaltyMs !== CONE_PENALTY_MS) {
-    console.warn(
-      `[season-leaderboard] season ${year} scoringPolicy.conePenaltyMs=${policy.conePenaltyMs} differs from the shared CONE_PENALTY_MS constant (${CONE_PENALTY_MS}ms) used by entry-best.ts/combined-event.ts/leaderboard.ts for per-run cone penalties — those call sites are not yet policy-driven, so this season's scores are computed with ${CONE_PENALTY_MS}ms regardless of the configured value.`,
+    throw new Error(
+      `season ${year}: scoringPolicy.conePenaltyMs=${policy.conePenaltyMs} differs from the shared CONE_PENALTY_MS constant (${CONE_PENALTY_MS}ms) used by entry-best.ts/combined-event.ts/leaderboard.ts for per-run cone penalties — those call sites are not yet policy-driven, so a season configured with a different value would silently score with ${CONE_PENALTY_MS}ms instead. Set this season's conePenaltyMs to ${CONE_PENALTY_MS} until per-season cone penalties are wired into per-entry scoring.`,
     );
   }
 

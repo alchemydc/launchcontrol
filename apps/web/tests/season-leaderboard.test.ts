@@ -303,9 +303,10 @@ describe("buildSeasonLeaderboard(2026)", () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     expect(result.totalEvents).toBe(6);
     expect(result.qualifyingEvents).toBe(4);
-    // M1.16: PLANNED_SEASON_EVENTS[2026] === 6 equals this fixture's actual
-    // group count, so max(planned, actual) = 6 and completedEvents = actual
-    // groups ingested — the planned/actual coincidence for this fixture year.
+    // M1.16: this fixture's Season row is auto-created by ingestAxdb with
+    // plannedEvents=0 (League Foundation deleted the PLANNED_SEASON_EVENTS
+    // constant), so max(planned=0, actual=6) = 6 and completedEvents = actual
+    // groups ingested.
     expect(result.completedEvents).toBe(6);
   });
 
