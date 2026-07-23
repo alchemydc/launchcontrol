@@ -1,12 +1,7 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
 import { resolveDefaultLeague } from "@/lib/league-config";
-
-function envAllowlist(): string[] {
-  const raw = process.env.ADMIN_MSR_UIDS;
-  if (!raw) return [];
-  return raw.split(",").map((u) => u.trim()).filter(Boolean);
-}
+import { superUserEnvAllowlist } from "@/lib/super-user";
 
 /**
  * League Foundation compatibility shim: an admin is either a superadmin
@@ -26,7 +21,7 @@ export async function isAdmin(
   client: PrismaClient = defaultClient,
 ): Promise<boolean> {
   if (!msrUid) return false;
-  if (envAllowlist().includes(msrUid)) return true;
+  if (superUserEnvAllowlist().includes(msrUid)) return true;
 
   const league = await resolveDefaultLeague(client);
   if (!league) return false;

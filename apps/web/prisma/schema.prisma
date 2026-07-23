@@ -182,6 +182,12 @@ model LeagueMembership {
   @@unique([leagueId, msrUid])
 }
 
+model SuperUser {
+  id        Int      @id @default(autoincrement())
+  msrUid    String   @unique
+  createdAt DateTime @default(now())
+}
+
 model AdminAuditLog {
   id          Int      @id @default(autoincrement())
   action      String   // "ingest" | "event.update" | "event.delete"
