@@ -1,8 +1,21 @@
 import { unstable_cache } from "next/cache";
+import { getLeagueConfig } from "@/lib/league-config";
 
-const SMUGMUG_USER = process.env.SMUGMUG_USER ?? "rmrpca";
-const SMUGMUG_DISCIPLINE = process.env.SMUGMUG_DISCIPLINE_PATH ?? "Autocross";
 const API_BASE = "https://api.smugmug.com/api/v2";
+
+// The League row is authoritative for smugmugUser/smugmugDisciplinePath;
+// SMUGMUG_USER/SMUGMUG_DISCIPLINE_PATH env vars are honored as a fallback
+// only when the League row leaves the field unset (null), with a hardcoded
+// last resort so a league with neither configured still resolves to
+// something (parity with the pre-League behavior).
+async function resolveSmugmugTarget(): Promise<{ user: string; discipline: string }> {
+  const league = await getLeagueConfig();
+  return {
+    user: league.smugmugUser || process.env.SMUGMUG_USER || "rmrpca",
+    discipline:
+      league.smugmugDisciplinePath || process.env.SMUGMUG_DISCIPLINE_PATH || "Autocross",
+  };
+}
 
 // Tokens to ignore when fuzzy-matching event names against SmugMug folder names
 const STOPWORDS = new Set([
@@ -81,12 +94,16 @@ export function matchEventFolder(
   return bestUri;
 }
 
-async function fetchYearNodeId(year: number): Promise<string | null> {
+async function fetchYearNodeId(
+  user: string,
+  discipline: string,
+  year: number
+): Promise<string | null> {
   const apiKey = process.env.SMUGMUG_API_KEY;
   if (!apiKey) return null;
 
-  const urlpath = encodeURIComponent(`/${SMUGMUG_DISCIPLINE}/${year}`);
-  const url = `${API_BASE}/user/${SMUGMUG_USER}!urlpathlookup?urlpath=${urlpath}&APIKey=${apiKey}`;
+  const urlpath = encodeURIComponent(`/${discipline}/${year}`);
+  const url = `${API_BASE}/user/${user}!urlpathlookup?urlpath=${urlpath}&APIKey=${apiKey}`;
 
   try {
     const res = await fetch(url, {
@@ -102,7 +119,11 @@ async function fetchYearNodeId(year: number): Promise<string | null> {
   }
 }
 
-async function fetchEventFolders(yearNodeId: string): Promise<FolderSummary[]> {
+async function fetchEventFolders(
+  user: string,
+  discipline: string,
+  yearNodeId: string
+): Promise<FolderSummary[]> {
   const apiKey = process.env.SMUGMUG_API_KEY;
   if (!apiKey) return [];
 
@@ -129,17 +150,20 @@ async function fetchEventFolders(yearNodeId: string): Promise<FolderSummary[]> {
   }
 }
 
-// Cached per year — 1 week TTL (year folders are stable)
+// Cached per (user, discipline, year) — 1 week TTL (year folders are stable).
+// user/discipline are call arguments (not fixed keyParts) so different
+// leagues never collide on the same cache entry.
 const cachedYearNodeId = unstable_cache(
-  async (year: number) => fetchYearNodeId(year),
-  ["smugmug-year-node", SMUGMUG_USER, SMUGMUG_DISCIPLINE],
+  fetchYearNodeId,
+  ["smugmug-year-node"],
   { revalidate: 604800 }
 );
 
-// Cached per year node — 1 hour TTL (new event folders get added during season)
+// Cached per (user, discipline, yearNodeId) — 1 hour TTL (new event folders
+// get added during season).
 const cachedEventFolders = unstable_cache(
-  async (yearNodeId: string) => fetchEventFolders(yearNodeId),
-  ["smugmug-event-folders", SMUGMUG_USER, SMUGMUG_DISCIPLINE],
+  fetchEventFolders,
+  ["smugmug-event-folders"],
   { revalidate: 3600 }
 );
 
@@ -158,9 +182,10 @@ export async function findSmugmugEventFolder(
   }
 
   try {
-    const nodeId = await cachedYearNodeId(eventDate.getUTCFullYear());
+    const { user, discipline } = await resolveSmugmugTarget();
+    const nodeId = await cachedYearNodeId(user, discipline, eventDate.getUTCFullYear());
     if (!nodeId) return null;
-    const folders = await cachedEventFolders(nodeId);
+    const folders = await cachedEventFolders(user, discipline, nodeId);
     return matchEventFolder(folders, eventName, eventDate);
   } catch {
     return null;

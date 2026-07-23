@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
   const msrUid = session.msrUid;
 
-  if (!isAdmin(msrUid)) {
+  if (!(await isAdmin(msrUid))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   const { tempPath } = validated;
   try {
     const summary = await ingestAxdb(tempPath, prisma);
-    const { status, event, counts, axdbSha256 } = summary;
+    const { status, event, counts, sourceSha256 } = summary;
     console.log({ event: "admin-ingest", admin: msrUid, status, slug: event.slug, counts });
 
     try {
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         targetType: "event",
         targetId: event.id,
         targetSlug: event.slug,
-        detail: { filename: file.name, axdbSha256, status, counts },
+        detail: { filename: file.name, sourceSha256, status, counts },
       });
     } catch (auditErr) {
       // Audit is best-effort — a logging hiccup must not fail a completed ingest.

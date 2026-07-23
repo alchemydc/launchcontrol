@@ -11,17 +11,24 @@ datasource db {
 }
 
 model Event {
-  id         Int      @id @default(autoincrement())
-  msrEventId String?  @unique
-  slug       String   @unique
-  name       String
-  date       DateTime
-  location   String?
-  axdbSha256 String?
-  createdAt  DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  seasonId     Int
+  msrEventId   String?
+  slug         String
+  name         String
+  date         DateTime
+  location     String?
+  sourceSha256 String? // sha256 of the ingested source artifact (.axdb file or results PDF) — idempotency key
+  createdAt    DateTime @default(now())
 
+  season  Season  @relation(fields: [seasonId], references: [id])
   entries Entry[]
   videos  Video[]
+
+  @@unique([seasonId, msrEventId])
+  @@unique([seasonId, slug])
+  @@unique([seasonId, sourceSha256])
+  @@index([seasonId])
 }
 
 model Driver {
@@ -41,11 +48,15 @@ model Driver {
 
 model CarClass {
   id       Int     @id @default(autoincrement())
-  code     String  @unique
+  leagueId Int
+  code     String
   paxIndex Decimal @default(1.0000)
 
+  league         League  @relation(fields: [leagueId], references: [id])
   enteredEntries Entry[] @relation("EnteredClass")
   paxEntries     Entry[] @relation("PaxClass")
+
+  @@unique([leagueId, code])
 }
 
 model Entry {
@@ -106,6 +117,66 @@ model Video {
   driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
   @@index([eventId])
+}
+
+model League {
+  id                    Int      @id @default(autoincrement())
+  slug                  String   @unique
+  name                  String
+  siteTitle             String
+  siteDescription       String
+  footerText            String?
+  landingDescription    String
+  accessGate            String   @default("required") // "required" | "optional" | "none"
+  msrOrgId              String?
+  smugmugUser           String?
+  smugmugDisciplinePath String?
+  createdAt             DateTime @default(now())
+
+  seasons        Season[]
+  scoringSystems ScoringSystem[]
+  memberships    LeagueMembership[]
+  carClasses     CarClass[]
+}
+
+model ScoringSystem {
+  id        Int      @id @default(autoincrement())
+  leagueId  Int
+  name      String
+  policy    String // JSON ScoringPolicy v1 (SQLite has no JSON type)
+  createdAt DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, name])
+}
+
+model Season {
+  id            Int    @id @default(autoincrement())
+  leagueId      Int
+  name          String
+  year          Int
+  plannedEvents Int    @default(0)
+  scoringPolicy String // JSON snapshot — copied from a ScoringSystem, never a live reference
+  paxTable      String @default("{}") // JSON code->factor for this season
+  status        String @default("active") // "active" | "completed"
+
+  league League  @relation(fields: [leagueId], references: [id])
+  events Event[]
+
+  @@unique([leagueId, name])
+  @@index([leagueId, year])
+}
+
+model LeagueMembership {
+  id       Int    @id @default(autoincrement())
+  leagueId Int
+  msrUid   String
+  role     String // "ADMIN" | "MEMBER"
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, msrUid])
 }
 
 model AdminAuditLog {

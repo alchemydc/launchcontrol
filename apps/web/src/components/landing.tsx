@@ -1,12 +1,14 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { getLeagueConfig } from "@/lib/league-config";
 
 interface LandingProps {
   signedIn: boolean;
   returnTo: string | null;
 }
 
-export function Landing({ signedIn, returnTo }: LandingProps) {
+export async function Landing({ signedIn, returnTo }: LandingProps) {
+  const league = await getLeagueConfig();
   const loginHref = returnTo
     ? `/api/auth/msr/login?returnTo=${encodeURIComponent(returnTo)}`
     : "/api/auth/msr/login";
@@ -31,9 +33,7 @@ export function Landing({ signedIn, returnTo }: LandingProps) {
               Launch Control
             </h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Sign in with your MotorsportReg account to access Rocky Mountain
-              Region autocross results, sortable event leaderboards, season
-              standings, and driver profiles.
+              {league.landingDescription}
             </p>
           </div>
         </div>

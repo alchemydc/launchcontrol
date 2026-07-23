@@ -24,7 +24,7 @@ async function guard(): Promise<
 
   const msrUid = session.msrUid;
 
-  if (!isAdmin(msrUid)) {
+  if (!(await isAdmin(msrUid))) {
     return { ok: false, response: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
   }
 

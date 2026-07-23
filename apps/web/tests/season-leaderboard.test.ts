@@ -11,6 +11,7 @@ import {
   seasonScoringBasis,
 } from "@/lib/season-leaderboard";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
+import { ensureLeagueAndSeasons } from "./helpers/league-fixture";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-season.db");
 const TEST_DB_URL = "file:./test-season.db";
@@ -302,9 +303,10 @@ describe("buildSeasonLeaderboard(2026)", () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     expect(result.totalEvents).toBe(6);
     expect(result.qualifyingEvents).toBe(4);
-    // M1.16: PLANNED_SEASON_EVENTS[2026] === 6 equals this fixture's actual
-    // group count, so max(planned, actual) = 6 and completedEvents = actual
-    // groups ingested — the planned/actual coincidence for this fixture year.
+    // M1.16: this fixture's Season row is auto-created by ingestAxdb with
+    // plannedEvents=0 (League Foundation deleted the PLANNED_SEASON_EVENTS
+    // constant), so max(planned=0, actual=6) = 6 and completedEvents = actual
+    // groups ingested.
     expect(result.completedEvents).toBe(6);
   });
 
@@ -455,15 +457,19 @@ describe("buildSeasonLeaderboard empty year", () => {
     expect(result.completedEvents).toBe(0);
   });
 
-  // M1.16: a year mapped in PLANNED_SEASON_EVENTS but with no events ingested
-  // yet still reports the planned season size and threshold, with zero
-  // completed — e.g. /leaderboard/2026 on an empty DB reports 6/4/0.
-  it("a mapped-but-empty year reports the planned totals with zero completed", async () => {
-    const result = await buildSeasonLeaderboard(1999, prisma, { 1999: 6 });
+  // M1.16: a year with a Season row configured with a planned size but no
+  // events ingested yet still reports the planned season size and threshold,
+  // with zero completed — e.g. /leaderboard/2026 on an empty DB reports 6/4/0.
+  // (League Foundation: plannedEvents now lives on the Season row rather than
+  // an injected map, so the fixture is a Season row instead of a param.)
+  it("a season configured with a planned size but no events reports the planned totals with zero completed", async () => {
+    await ensureLeagueAndSeasons(prisma, [{ year: 2099, plannedEvents: 6 }]);
+    const result = await buildSeasonLeaderboard(2099, prisma);
     expect(result).toEqual({
       totalEvents: 6,
       qualifyingEvents: 4,
       completedEvents: 0,
+      countedEvents: 4, // fixed-mode default policy (DEFAULT_SCORING_POLICY): counted == qualifying
       sections: [],
     });
   });
