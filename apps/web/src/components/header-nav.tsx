@@ -12,6 +12,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/session";
 import { getLeagueConfig, countLeagues } from "@/lib/league-config";
 import { isAdmin } from "@/lib/admin";
+import { NavResultsLinks } from "@/components/nav-results-links";
 
 const linkClass =
   "text-sm text-muted-foreground hover:text-foreground transition-colors";
@@ -36,16 +37,7 @@ export async function HeaderNav() {
 
   return (
     <nav className="flex flex-wrap items-center gap-3 sm:gap-4">
-      {showResultsLinks && (
-        <Link href="/" className={linkClass}>
-          Events
-        </Link>
-      )}
-      {showResultsLinks && (
-        <Link href="/leaderboard" className={linkClass}>
-          Leaderboard
-        </Link>
-      )}
+      <NavResultsLinks showInDefaultContext={showResultsLinks} />
       {showLeaguesLink && (
         <Link href="/leagues" className={linkClass}>
           Leagues
