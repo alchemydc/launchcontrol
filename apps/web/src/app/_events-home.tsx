@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { EventsYearSwitcher } from "./events-year-switcher";
 import { prisma } from "@/lib/prisma";
-import { listSeasonYears } from "@/lib/season-leaderboard";
+import { activeSeason, listSeasonsForLeague } from "@/lib/season-resolve";
 import { findSmugmugEventFolder, type SmugmugLeagueTarget } from "@/lib/smugmug";
 
 function formatDateShort(date: Date): string {
@@ -24,7 +23,7 @@ export async function EventsHome({
   smugmugTarget,
   subtitle = LEGACY_SUBTITLE,
 }: {
-  searchParams: Promise<{ year?: string; returnTo?: string | string[] }>;
+  searchParams: Promise<{ season?: string; returnTo?: string | string[] }>;
   /** Explicit league scope (Task 5) — the legacy home page passes the
    *  deployment's default league's id; `/l/[league]` passes that league's. */
   leagueId: number;
@@ -41,30 +40,29 @@ export async function EventsHome({
    *  league's events page never carries the default league's branding. */
   subtitle?: string;
 }) {
-  const { year: yearParam } = await searchParams;
+  const { season: seasonParam } = await searchParams;
 
-  const years = await listSeasonYears(leagueId);
-  const fallbackYear = new Date().getUTCFullYear();
-  const requested = yearParam ? Number(yearParam) : NaN;
-  const year =
-    Number.isFinite(requested) && years.includes(requested)
-      ? requested
-      : (years[0] ?? fallbackYear);
+  // The subnav season selector is the single season control; the events list
+  // scopes to the chosen season (its `?season=` slug), defaulting to the
+  // league's active season — the same default the subnav shows.
+  const seasons = await listSeasonsForLeague(prisma, leagueId);
+  const active = await activeSeason(prisma, leagueId);
+  const selectedSeason =
+    seasons.find((s) => s.slug === seasonParam) ??
+    seasons.find((s) => s.id === active?.id) ??
+    seasons[0] ??
+    null;
 
-  const events = await prisma.event.findMany({
-    where: {
-      season: { leagueId },
-      date: {
-        gte: new Date(Date.UTC(year, 0, 1)),
-        lt: new Date(Date.UTC(year + 1, 0, 1)),
-      },
-    },
-    // Secondary `name asc` after `date desc` gives deterministic A/B ordering
-    // for combined-event sessions (both store the date at 00:00 UTC, so date
-    // alone doesn't disambiguate).
-    orderBy: [{ date: "desc" }, { name: "asc" }],
-    include: { _count: { select: { entries: true } } },
-  });
+  const events = selectedSeason
+    ? await prisma.event.findMany({
+        where: { seasonId: selectedSeason.id },
+        // Secondary `name asc` after `date desc` gives deterministic A/B ordering
+        // for combined-event sessions (both store the date at 00:00 UTC, so date
+        // alone doesn't disambiguate).
+        orderBy: [{ date: "desc" }, { name: "asc" }],
+        include: { _count: { select: { entries: true } } },
+      })
+    : [];
 
   // Combined-event grouping (M1.15): events sharing a calendar date form one
   // combined scoring event — its sessions render together inside one shared
@@ -112,29 +110,18 @@ export async function EventsHome({
     <main className="w-full mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-12">
       <header className="mb-6 sm:mb-8">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary mb-3">
-          {year} Season
+          {selectedSeason?.name ?? "Season"}
         </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-4 min-w-0">
-            <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
-            <div className="min-w-0">
-              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-                Event results
-              </h1>
-              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
-                {subtitle}
-              </p>
-            </div>
+        <div className="flex items-start gap-4 min-w-0">
+          <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+              Event results
+            </h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+              {subtitle}
+            </p>
           </div>
-          {years.length > 1 && (
-            <div className="sm:shrink-0 sm:ml-4">
-              <EventsYearSwitcher
-                years={years}
-                currentYear={year}
-                basePath={basePath}
-              />
-            </div>
-          )}
         </div>
       </header>
 
@@ -142,7 +129,7 @@ export async function EventsHome({
         <div className="flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-12">
           <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
           <div className="text-sm text-muted-foreground">
-            {years.length === 0 ? (
+            {seasons.length === 0 ? (
               <>
                 No events ingested yet. Run{" "}
                 <code className="bg-muted rounded px-1.5 py-0.5">
@@ -153,7 +140,10 @@ export async function EventsHome({
                 to publish results.
               </>
             ) : (
-              <>No events for {year}. Try a different season above.</>
+              <>
+                No events for {selectedSeason?.name ?? "this season"}. Try a
+                different season from the selector above.
+              </>
             )}
           </div>
         </div>

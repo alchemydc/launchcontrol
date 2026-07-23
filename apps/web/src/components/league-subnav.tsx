@@ -10,19 +10,21 @@
  *
  * The season selector sits directly after the league name — it IS the
  * context the tabs operate in, and renders even for a single season so the
- * current season is visible from any league page. The Leaderboard tab links
- * to the SELECTED season's scoped address (`/l/[slug]/leaderboard/s/[slug]`)
- * so the standings you land on are never ambiguous; selecting a different
- * season navigates there too. Events is league-wide (all seasons) for now —
- * per-season event filtering is future work.
+ * current season is visible from any league page. It is the SINGLE season
+ * control for the league: on the Leaderboard tab it drives the season-scoped
+ * standings (`/l/[slug]/leaderboard/s/[season]`); on the Events tab it drives
+ * the `?season=`-filtered event list. Switching tabs preserves the selected
+ * season, so the two tabs always agree on which season you're looking at.
  *
- * Client component: active-tab highlighting and the current-season override
- * need `usePathname` (legacy paths like /leaderboard count as their scoped
- * equivalents).
+ * Client component: active-tab highlighting, the current-season override, and
+ * reading the events tab's `?season=` need `usePathname`/`useSearchParams`
+ * (legacy paths like /leaderboard count as their scoped equivalents). Every
+ * route mounting this subnav is force-dynamic, so `useSearchParams` needs no
+ * Suspense boundary (that requirement is prerendered-route-only).
  */
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { LeagueSeasonSwitcher } from "@/components/league-season-switcher";
 
 export function LeagueSubnav({
@@ -37,20 +39,33 @@ export function LeagueSubnav({
   activeSeasonSlug: string | null;
 }) {
   const pathname = usePathname() ?? "";
+  const searchParams = useSearchParams();
   const basePath = `/l/${slug}`;
   const onLeaderboard =
     pathname.startsWith(`${basePath}/leaderboard`) ||
     pathname.startsWith("/leaderboard");
-  // On a season-addressed page, the selector reflects THAT season rather
-  // than the league's active one.
+  // The selector reflects whichever season the current tab is scoped to: the
+  // leaderboard path's `s/[season]` segment, else the events tab's `?season=`,
+  // else the league's active season (first as a last resort).
   const seasonMatch = pathname.match(
     new RegExp(`^${basePath}/leaderboard/s/([^/]+)`),
   );
   const currentSeasonSlug =
-    (seasonMatch && seasonMatch[1]) ?? activeSeasonSlug ?? seasons[0]?.slug;
+    (seasonMatch && seasonMatch[1]) ??
+    searchParams.get("season") ??
+    activeSeasonSlug ??
+    seasons[0]?.slug;
   const leaderboardHref = currentSeasonSlug
     ? `${basePath}/leaderboard/s/${currentSeasonSlug}`
     : `${basePath}/leaderboard`;
+  const eventsHref = currentSeasonSlug
+    ? `${basePath}?season=${currentSeasonSlug}`
+    : basePath;
+  // The one selector drives whichever tab is showing, keeping the season in
+  // sync when you move between Events and Leaderboard.
+  const buildSeasonHref = onLeaderboard
+    ? (s: string) => `${basePath}/leaderboard/s/${s}`
+    : (s: string) => `${basePath}?season=${s}`;
 
   const tabClass = (active: boolean) =>
     `border-b-2 px-1 py-2 text-sm transition-colors ${
@@ -73,7 +88,7 @@ export function LeagueSubnav({
             <LeagueSeasonSwitcher
               seasons={seasons}
               currentSlug={currentSeasonSlug}
-              basePath={`${basePath}/leaderboard/s`}
+              buildHref={buildSeasonHref}
               compact
             />
           </div>
@@ -81,7 +96,7 @@ export function LeagueSubnav({
         <span aria-hidden className="text-border">
           |
         </span>
-        <Link href={basePath} className={tabClass(!onLeaderboard)}>
+        <Link href={eventsHref} className={tabClass(!onLeaderboard)}>
           Events
         </Link>
         <Link href={leaderboardHref} className={tabClass(onLeaderboard)}>

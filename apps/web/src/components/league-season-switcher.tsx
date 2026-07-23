@@ -12,8 +12,11 @@ import {
 interface LeagueSeasonSwitcherProps {
   seasons: Array<{ slug: string; name: string }>;
   currentSlug: string;
-  /** e.g. "/l/rmsolo/leaderboard/s" — every option links to `${basePath}/${slug}`. */
-  basePath: string;
+  /** Destination for a chosen season slug. A function (not a fixed base path) so
+   *  one switcher can drive both the season-addressed leaderboard
+   *  (`/l/[slug]/leaderboard/s/[season]`) and the `?season=`-filtered events tab,
+   *  depending on which tab the subnav is showing. */
+  buildHref: (slug: string) => string;
   /** Slimmer trigger for the subnav bar. */
   compact?: boolean;
 }
@@ -27,7 +30,7 @@ interface LeagueSeasonSwitcherProps {
 export function LeagueSeasonSwitcher({
   seasons,
   currentSlug,
-  basePath,
+  buildHref,
   compact,
 }: LeagueSeasonSwitcherProps) {
   const router = useRouter();
@@ -36,7 +39,7 @@ export function LeagueSeasonSwitcher({
     <Select
       value={currentSlug}
       onValueChange={(v) => {
-        if (v) router.push(`${basePath}/${v}`);
+        if (v) router.push(buildHref(v));
       }}
     >
       <SelectTrigger
