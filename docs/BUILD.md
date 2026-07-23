@@ -37,7 +37,7 @@ External:
 [ Next.js ] ──REST──────▶ api.motorsportreg.com/rest/* (with stored access token)
 ```
 
-The "SQLite app DB" above is **SQLite locally** and **Turso (libSQL) in preview/prod** — same SQL dialect, swapped at the Prisma driver-adapter layer. See "Database Hosting" below for rationale. No Docker, Nginx, or Tailscale in the MVP.
+The "SQLite app DB" above is **SQLite locally** and **Turso (libSQL) in preview/prod** — same SQL dialect, swapped at the Prisma driver-adapter layer. See "Database Hosting" below for rationale. This is the Vercel-hosted production topology; no Nginx or Tailscale there. A self-hosted alternative (Docker Compose, plain SQLite volume, optional RMsolo ingest sidecar) also exists as of PR 2 — see "League Multi-Club (PR 2)" below and the Appendix.
 
 ### MSR OAuth 1.0a (verified)
 
@@ -763,6 +763,27 @@ Both rebuilds use the standard Prisma/SQLite table-rebuild pattern (`PRAGMA defe
 
 **Follow-up (not landed in this PR):** `Season.scoringPolicy.conePenaltyMs` is validated and enforced-equal to the shared `CONE_PENALTY_MS` constant (throws at season-load time on a mismatch — see `scoring-policy.ts` / `season-leaderboard.ts`), but isn't yet threaded into the per-entry cone math in `entry-best.ts` / `combined-event.ts` / `leaderboard.ts`. A season configured with a different cone penalty is rejected at load time rather than silently mis-scored; true per-season cone penalties await a later PR. `LeagueMembership` management UI (create/edit/remove ADMIN rows from the admin surface, rather than `prisma studio`) is also deferred.
 
+### League Multi-Club (PR 2) — RMsolo pipeline, public browsing, Docker ✓ (done 2026-07-23)
+
+PR 2 of the multi-club initiative, stacked on League Foundation (PR 1). Ships a second league (RMsolo) with its own full ingest pipeline, makes every league publicly browsable, and closes the deferred cone-penalty/error-boundary/backfill-test gaps PR 1 left open. Default-league (`pca-rmr`) routes remain byte-identical to PR 1 throughout — this PR is additive.
+
+**`Season.slug` migration (`20260723010000_season_slug`):** hand-written table rebuild adding a required `slug TEXT` column to `Season`, unique per `(leagueId, slug)`, backfilled for existing rows by a SQL approximation of `slugify()` (fixed punctuation set — space/underscore/apostrophe/period/ampersand/slash → `-`, collapsed, trimmed — see the migration's own header comment for the exact set and its limitation vs. the full TS `slugify()`). This is the addressing key `/l/[league]/leaderboard/s/[seasonSlug]` resolves against. It also **lifts create-season's old duplicate-year refusal** — season uniqueness is now by slug, not by `(leagueId, year)`, so a second season in the same calendar year (e.g. a Winter Series alongside a Summer Series) is a supported CLI operation, not just a schema possibility. `resolveSeasonBySlug(leagueId, slug)` and `activeSeason(leagueId)` (status `active`, newest year, tie newest id) in `src/lib/season-resolve.ts` are the two resolution paths pages use.
+
+**Multi-league data model summary:**
+
+- **RMsolo pipeline** (`src/lib/rmsolo-index.ts`/`rmsolo-parse.ts`/`rmsolo-pax.ts`/`rmsolo-ingest.ts`, ported from the archived `feat/rmsolo-ingest` branch, league-agnostic parsing + league-targeted ingest): `ingestRmsoloEvent({ leagueSlug, ... })` resolves/auto-creates the event's `Season` scoped to that league, and creates/updates `CarClass` rows scoped to that league (same class code can carry different PAX factors in two different leagues — isolation is by construction in the ingest write path, not a DB constraint, same posture as the `.axdb` path).
+- **Per-season PAX tables:** `getRmsoloPaxIndex` precedence is `Season.paxTable` JSON (per-season override) → built-in `RMSOLO_PAX_2026` table → a derived factor from run-group placement (`nearestPaxClass`) → `1.0` with a warning. No CLI flag writes `paxTable` today (a `--write-pax-table` option was scoped and dropped as YAGNI) — it's hand-edited or seeded via `season:create --policy-file`/direct DB write.
+- **`league:create` CLI** (`src/lib/create-league.ts` + `scripts/create-league.ts`): creates a `League` row plus a default `ScoringSystem` preset in one transaction (a league needs at least one preset before `resolveOrCreateSeason`'s ingest-time auto-create path can work). Mirrors `season:create`'s lib/CLI split. `--gate` defaults to `"required"` — see the operational invariant below.
+- **Public browsing routes** (login-less, respect each league's own gate): `/leagues` (directory), `/l/[league]` (home/events), `/l/[league]/leaderboard[/s/[seasonSlug]]`, `/l/[league]/events/[slug]`. Legacy routes (`/`, `/leaderboard[/year]`, `/events/...`) are unchanged and always resolve `DEFAULT_LEAGUE_SLUG`.
+- **Driver stats filters** (`/drivers/[id]`, `src/lib/driver-history.ts`): `?league=<slug|all>` × `?season=<id>` / `?from=&to=` / all-time. Counts aggregate across leagues under `league=all`; progression/time-delta charts always render one series per league.
+- **Cone-penalty threading (PR 1's deferred item, closed):** `bestCorrectedMsForEntry` / `leaderboard.ts` / `combined-event.ts` now accept a `penaltyMs` parameter (default `CONE_PENALTY_MS`), sourced from the entry's season's `scoringPolicy.conePenaltyMs`. The PR 1 throw-guard (season-load-time mismatch check against the shared constant) is removed now that the value is actually wired end-to-end instead of merely validated.
+- **App-level `error.tsx`:** a friendly message + error digest, no stack/internals leaked to the client; a malformed `scoringPolicy` still throws loudly server-side (visible in logs) but no longer renders a raw framework 500 page to visitors.
+- **Two-league coexistence** (`apps/web/tests/multi-league.test.ts`): one DB, PCA league (`.axdb` synthetic fixture) + RMsolo league (synthetic parsed events) — asserts `CarClass` same-code isolation with different factors, standings isolation, `/leagues` data-fn sees both, a cross-league driver (same identity hash in both leagues) aggregates per the driver-stats rules above, and legacy routes stay default-league-only.
+
+**Operational invariant (carried to AGENTS.md and README):** only the default league may run with `accessGate: "required"` — per-login MSR membership (`isRmrMember`) is checked against the *default* league's org only; `LeagueMembership` (per-league roles) isn't wired into gating yet. `league:create --gate` does not refuse `"required"` on a non-default league today, so this is an operator discipline, not an enforced constraint — true per-league membership is PR 3 scope.
+
+**Docker (`Dockerfile`/`compose.yaml`/`deploy/launchcontrol.env.example`, ported from the archive, already club-agnostic):** the optional `ingest` sidecar profile passes `--league "$${INGEST_LEAGUE:-}"` to `ingest:rmsolo`; an empty/unset `INGEST_LEAGUE` falls through to `DEFAULT_LEAGUE_SLUG` (the ingest CLI's own default, not a shell conditional). `deploy/launchcontrol.env.example` documents both `DEFAULT_LEAGUE_SLUG` and `INGEST_LEAGUE`, plus the first-boot step for adding a second league/season via `docker compose exec web pnpm --filter web league:create/season:create`. See the Appendix note below — containerization is no longer a deferred item.
+
 ### M3 — Public calendar (target: 0.5 session, after M2)
 
 - `/calendar` server-fetches `/rest/calendars/organization/{RMR_ORG_ID}`.
@@ -808,7 +829,7 @@ Resolved open questions from PRD development — preserved here as context for f
 
 Out of scope for the MVP but noted to keep prior thinking discoverable:
 
-- **Containerization** (Docker / `docker-compose`) for parity between dev, preview, and prod.
+- ~~**Containerization** (Docker / `docker-compose`) for parity between dev, preview, and prod.~~ **Done, PR 2 (2026-07-23):** `Dockerfile` + `compose.yaml` + `deploy/launchcontrol.env.example`, ported from the archived `feat/rmsolo-ingest` branch and made league-aware (`--league`/`INGEST_LEAGUE` on the ingest sidecar). This is an optional self-host path alongside the existing Vercel+Turso production deployment, not a replacement for it — see "League Multi-Club (PR 2)" above.
 - **Background ingestion worker** if `.axdb` uploads outgrow Vercel function limits.
 - **Revisit the `better-sqlite3` dependency.** `apps/web/src/lib/axdb-validate.ts` and `apps/web/src/lib/ingest.ts` both import `better-sqlite3` to read user-uploaded `.axdb` SQLite files. It is a native N-API addon (statically links SQLite C) and has caused real friction:
   - Every install needs either a `prebuild-install` binary matching `<node-abi>-<platform>-<arch>` or a fresh `node-gyp` compile (Python + clang). Node 24 / ABI v137 on darwin-arm64 may not have a published prebuild yet, forcing source builds.
