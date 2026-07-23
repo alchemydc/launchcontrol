@@ -20,6 +20,7 @@ function entry(overrides: {
     carNumber: overrides.carNumber,
     carDescription: null,
     bestCommittedRunNumber: null,
+    paxIndexApplied: overrides.paxIndex,
     driver: { id: overrides.driverId, firstName, lastInitial },
     class: { code: overrides.classCode },
     paxClass: { code: overrides.classCode, paxIndex: { toString: () => String(overrides.paxIndex) } },
