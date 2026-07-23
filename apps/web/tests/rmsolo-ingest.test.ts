@@ -286,3 +286,34 @@ describe("run-group paxClass derivation", () => {
     expect(entry!.paxClass.code).toBe("AS");
   });
 });
+
+describe("Entry.paxIndexApplied snapshot", () => {
+  // The run-group derivation event (carNumber 198 → paxClass AST @ 0.836,
+  // fallback entries → paxClass = entered class) is ingested in the block above,
+  // so by now the DB holds both normal-class entries and a derived-factor one.
+  it("stamps paxIndexApplied equal to the resolved paxClass factor for every entry", async () => {
+    const entries = await prisma.entry.findMany({ include: { paxClass: true } });
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.paxIndexApplied, `entry ${e.id} should carry paxIndexApplied`).not.toBeNull();
+      expect(Number(e.paxIndexApplied)).toBeCloseTo(Number(e.paxClass.paxIndex), 6);
+    }
+  });
+
+  it("stamps the derived run-group factor (not 1.0) on the paxClass-derived entry", async () => {
+    const entry = await prisma.entry.findFirstOrThrow({
+      where: { carNumber: "198", event: { slug: "2026-09-01-summer-2026-9" } },
+      include: { paxClass: true },
+    });
+    expect(Number(entry.paxIndexApplied)).toBeCloseTo(0.836, 6);
+    expect(entry.paxClass.code).toBe("AST");
+  });
+
+  it("snapshot survives a later factor change", async () => {
+    const entry = await prisma.entry.findFirstOrThrow({ include: { paxClass: true } });
+    const before = Number(entry.paxIndexApplied);
+    await prisma.carClass.update({ where: { id: entry.paxClassId }, data: { paxIndex: 0.5 } });
+    const after = await prisma.entry.findUniqueOrThrow({ where: { id: entry.id } });
+    expect(Number(after.paxIndexApplied)).toBe(before); // frozen — decoupled from the live CarClass
+  });
+});
