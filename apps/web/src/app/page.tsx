@@ -12,7 +12,7 @@ export default async function HomePage({
 }) {
   const league = await getLeagueConfig();
   if (league.accessGate !== "required") {
-    return <EventsHome searchParams={searchParams} />;
+    return <EventsHome searchParams={searchParams} leagueId={league.id} />;
   }
 
   const session = await getSession();
@@ -20,7 +20,7 @@ export default async function HomePage({
   const returnTo = sanitizeReturnTo(rawReturnTo);
 
   if (session.isRmrMember) {
-    return <EventsHome searchParams={searchParams} />;
+    return <EventsHome searchParams={searchParams} leagueId={league.id} />;
   }
 
   return <Landing signedIn={Boolean(session.msrUid)} returnTo={returnTo} />;

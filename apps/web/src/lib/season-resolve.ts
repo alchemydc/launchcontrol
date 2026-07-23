@@ -86,6 +86,25 @@ export async function resolveSeasonBySlug(
 }
 
 /**
+ * List every Season row under a league, newest-first (year desc, ties by id
+ * desc — same ordering convention as `activeSeason`). Powers the season
+ * switcher on public browsing routes (Task 5's `/l/[league]/leaderboard*`),
+ * which addresses seasons by slug and labels them by name rather than by
+ * bare year (a league can have more than one season per year, e.g. a Winter
+ * Series alongside the main season).
+ */
+export async function listSeasonsForLeague(
+  client: PrismaClient | Prisma.TransactionClient,
+  leagueId: number,
+): Promise<Array<Pick<Season, "id" | "slug" | "name" | "year" | "status">>> {
+  return client.season.findMany({
+    where: { leagueId },
+    orderBy: [{ year: "desc" }, { id: "desc" }],
+    select: { id: true, slug: true, name: true, year: true, status: true },
+  });
+}
+
+/**
  * The league's "active" season for default (no-seasonSlug) URLs: status
  * "active", newest year, ties broken by newest id (matches the id-asc
  * determinism convention used elsewhere in this file). Returns null for a

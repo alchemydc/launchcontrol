@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { buildSeasonLeaderboard, listSeasonYears } from "@/lib/season-leaderboard";
 import { SeasonLeaderboardView } from "../season-leaderboard-view";
+import { SeasonSwitcher } from "../season-switcher";
 import { requireRmrMember } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +28,15 @@ export default async function LeaderboardYearPage({
 
   return (
     <SeasonLeaderboardView
-      year={year}
-      years={years}
+      title={`${year} Season Leaderboard`}
+      switcher={
+        years.length > 1 ? (
+          <div className="sm:shrink-0 sm:ml-4">
+            <SeasonSwitcher years={years} currentYear={year} />
+          </div>
+        ) : null
+      }
+      periodLabel={String(year)}
       standings={result.sections}
       totalEvents={result.totalEvents}
       completedEvents={result.completedEvents}

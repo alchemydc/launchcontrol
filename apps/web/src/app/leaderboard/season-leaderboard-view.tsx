@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DriverLink } from "@/components/driver-link";
@@ -14,11 +15,19 @@ import type {
   SeasonStandingsByClass,
   SeasonStandingsRow,
 } from "@/lib/season-leaderboard";
-import { SeasonSwitcher } from "./season-switcher";
 
 interface SeasonLeaderboardViewProps {
-  year: number;
-  years: number[];
+  /** Heading text, e.g. "2026 Season Leaderboard" (legacy, by year) or
+   *  "<Season name> Leaderboard" (league-scoped, by season). */
+  title: string;
+  /** Rendered in the header's switcher slot (already wrapped in its layout
+   *  div by the caller) — `null`/omitted renders nothing, same as the
+   *  legacy `years.length > 1` guard did inline. */
+  switcher?: ReactNode;
+  /** Short label for the empty-standings message ("No season data available
+   *  for {periodLabel}.") — the bare year for legacy pages, the season name
+   *  for league-scoped pages. */
+  periodLabel: string;
   standings: SeasonStandingsByClass[];
   totalEvents: number;
   completedEvents: number;
@@ -278,8 +287,9 @@ function ClassJumpBar({
 }
 
 export function SeasonLeaderboardView({
-  year,
-  years,
+  title,
+  switcher,
+  periodLabel,
   standings,
   totalEvents,
   completedEvents,
@@ -297,7 +307,7 @@ export function SeasonLeaderboardView({
             <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
             <div className="min-w-0">
               <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-                {year} Season Leaderboard
+                {title}
               </h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Points are awarded per event: 1000 to the class winner, others
@@ -309,11 +319,7 @@ export function SeasonLeaderboardView({
               </p>
             </div>
           </div>
-          {years.length > 1 && (
-            <div className="sm:shrink-0 sm:ml-4">
-              <SeasonSwitcher years={years} currentYear={year} />
-            </div>
-          )}
+          {switcher}
         </div>
       </header>
 
@@ -333,7 +339,7 @@ export function SeasonLeaderboardView({
         <div className="flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-12">
           <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
           <p className="text-sm text-muted-foreground">
-            No season data available for {year}.
+            No season data available for {periodLabel}.
           </p>
         </div>
       ) : (

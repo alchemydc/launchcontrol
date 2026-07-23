@@ -3,17 +3,28 @@ import { getLeagueConfig } from "@/lib/league-config";
 
 const API_BASE = "https://api.smugmug.com/api/v2";
 
+export type SmugmugLeagueTarget = {
+  smugmugUser: string | null;
+  smugmugDisciplinePath: string | null;
+};
+
 // The League row is authoritative for smugmugUser/smugmugDisciplinePath;
 // SMUGMUG_USER/SMUGMUG_DISCIPLINE_PATH env vars are honored as a fallback
 // only when the League row leaves the field unset (null), with a hardcoded
 // last resort so a league with neither configured still resolves to
-// something (parity with the pre-League behavior).
-async function resolveSmugmugTarget(): Promise<{ user: string; discipline: string }> {
-  const league = await getLeagueConfig();
+// something (parity with the pre-League behavior). `league` overrides which
+// League's fields are consulted — callers on `/l/[league]` routes (Task 5)
+// pass THAT league's config so photos never resolve against the deployment's
+// default league; omitted, this falls back to `getLeagueConfig()` (default
+// league), preserving every pre-Task-5 call site's behavior exactly.
+async function resolveSmugmugTarget(
+  league?: SmugmugLeagueTarget,
+): Promise<{ user: string; discipline: string }> {
+  const target = league ?? (await getLeagueConfig());
   return {
-    user: league.smugmugUser || process.env.SMUGMUG_USER || "rmrpca",
+    user: target.smugmugUser || process.env.SMUGMUG_USER || "rmrpca",
     discipline:
-      league.smugmugDisciplinePath || process.env.SMUGMUG_DISCIPLINE_PATH || "Autocross",
+      target.smugmugDisciplinePath || process.env.SMUGMUG_DISCIPLINE_PATH || "Autocross",
   };
 }
 
@@ -171,7 +182,8 @@ let missingKeyWarned = false;
 
 export async function findSmugmugEventFolder(
   eventName: string,
-  eventDate: Date
+  eventDate: Date,
+  league?: SmugmugLeagueTarget,
 ): Promise<string | null> {
   if (!process.env.SMUGMUG_API_KEY) {
     if (!missingKeyWarned) {
@@ -182,7 +194,7 @@ export async function findSmugmugEventFolder(
   }
 
   try {
-    const { user, discipline } = await resolveSmugmugTarget();
+    const { user, discipline } = await resolveSmugmugTarget(league);
     const nodeId = await cachedYearNodeId(user, discipline, eventDate.getUTCFullYear());
     if (!nodeId) return null;
     const folders = await cachedEventFolders(user, discipline, nodeId);

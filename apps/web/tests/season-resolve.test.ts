@@ -5,7 +5,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { slugify } from "@/lib/ingest";
-import { activeSeason, resolveOrCreateSeason, resolveSeasonBySlug } from "@/lib/season-resolve";
+import {
+  activeSeason,
+  listSeasonsForLeague,
+  resolveOrCreateSeason,
+  resolveSeasonBySlug,
+} from "@/lib/season-resolve";
 
 // Task 2: season addressing. `resolveOrCreateSeason`'s auto-create path is
 // exercised elsewhere too (tests/league-seed.test.ts, tests/ingest-season-policy.test.ts)
@@ -246,5 +251,81 @@ describe("activeSeason", () => {
       },
     });
     expect(await activeSeason(prisma, league.id)).toBeNull();
+  });
+});
+
+// Task 5: powers the league-scoped leaderboard season switcher, which
+// addresses seasons by slug and labels them by name (unlike the legacy
+// year-based switcher) — a league can have more than one season per year.
+describe("listSeasonsForLeague", () => {
+  it("lists every season for a league, newest year first", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "list-seasons-test",
+        name: "List Seasons Test",
+        siteTitle: "x",
+        siteDescription: "x",
+        landingDescription: "x",
+      },
+    });
+    await prisma.season.create({
+      data: { leagueId: league.id, name: "2024 Season", slug: "2024-season", year: 2024, scoringPolicy: PCA_POLICY },
+    });
+    await prisma.season.create({
+      data: { leagueId: league.id, name: "2026 Season", slug: "2026-season", year: 2026, scoringPolicy: PCA_POLICY },
+    });
+    await prisma.season.create({
+      data: { leagueId: league.id, name: "2025 Season", slug: "2025-season", year: 2025, scoringPolicy: PCA_POLICY },
+    });
+
+    const seasons = await listSeasonsForLeague(prisma, league.id);
+    expect(seasons.map((s) => s.year)).toEqual([2026, 2025, 2024]);
+  });
+
+  it("breaks a same-year tie by newest id (a Winter Series alongside the main season)", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "list-seasons-tie-test",
+        name: "List Seasons Tie Test",
+        siteTitle: "x",
+        siteDescription: "x",
+        landingDescription: "x",
+      },
+    });
+    const main = await prisma.season.create({
+      data: { leagueId: league.id, name: "2026 Season", slug: "2026-season", year: 2026, scoringPolicy: PCA_POLICY },
+    });
+    const winter = await prisma.season.create({
+      data: { leagueId: league.id, name: "2026 Winter Series", slug: "2026-winter-series", year: 2026, scoringPolicy: PCA_POLICY },
+    });
+
+    const seasons = await listSeasonsForLeague(prisma, league.id);
+    expect(seasons.map((s) => s.id)).toEqual([winter.id, main.id]);
+  });
+
+  it("is scoped to the given league", async () => {
+    const otherLeague = await prisma.league.create({
+      data: {
+        slug: "list-seasons-other-league",
+        name: "Other",
+        siteTitle: "x",
+        siteDescription: "x",
+        landingDescription: "x",
+      },
+    });
+    await prisma.season.create({
+      data: { leagueId: otherLeague.id, name: "2026 Season", slug: "2026-season", year: 2026, scoringPolicy: PCA_POLICY },
+    });
+
+    const league = await prisma.league.create({
+      data: {
+        slug: "list-seasons-scope-test",
+        name: "Scope Test",
+        siteTitle: "x",
+        siteDescription: "x",
+        landingDescription: "x",
+      },
+    });
+    expect(await listSeasonsForLeague(prisma, league.id)).toEqual([]);
   });
 });

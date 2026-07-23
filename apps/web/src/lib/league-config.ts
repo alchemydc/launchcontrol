@@ -15,6 +15,7 @@ import { prisma as defaultClient } from "@/lib/prisma";
 export type AccessGate = "required" | "optional" | "none";
 
 export type LeagueConfig = {
+  id: number;
   slug: string;
   name: string;
   siteTitle: string;
@@ -67,19 +68,20 @@ export async function resolveDefaultLeague(
   return client.league.findUnique({ where: { slug: defaultLeagueSlug() } });
 }
 
-async function loadLeagueConfig(client: PrismaClient): Promise<LeagueConfig> {
-  const league = await resolveDefaultLeague(client);
-  if (!league) {
-    throw new Error(
-      `[league-config] no League row for DEFAULT_LEAGUE_SLUG=${JSON.stringify(defaultLeagueSlug())} — run 'prisma migrate deploy' to seed it.`,
-    );
-  }
-
+/**
+ * Pure League-row → LeagueConfig mapper — the one place accessGate coercion,
+ * env-fallback resolution (msrOrgId, loginEnabled), etc. happen. Shared by
+ * `loadLeagueConfig` (the default-league path) and `getLeagueConfigForSlug`
+ * (Task 5's arbitrary-league path for `/l/[league]` routes) so both produce
+ * an identically-shaped config from a raw League row.
+ */
+function toLeagueConfig(league: League): LeagueConfig {
   const accessGate = coerceAccessGate(league.accessGate);
   const msrOrgId =
     league.msrOrgId || process.env.MSR_ORG_ID || process.env.MSR_RMR_ORG_ID || null;
 
   return {
+    id: league.id,
     slug: league.slug,
     name: league.name,
     siteTitle: league.siteTitle,
@@ -92,6 +94,16 @@ async function loadLeagueConfig(client: PrismaClient): Promise<LeagueConfig> {
     smugmugUser: league.smugmugUser,
     smugmugDisciplinePath: league.smugmugDisciplinePath,
   };
+}
+
+async function loadLeagueConfig(client: PrismaClient): Promise<LeagueConfig> {
+  const league = await resolveDefaultLeague(client);
+  if (!league) {
+    throw new Error(
+      `[league-config] no League row for DEFAULT_LEAGUE_SLUG=${JSON.stringify(defaultLeagueSlug())} — run 'prisma migrate deploy' to seed it.`,
+    );
+  }
+  return toLeagueConfig(league);
 }
 
 /**
@@ -126,3 +138,32 @@ export async function resolveLeague(
   }
   return resolveDefaultLeague(client);
 }
+
+/**
+ * League-scoped counterpart to `getLeagueConfig` for Task 5's `/l/[league]`
+ * routes: resolves an ARBITRARY league by slug (not just DEFAULT_LEAGUE_SLUG)
+ * and returns its full branding/gate/smugmug config, or `null` on an unknown
+ * slug — every `/l/[league]` route 404s on that rather than throwing.
+ * Memoized per (slug, client) via React `cache()`, same pattern as
+ * `getLeagueConfig`, so every Server Component in one request's `/l/[league]`
+ * render tree (layout + page + nested season/event pages) shares one DB read.
+ */
+export const getLeagueConfigForSlug = cache(
+  async (slug: string, client: PrismaClient = defaultClient): Promise<LeagueConfig | null> => {
+    const league = await resolveLeague(slug, client);
+    return league ? toLeagueConfig(league) : null;
+  },
+);
+
+/**
+ * Total League row count, memoized per request via React `cache()` — powers
+ * the header nav's "Leagues" link, which only renders when more than one
+ * league exists (single-league deployments, e.g. PCA production, see zero
+ * nav change). Deliberately a bare count rather than routing through
+ * `listLeagueDirectory` (lib/league-directory.ts), which does per-league
+ * active-season + event-count lookups this check doesn't need — every page
+ * render hits this via HeaderNav, so it stays a single cheap query.
+ */
+export const countLeagues = cache(
+  (client: PrismaClient = defaultClient): Promise<number> => client.league.count(),
+);

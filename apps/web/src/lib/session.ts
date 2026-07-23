@@ -14,7 +14,7 @@
 import { getIronSession, type IronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getLeagueConfig } from "@/lib/league-config";
+import { getLeagueConfig, type AccessGate } from "@/lib/league-config";
 
 // ---------------------------------------------------------------------------
 // SESSION_SECRET is checked lazily on first use — not at module load — so
@@ -131,18 +131,57 @@ export function sanitizeReturnTo(raw: string | string[] | null | undefined): str
 }
 
 // ---------------------------------------------------------------------------
-// requireRmrMember — page-level gate
+// requireMember / requireRmrMember — page-level gate
 //
 // Callers MUST NOT wrap this in try/catch — redirect() throws NEXT_REDIRECT.
 // Gate runs before any data fetch so unauthorized viewers cannot probe slug
 // existence via 404 vs redirect behavior.
 // ---------------------------------------------------------------------------
 
-export async function requireRmrMember(
-  returnPath?: string
+/**
+ * Pure gate-selection decision behind `requireMember`: given a league's
+ * accessGate and the session fields membership depends on, decide whether
+ * the viewer is let through or bounced. Extracted from `requireMember` so
+ * gate SELECTION is unit-testable without mocking next/navigation's
+ * redirect()/cookies() — the impure wrapper below only needs to act on the
+ * result.
+ */
+export function decideMemberGate(
+  accessGate: AccessGate,
+  session: Pick<SessionData, "msrUid" | "isRmrMember">,
+): "allow" | "redirect" {
+  if (accessGate !== "required") return "allow";
+  return session.msrUid && session.isRmrMember ? "allow" : "redirect";
+}
+
+/**
+ * League-aware page gate (Task 5): identical rule to the original
+ * `requireRmrMember`, parameterized on an arbitrary league's `accessGate`
+ * instead of always reading the deployment's default league via
+ * `getLeagueConfig()` — so `/l/[league]` routes gate on THAT league's
+ * config, not the default league's.
+ *
+ * `homeHref` is where a failed gate redirects to (default "/", matching
+ * `requireRmrMember`'s legacy behavior exactly); league-scoped routes pass
+ * `/l/[slug]` so a bounced viewer lands on that league's own home (which
+ * itself renders the Landing view for a required gate) rather than the
+ * default league's.
+ *
+ * Note: `session.isRmrMember` is computed at MSR OAuth login time against
+ * only the DEFAULT league's `msrOrgId` (see api/auth/msr/callback/route.ts)
+ * — per-league membership (the unused `LeagueMembership` table) isn't wired
+ * into login yet, so a non-default league configured with accessGate
+ * "required" gates on default-league membership today. Every league created
+ * via `league:create` for this PR (RMsolo) is expected to use "optional" or
+ * "none", so this doesn't bite in practice; wiring login to per-league org
+ * membership is PR 3 territory (roles UI).
+ */
+export async function requireMember(
+  league: { accessGate: AccessGate },
+  returnPath?: string,
+  homeHref: string = "/",
 ): Promise<{ session: IronSession<SessionData> | null }> {
-  // Public deployments (accessGate optional|none) never gate results pages.
-  const league = await getLeagueConfig();
+  // Public leagues (accessGate optional|none) never gate results pages.
   if (league.accessGate !== "required") {
     if (!process.env.SESSION_SECRET) {
       // No sessions configured at all (login disabled) — nothing to gate with.
@@ -153,10 +192,17 @@ export async function requireRmrMember(
 
   const session = await getSession();
 
-  if (!session.msrUid || !session.isRmrMember) {
+  if (decideMemberGate(league.accessGate, session) === "redirect") {
     const safe = returnPath ? sanitizeReturnTo(returnPath) : null;
-    redirect(safe ? `/?returnTo=${encodeURIComponent(safe)}` : "/");
+    redirect(safe ? `${homeHref}?returnTo=${encodeURIComponent(safe)}` : homeHref);
   }
 
   return { session };
+}
+
+export async function requireRmrMember(
+  returnPath?: string
+): Promise<{ session: IronSession<SessionData> | null }> {
+  const league = await getLeagueConfig();
+  return requireMember(league, returnPath);
 }

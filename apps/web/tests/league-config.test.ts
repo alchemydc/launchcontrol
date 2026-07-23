@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
-import { getLeagueConfig, resolveLeague } from "@/lib/league-config";
+import { countLeagues, getLeagueConfig, getLeagueConfigForSlug, resolveLeague } from "@/lib/league-config";
 
 // getLeagueConfig() resolves branding/gate/smugmug config from the League row
 // named by DEFAULT_LEAGUE_SLUG (default "pca-rmr"), replacing the archive's
@@ -221,6 +221,68 @@ describe("getLeagueConfig — accessGate variants", () => {
     process.env.DEFAULT_LEAGUE_SLUG = "public-league";
     const config = await getLeagueConfig(prisma);
     expect(config.accessGate).toBe("optional");
+    await prisma.league.delete({ where: { id: league.id } });
+  });
+});
+
+// Task 5: /l/[league] routes resolve an ARBITRARY league by slug, not just
+// DEFAULT_LEAGUE_SLUG — getLeagueConfigForSlug is the league-scoped
+// counterpart to getLeagueConfig for that.
+describe("getLeagueConfigForSlug — Task 5 arbitrary-league resolution", () => {
+  it("resolves a non-default league's full config by slug", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "second-league",
+        name: "Second League",
+        siteTitle: "Launch Control · Second League",
+        siteDescription: "x",
+        footerText: "x",
+        landingDescription: "x",
+        accessGate: "optional",
+        smugmugUser: "second-league-user",
+        smugmugDisciplinePath: "Autocross",
+      },
+    });
+    // DEFAULT_LEAGUE_SLUG stays "pca-rmr" (unset) — the explicit slug wins,
+    // same rule as resolveLeague.
+    const config = await getLeagueConfigForSlug("second-league", prisma);
+    expect(config?.id).toBe(league.id);
+    expect(config?.slug).toBe("second-league");
+    expect(config?.name).toBe("Second League");
+    expect(config?.accessGate).toBe("optional");
+    expect(config?.smugmugUser).toBe("second-league-user");
+    await prisma.league.delete({ where: { id: league.id } });
+  });
+
+  it("returns null (never throws) for an unknown slug", async () => {
+    await expect(getLeagueConfigForSlug("no-such-league", prisma)).resolves.toBeNull();
+  });
+
+  it("still resolves the default league by its own slug (no special-casing)", async () => {
+    const config = await getLeagueConfigForSlug("pca-rmr", prisma);
+    expect(config?.slug).toBe("pca-rmr");
+    expect(config?.name).toBe("PCA Rocky Mountain Region");
+  });
+});
+
+// Task 5: header nav's "Leagues" link only renders when >1 league exists.
+describe("countLeagues", () => {
+  it("returns 1 for a fresh seed (only the default league)", async () => {
+    expect(await countLeagues(prisma)).toBe(1);
+  });
+
+  it("increases as leagues are added", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "count-leagues-test",
+        name: "x",
+        siteTitle: "x",
+        siteDescription: "x",
+        footerText: "x",
+        landingDescription: "x",
+      },
+    });
+    expect(await countLeagues(prisma)).toBe(2);
     await prisma.league.delete({ where: { id: league.id } });
   });
 });
