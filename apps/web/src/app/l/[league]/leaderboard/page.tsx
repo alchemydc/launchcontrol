@@ -14,10 +14,13 @@ export const dynamic = "force-dynamic";
  */
 export default async function LeagueLeaderboardPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ league: string }>;
+  searchParams: Promise<{ class?: string; sort?: string }>;
 }) {
   const { league: slug } = await params;
+  const { class: activeClassCode, sort } = await searchParams;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) notFound();
 
@@ -28,9 +31,9 @@ export default async function LeagueLeaderboardPage({
   const season = await activeSeason(prisma, league.id);
 
   return renderLeagueSeasonLeaderboard({
-    leagueId: league.id,
     leagueName: league.name,
-    leagueSlug: slug,
     season,
+    activeClassCode,
+    sortBy: sort,
   });
 }

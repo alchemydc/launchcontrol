@@ -14,6 +14,8 @@ interface LeagueSeasonSwitcherProps {
   currentSlug: string;
   /** e.g. "/l/rmsolo/leaderboard/s" — every option links to `${basePath}/${slug}`. */
   basePath: string;
+  /** Slimmer trigger for the subnav bar. */
+  compact?: boolean;
 }
 
 /**
@@ -26,6 +28,7 @@ export function LeagueSeasonSwitcher({
   seasons,
   currentSlug,
   basePath,
+  compact,
 }: LeagueSeasonSwitcherProps) {
   const router = useRouter();
 
@@ -36,8 +39,18 @@ export function LeagueSeasonSwitcher({
         if (v) router.push(`${basePath}/${v}`);
       }}
     >
-      <SelectTrigger className="w-full sm:w-48 bg-background">
-        <SelectValue />
+      <SelectTrigger
+        className={
+          compact
+            ? "h-8 w-auto max-w-48 bg-background text-sm"
+            : "w-full sm:w-48 bg-background"
+        }
+      >
+        {/* Explicit child: Base UI's Select.Value renders the raw value
+            (the slug) when empty — we want the season's display name. */}
+        <SelectValue>
+          {seasons.find((s) => s.slug === currentSlug)?.name ?? currentSlug}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {seasons.map((s) => (

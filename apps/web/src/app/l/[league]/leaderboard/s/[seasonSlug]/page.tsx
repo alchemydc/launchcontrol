@@ -15,10 +15,13 @@ export const dynamic = "force-dynamic";
  */
 export default async function LeagueLeaderboardSeasonPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ league: string; seasonSlug: string }>;
+  searchParams: Promise<{ class?: string; sort?: string }>;
 }) {
   const { league: slug, seasonSlug } = await params;
+  const { class: activeClassCode, sort } = await searchParams;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) notFound();
 
@@ -30,9 +33,9 @@ export default async function LeagueLeaderboardSeasonPage({
   if (!season) notFound();
 
   return renderLeagueSeasonLeaderboard({
-    leagueId: league.id,
     leagueName: league.name,
-    leagueSlug: slug,
     season,
+    activeClassCode,
+    sortBy: sort,
   });
 }
