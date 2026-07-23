@@ -208,9 +208,17 @@ export async function updateLeague(
 
 /**
  * Deletes a League row along with its ScoringSystem presets and
- * LeagueMemberships (both `ON DELETE CASCADE` at the DB level) and its
- * Season rows (deleted explicitly here since `Season.leagueId` is
- * `ON DELETE RESTRICT` — a league is never dropped out from under events).
+ * LeagueMemberships (both `ON DELETE CASCADE` at the DB level). Everything
+ * else is deleted explicitly, in order, because their FKs are `ON DELETE
+ * RESTRICT` (a league is never dropped out from under events, and a
+ * CarClass is never dropped out from under an Entry):
+ *   1. CarClass rows scoped to the league (safe once we know there are no
+ *      events — see below — since an Entry can only exist under an Event,
+ *      so zero events under this league implies zero Entries referencing
+ *      any of its CarClass rows, even ones left behind by a prior
+ *      deleteEventWithSweep on a now-deleted event).
+ *   2. Season rows scoped to the league.
+ *   3. The League row itself.
  * Refuses (throwing, without deleting anything) if any Event exists under
  * any of the league's seasons — the existence check and the delete happen
  * in one transaction so a concurrent ingest can't sneak an Event in between.
@@ -232,6 +240,7 @@ export async function deleteLeague(client: PrismaClient, slug: string): Promise<
       throw new Error(`[delete-league] league '${slug}' has events — delete its events first.`);
     }
 
+    await tx.carClass.deleteMany({ where: { leagueId: league.id } });
     await tx.season.deleteMany({ where: { leagueId: league.id } });
     await tx.league.delete({ where: { id: league.id } });
   });

@@ -129,6 +129,20 @@ describe("deleteLeague", () => {
     expect(await prisma.season.findUnique({ where: { id: season.id } })).toBeNull();
   });
 
+  it("deletes an eventless league's orphaned CarClass rows too", async () => {
+    // Simulates a league whose events were all deleted via deleteEventWithSweep,
+    // which leaves CarClass rows behind (CarClass.leagueId is ON DELETE RESTRICT).
+    const { league } = await createLeague({ slug: "dl-orphan-class", name: "DL Orphan Class League" }, prisma);
+    const carClass = await prisma.carClass.create({
+      data: { leagueId: league.id, code: "STK" },
+    });
+
+    await deleteLeague(prisma, league.slug);
+
+    expect(await prisma.league.findUnique({ where: { slug: league.slug } })).toBeNull();
+    expect(await prisma.carClass.findUnique({ where: { id: carClass.id } })).toBeNull();
+  });
+
   it("refuses when events exist", async () => {
     const { league } = await createLeague({ slug: "dl-has-events", name: "DL Has Events League" }, prisma);
     const season = await createSeason({ leagueSlug: league.slug, name: "DL Events Season", year: 2091 }, prisma);
@@ -140,12 +154,16 @@ describe("deleteLeague", () => {
         date: new Date("2091-05-01T00:00:00.000Z"),
       },
     });
+    const carClass = await prisma.carClass.create({
+      data: { leagueId: league.id, code: "STK" },
+    });
 
     await expect(deleteLeague(prisma, league.slug)).rejects.toThrow(/has events/i);
 
     // Nothing was deleted.
     expect(await prisma.league.findUnique({ where: { slug: league.slug } })).not.toBeNull();
     expect(await prisma.season.findUnique({ where: { id: season.id } })).not.toBeNull();
+    expect(await prisma.carClass.findUnique({ where: { id: carClass.id } })).not.toBeNull();
   });
 
   it("rejects an unknown league slug", async () => {
