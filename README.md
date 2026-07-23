@@ -28,16 +28,31 @@ pnpm --filter web dev
 
 Open http://localhost:3000. See [docs/BUILD.md](docs/BUILD.md) for ingest CLI, schema migration, and Turso ops.
 
-## Environment variables
+## Leagues & Seasons
 
-| Variable | Local default | Purpose |
+Tenant config lives in the database, not environment variables. A deployment's branding, access rule, and scoring all resolve from `League`/`Season`/`ScoringSystem` rows — see `apps/web/.env.example` for connection/secrets config (DB, MSR, SmugMug, session).
+
+- **`League`** — one row per deployment: site branding (name, title, description, footer), the MSR access gate and org, and SmugMug lookup defaults. `DEFAULT_LEAGUE_SLUG` (env, default `pca-rmr`) is the only tenant-selecting env var — it names which `League` row this deployment serves. A fresh DB seeds the `pca-rmr` row via the League Foundation migration, reproducing the original production deployment byte-for-byte.
+- **`ScoringSystem`** — named scoring presets owned by a league (e.g. "PCA Classic").
+- **`Season`** — one per league-year. Its `scoringPolicy` is a **snapshot** copy of a `ScoringSystem` preset's policy, taken at creation time — never a live reference — so editing a preset later never reshapes a past season's standings.
+
+Create a new season with:
+
+```sh
+pnpm --filter web season:create --league pca-rmr --name "2027 Season" --year 2027 --planned 6 \
+  [--preset "PCA Classic" | --policy-file ./policy.json]
+```
+
+**ScoringPolicy v1** (the JSON shape snapshotted onto `Season.scoringPolicy`):
+
+| Field | Values | Meaning |
 |---|---|---|
-| `DATABASE_URL` | `file:./dev.db` | Local libSQL file path |
-| `TURSO_DATABASE_URL` | _(blank)_ | Turso remote URL — set in Vercel for preview/prod |
-| `TURSO_AUTH_TOKEN` | _(blank)_ | Turso auth token — set in Vercel for preview/prod |
-| `SMUGMUG_API_KEY` | _(blank)_ | SmugMug API key. Optional — leave blank locally; the event "Photos ↗" link is hidden when unset. |
-| `SMUGMUG_USER` | `rmrpca` | SmugMug account whose galleries are searched. Hard-coded to RMR PCA for MVP. |
-| `SMUGMUG_DISCIPLINE_PATH` | `Autocross` | Discipline folder within the SmugMug account. |
+| `drops` | `"fixed"` \| `"proportional"` | fixed: best-N-of-M scores count regardless of season progress (PCA). proportional: the drop count scales with events completed. |
+| `paxSection` | boolean | Render a synthetic overall-PAX standings section, pinned first. |
+| `classMetric` | `"raw"` \| `"pax"` | Rank class sections on best corrected time, or on PAX-adjusted time. |
+| `conePenaltyMs` | number | Milliseconds added per cone struck (PCA convention: 2000). Per-entry scoring isn't wired to read this field yet, so a `Season` must set it equal to the app's shared cone-penalty constant — the app throws loudly at season-load time on a mismatch rather than silently scoring with the wrong value. |
+
+`League.footerText` renders verbatim in the site footer when set; a league with `footerText` left `null` falls back to the generic **"Powered by Launch Control"** string.
 
 ## Project status
 
