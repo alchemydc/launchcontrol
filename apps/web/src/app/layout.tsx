@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { HeaderNav } from "@/components/header-nav";
+import { getLeagueConfig } from "@/lib/league-config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,17 +15,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: { default: "Launch Control · PCA RMR", template: "%s · Launch Control" },
-  description:
-    "Rocky Mountain Region autocross results, calendar, and community media.",
-};
+// The root layout resolves branding from the DB on every request (via
+// getLeagueConfig()). Force dynamic rendering for the whole tree so Next
+// never tries to statically prerender routes like /_not-found against a
+// build-time DB connection that may not exist yet (e.g. a fresh checkout
+// before `prisma migrate deploy`).
+export const dynamic = "force-dynamic";
 
-export default function RootLayout({
+export async function generateMetadata(): Promise<Metadata> {
+  const league = await getLeagueConfig();
+  return {
+    title: { default: league.siteTitle, template: "%s · Launch Control" },
+    description: league.siteDescription,
+  };
+}
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const league = await getLeagueConfig();
   return (
     <html
       lang="en"
@@ -45,7 +56,7 @@ export default function RootLayout({
         {children}
 
         <footer className="mt-auto border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
-          Built for PCA Rocky Mountain Region · Autocross results from VisualAX
+          {league.footerText ?? "Powered by Launch Control"}
         </footer>
       </body>
     </html>

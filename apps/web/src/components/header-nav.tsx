@@ -10,27 +10,35 @@
 
 import Link from "next/link";
 import { getSession } from "@/lib/session";
+import { getLeagueConfig } from "@/lib/league-config";
 import { isAdmin } from "@/lib/admin";
 
 const linkClass =
   "text-sm text-muted-foreground hover:text-foreground transition-colors";
 
 export async function HeaderNav() {
-  const session = await getSession();
-  const isSignedIn = Boolean(session.msrUid);
+  const league = await getLeagueConfig();
+  const publicMode = league.accessGate !== "required";
+  // Guard session read for secret-less public deploys. Required-mode deploys
+  // always read the session (member gating depends on it); public deploys
+  // only read it when login is actually enabled.
+  const session =
+    !publicMode || league.loginEnabled ? await getSession() : null;
+  const isSignedIn = Boolean(session?.msrUid);
   const displayName = isSignedIn
-    ? `${session.firstName ?? ""} ${session.lastInitial ?? ""}`.trim()
+    ? `${session!.firstName ?? ""} ${session!.lastInitial ?? ""}`.trim()
     : null;
-  const showAdmin = isAdmin(session.msrUid);
+  const showAdmin = isAdmin(session?.msrUid);
+  const showResultsLinks = publicMode || Boolean(session?.isRmrMember);
 
   return (
     <nav className="flex flex-wrap items-center gap-3 sm:gap-4">
-      {session.isRmrMember && (
+      {showResultsLinks && (
         <Link href="/" className={linkClass}>
           Events
         </Link>
       )}
-      {session.isRmrMember && (
+      {showResultsLinks && (
         <Link href="/leaderboard" className={linkClass}>
           Leaderboard
         </Link>
@@ -40,11 +48,12 @@ export async function HeaderNav() {
           Admin
         </Link>
       )}
-      {isSignedIn ? (
+      {isSignedIn && (
         <Link href="/me" className={linkClass}>
           {displayName}
         </Link>
-      ) : (
+      )}
+      {!isSignedIn && (league.loginEnabled || league.accessGate === "required") && (
         <Link href="/login" className={linkClass}>
           Sign in
         </Link>

@@ -1,4 +1,5 @@
 import { getSession, sanitizeReturnTo } from "@/lib/session";
+import { getLeagueConfig } from "@/lib/league-config";
 import { EventsHome } from "./_events-home";
 import { Landing } from "@/components/landing";
 
@@ -9,6 +10,11 @@ export default async function HomePage({
 }: {
   searchParams: Promise<{ year?: string; returnTo?: string | string[] }>;
 }) {
+  const league = await getLeagueConfig();
+  if (league.accessGate !== "required") {
+    return <EventsHome searchParams={searchParams} />;
+  }
+
   const session = await getSession();
   const { returnTo: rawReturnTo } = await searchParams;
   const returnTo = sanitizeReturnTo(rawReturnTo);
