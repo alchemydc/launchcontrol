@@ -10,8 +10,9 @@
 
 import Link from "next/link";
 import { getSession } from "@/lib/session";
-import { getLeagueConfig } from "@/lib/league-config";
+import { getLeagueConfig, countLeagues } from "@/lib/league-config";
 import { isAdmin } from "@/lib/admin";
+import { NavResultsLinks } from "@/components/nav-results-links";
 
 const linkClass =
   "text-sm text-muted-foreground hover:text-foreground transition-colors";
@@ -30,17 +31,19 @@ export async function HeaderNav() {
     : null;
   const showAdmin = await isAdmin(session?.msrUid);
   const showResultsLinks = publicMode || Boolean(session?.isRmrMember);
+  // "Leagues" only appears once a second league exists — single-league
+  // deployments (PCA production) see zero nav change (Task 5).
+  const showLeaguesLink = (await countLeagues()) > 1;
 
   return (
     <nav className="flex flex-wrap items-center gap-3 sm:gap-4">
-      {showResultsLinks && (
-        <Link href="/" className={linkClass}>
-          Events
-        </Link>
-      )}
-      {showResultsLinks && (
-        <Link href="/leaderboard" className={linkClass}>
-          Leaderboard
+      <NavResultsLinks
+        showInDefaultContext={showResultsLinks}
+        defaultLeagueSlug={league.slug}
+      />
+      {showLeaguesLink && (
+        <Link href="/leagues" className={linkClass}>
+          Leagues
         </Link>
       )}
       {showAdmin && (

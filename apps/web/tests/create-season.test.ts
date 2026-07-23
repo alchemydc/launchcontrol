@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { createSeason } from "@/lib/create-season";
+import { slugify } from "@/lib/ingest";
 
 // Unit tests for the core `createSeason()` used by both `scripts/create-season.ts`
 // (the "season:create" CLI) and, indirectly, documents the same resolution rules
@@ -98,19 +99,59 @@ describe("createSeason", () => {
     ).rejects.toThrow(/already has a season named '2032 Dup Season'/);
   });
 
-  it("rejects a duplicate (leagueId, year) season, even under a different name", async () => {
+  it("allows multiple seasons for the same (league, year), addressed by distinct slugs", async () => {
     const first = await createSeason(
       { leagueSlug: "pca-rmr", name: "2040 First Season", year: 2040 },
       prisma,
     );
-    await expect(
-      createSeason({ leagueSlug: "pca-rmr", name: "2040 Second Season", year: 2040 }, prisma),
-    ).rejects.toThrow(
-      new RegExp(
-        `already has a season for year 2040 \\('2040 First Season', id=${first.id}\\).*` +
-          "multi-season-per-year support needs season-aware routing",
-      ),
+    const second = await createSeason(
+      { leagueSlug: "pca-rmr", name: "2040 Winter Series", year: 2040 },
+      prisma,
     );
+    expect(first.year).toBe(2040);
+    expect(second.year).toBe(2040);
+    expect(first.slug).toBe("2040-first-season");
+    expect(second.slug).toBe("2040-winter-series");
+    expect(first.id).not.toBe(second.id);
+  });
+
+  it("defaults slug to slugify(name) when --slug is not given", async () => {
+    const season = await createSeason(
+      { leagueSlug: "pca-rmr", name: "2042 Spring Classic", year: 2042 },
+      prisma,
+    );
+    expect(season.slug).toBe(slugify("2042 Spring Classic"));
+    expect(season.slug).toBe("2042-spring-classic");
+  });
+
+  it("honors an explicit --slug override", async () => {
+    const season = await createSeason(
+      { leagueSlug: "pca-rmr", name: "2043 Custom Slug Season", year: 2043, slug: "custom-2043" },
+      prisma,
+    );
+    expect(season.slug).toBe("custom-2043");
+  });
+
+  it("rejects a duplicate (leagueId, slug) season", async () => {
+    await createSeason(
+      { leagueSlug: "pca-rmr", name: "2044 First", year: 2044, slug: "dup-slug-2044" },
+      prisma,
+    );
+    await expect(
+      createSeason(
+        { leagueSlug: "pca-rmr", name: "2045 Second", year: 2045, slug: "dup-slug-2044" },
+        prisma,
+      ),
+    ).rejects.toThrow(/already has a season with slug 'dup-slug-2044'/);
+  });
+
+  it("rejects a malformed --slug", async () => {
+    await expect(
+      createSeason(
+        { leagueSlug: "pca-rmr", name: "2046 Bad Slug", year: 2046, slug: "Not A Valid Slug!" },
+        prisma,
+      ),
+    ).rejects.toThrow(/--slug must be lowercase alphanumeric, hyphen-separated/);
   });
 
   it("rejects an unknown league", async () => {

@@ -1,0 +1,113 @@
+import { execFileSync } from "node:child_process";
+import { rmSync } from "node:fs";
+import { resolve } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { PrismaClient } from "@/generated/prisma/client";
+import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
+import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
+import type { ParsedRmsoloEvent } from "@/lib/rmsolo-parse";
+
+// Task 3: end-to-end proof of the paxTable precedence order (see
+// docs/superpowers/specs/2026-07-23-league-multiclub-design.md "paxTable
+// precedence"): Season.paxTable[code] wins over the built-in RMSOLO_PAX_2026
+// table when both are present. Unit-level precedence/fallback behavior is
+// covered directly in tests/rmsolo-pax.test.ts; this file proves it holds
+// through the actual ingest transaction (CarClass.paxIndex as written).
+
+const TEST_DB_PATH = resolve(__dirname, "..", "test-rmsolo-paxtable-precedence.db");
+const TEST_DB_URL = "file:./test-rmsolo-paxtable-precedence.db";
+
+let prisma: PrismaClient;
+let leagueId: number;
+
+function eventFor(carNumber: string, classCode: string): ParsedRmsoloEvent {
+  return {
+    title: "Summer 2026#1",
+    classCodes: [classCode],
+    entries: [
+      {
+        classCode, position: 1, trophy: true, carNumber, altCarNumber: null,
+        firstName: "Jamie", lastName: "Runner", carDescription: null, hometown: null,
+        bestSeconds: 40.0,
+        runs: [{ seconds: 40.0, cones: 0, disposition: "CLEAN" }],
+      },
+    ],
+  };
+}
+
+beforeAll(async () => {
+  rmSync(TEST_DB_PATH, { force: true });
+  execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
+    cwd: resolve(__dirname, ".."),
+    env: { ...process.env, DATABASE_URL: TEST_DB_URL },
+    stdio: "pipe",
+  });
+  const adapter = new PrismaLibSql({ url: TEST_DB_URL });
+  prisma = new PrismaClient({ adapter });
+  const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
+  leagueId = league.id;
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+  rmSync(TEST_DB_PATH, { force: true });
+});
+
+describe("paxTable precedence, end-to-end through ingestRmsoloEvent", () => {
+  it("uses the built-in RMSOLO_PAX_2026 factor when the season's paxTable has no override", async () => {
+    await ingestRmsoloEvent({ parsed: eventFor("1", "AS"), sha256: "no-override", date: "2026-06-01" }, prisma);
+    const cls = await prisma.carClass.findFirstOrThrow({ where: { leagueId, code: "AS" } });
+    expect(Number(cls.paxIndex)).toBe(RMSOLO_PAX_2026.AS);
+  });
+
+  it("prefers the season's paxTable override over the built-in table", async () => {
+    // A distinct season (2027) so this doesn't collide with the no-override
+    // 2026 season/class above — same class code, deliberately different
+    // override value (0.5, unmistakable from RMSOLO_PAX_2026.AS).
+    const season = await prisma.season.create({
+      data: {
+        leagueId,
+        name: "2027 Season",
+        slug: "2027-season",
+        year: 2027,
+        scoringPolicy: '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+        paxTable: JSON.stringify({ AS: 0.5 }),
+      },
+    });
+
+    await ingestRmsoloEvent({ parsed: eventFor("2", "AS"), sha256: "with-override", date: "2027-06-01" }, prisma);
+
+    const event = await prisma.event.findUniqueOrThrow({
+      where: { seasonId_slug: { seasonId: season.id, slug: "2027-06-01-summer-2026-1" } },
+    });
+    const entry = await prisma.entry.findFirstOrThrow({
+      where: { eventId: event.id, carNumber: "2" },
+      include: { class: true },
+    });
+    expect(Number(entry.class.paxIndex)).toBe(0.5);
+    expect(Number(entry.class.paxIndex)).not.toBe(RMSOLO_PAX_2026.AS);
+  });
+
+  it("falls back to 1.0 for a class code in neither the season table nor the built-in table", async () => {
+    const season = await prisma.season.create({
+      data: {
+        leagueId,
+        name: "2028 Season",
+        slug: "2028-season",
+        year: 2028,
+        scoringPolicy: '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+        paxTable: JSON.stringify({ ZZ: 0.75 }), // covers ZZ, but not the class used below
+      },
+    });
+    await ingestRmsoloEvent({ parsed: eventFor("3", "QQQ"), sha256: "fallback-1.0", date: "2028-06-01" }, prisma);
+    const event = await prisma.event.findUniqueOrThrow({
+      where: { seasonId_slug: { seasonId: season.id, slug: "2028-06-01-summer-2026-1" } },
+    });
+    const entry = await prisma.entry.findFirstOrThrow({
+      where: { eventId: event.id, carNumber: "3" },
+      include: { class: true },
+    });
+    expect(Number(entry.class.paxIndex)).toBe(1.0);
+  });
+});

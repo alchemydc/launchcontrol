@@ -1,14 +1,18 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { getLeagueConfig } from "@/lib/league-config";
+import { getLeagueConfig, type LeagueConfig } from "@/lib/league-config";
 
 interface LandingProps {
   signedIn: boolean;
   returnTo: string | null;
+  /** Omitted → the deployment's default league (pre-Task-5 behavior,
+   *  byte-identical); `/l/[league]` passes that league's config so the
+   *  landing copy reflects the league actually being viewed. */
+  league?: Pick<LeagueConfig, "landingDescription">;
 }
 
-export async function Landing({ signedIn, returnTo }: LandingProps) {
-  const league = await getLeagueConfig();
+export async function Landing({ signedIn, returnTo, league: leagueProp }: LandingProps) {
+  const league = leagueProp ?? (await getLeagueConfig());
   const loginHref = returnTo
     ? `/api/auth/msr/login?returnTo=${encodeURIComponent(returnTo)}`
     : "/api/auth/msr/login";

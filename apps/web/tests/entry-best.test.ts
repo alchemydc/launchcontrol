@@ -109,3 +109,49 @@ describe("bestCorrectedMsForEntry()", () => {
     expect(bestCorrectedMsForEntry(entry)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// penaltyMs (League Foundation PR 2 Task 7) — per-season cone penalty
+// threading. Every test above omits the argument and must keep passing
+// unchanged (parity: default === CONE_PENALTY_MS).
+// ---------------------------------------------------------------------------
+
+describe("bestCorrectedMsForEntry() — explicit penaltyMs", () => {
+  const entry: EntryForBest = {
+    bestCommittedRunNumber: 2,
+    runs: [
+      { runNumber: 1, rawTimeMs: 55000, cones: 0, disposition: "CLEAN" },
+      { runNumber: 2, rawTimeMs: 50000, cones: 2, disposition: "CLEAN" },
+      { runNumber: 3, rawTimeMs: 48000, cones: 0, disposition: "CLEAN" },
+    ],
+  };
+
+  it("defaults to CONE_PENALTY_MS when no penaltyMs is given", () => {
+    expect(bestCorrectedMsForEntry(entry)).toBe(50000 + 2 * CONE_PENALTY_MS);
+  });
+
+  it("an explicit penaltyMs equal to the constant matches the default (parity)", () => {
+    expect(bestCorrectedMsForEntry(entry, CONE_PENALTY_MS)).toBe(bestCorrectedMsForEntry(entry));
+  });
+
+  it("a smaller penaltyMs (e.g. a 1000ms-penalty season) scores this entry faster", () => {
+    expect(bestCorrectedMsForEntry(entry, 1000)).toBe(50000 + 2 * 1000);
+    expect(bestCorrectedMsForEntry(entry, 1000)).toBeLessThan(bestCorrectedMsForEntry(entry, 2000)!);
+  });
+
+  it("threads penaltyMs through the fallback (non-committed) fastest-CLEAN path too", () => {
+    const noCommitted: EntryForBest = {
+      bestCommittedRunNumber: null,
+      runs: [
+        { runNumber: 1, rawTimeMs: 63000, cones: 1, disposition: "CLEAN" },
+        { runNumber: 2, rawTimeMs: 60000, cones: 0, disposition: "CLEAN" },
+        { runNumber: 3, rawTimeMs: 59000, cones: 1, disposition: "CLEAN" },
+      ],
+    };
+    // At the default 2000ms penalty, R2 (60000) beats R3 (59000+2000=61000).
+    expect(bestCorrectedMsForEntry(noCommitted)).toBe(60000);
+    // At a 1000ms penalty, R3 (59000+1000=60000) ties R2 flat, but at 500ms
+    // R3 pulls ahead — proving the penalty value actually drives the result.
+    expect(bestCorrectedMsForEntry(noCommitted, 500)).toBe(59500);
+  });
+});

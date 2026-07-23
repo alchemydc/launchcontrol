@@ -1,0 +1,47 @@
+# launchcontrol self-hosted deployment — league-agnostic artifact; every
+# league/season lives in the database (see deploy/launchcontrol.env.example
+# for the handful of deployment-level knobs that remain env vars).
+#
+#   cp deploy/launchcontrol.env.example deploy/launchcontrol.env   # then edit
+#   docker compose up -d --build                     # web only
+#   docker compose --profile ingest up -d --build    # web + results poller
+#
+# The SQLite database lives on the named volume (survives image upgrades).
+# Migrations run automatically before the web process starts; first boot
+# seeds only the default `pca-rmr` league — see the env example for how to
+# add another club/league.
+services:
+  web:
+    build: .
+    image: launchcontrol:latest
+    command: sh -c "pnpm --filter web exec prisma migrate deploy && pnpm --filter web start"
+    ports:
+      - "3000:3000"
+    env_file: deploy/launchcontrol.env
+    environment:
+      DATABASE_URL: "file:/data/launchcontrol.db"
+    volumes:
+      - lc-data:/data
+    restart: unless-stopped
+
+  # RMsolo-specific: polls rmsolo.org once per interval (default: every 30 min)
+  # for the league named by INGEST_LEAGUE (empty/unset falls back to
+  # DEFAULT_LEAGUE_SLUG). Opt-in via `--profile ingest` — a league whose
+  # results arrive by admin upload (e.g. PCA .axdb files) runs web only.
+  # The CLI is idempotent: already-ingested PDFs skip by hash, new events
+  # ingest.
+  ingest:
+    profiles: ["ingest"]
+    image: launchcontrol:latest
+    depends_on:
+      - web
+    command: sh -c 'sleep 30; while true; do pnpm --filter web ingest:rmsolo --league "$${INGEST_LEAGUE:-}" || true; sleep "$${INGEST_INTERVAL_SECONDS:-1800}"; done'
+    env_file: deploy/launchcontrol.env
+    environment:
+      DATABASE_URL: "file:/data/launchcontrol.db"
+    volumes:
+      - lc-data:/data
+    restart: unless-stopped
+
+volumes:
+  lc-data:

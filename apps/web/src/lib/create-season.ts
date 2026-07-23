@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import type { PrismaClient, Season } from "@/generated/prisma/client";
+import { slugify } from "@/lib/ingest";
 import { prisma as defaultClient } from "@/lib/prisma";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
+
+const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export type CreateSeasonOptions = {
   leagueSlug: string;
@@ -9,6 +12,10 @@ export type CreateSeasonOptions = {
   year: number;
   /** Defaults to 0 — matches the ingest auto-create default; edit later once the season's calendar is known. */
   plannedEvents?: number;
+  /** URL-safe addressing key, unique per league (see season-resolve.ts's resolveSeasonBySlug).
+   *  Defaults to slugify(name). Must already be a valid slug shape (lowercase alphanumeric,
+   *  hyphen-separated) — an explicit override is not re-slugified. */
+  slug?: string;
   /** Name of an existing ScoringSystem preset on this league. Mutually exclusive with policyFilePath.
    *  If neither is given, the league's OLDEST ScoringSystem row is used (same deterministic
    *  choice `ingestAxdb` makes when auto-creating a Season). */
@@ -27,7 +34,12 @@ export type CreateSeasonOptions = {
  * still lands byte-identical to any other season built from the same values.
  *
  * Thrown errors are operator-facing (unknown league/preset, duplicate season
- * name, invalid policy) — `scripts/create-season.ts` prints them as-is.
+ * name or slug, invalid policy) — `scripts/create-season.ts` prints them as-is.
+ *
+ * Multiple seasons per (league, year) are allowed — season-aware addressing
+ * (`slug`, resolved via season-resolve.ts's `resolveSeasonBySlug`/`activeSeason`)
+ * is what makes them unambiguous to route to, unlocking things like a mid-year
+ * Winter Series alongside the regular season.
  */
 export async function createSeason(
   opts: CreateSeasonOptions,
@@ -53,20 +65,22 @@ export async function createSeason(
     );
   }
 
-  // One season per (league, year) — the season-leaderboard and admin cross-year
-  // re-resolution logic both key season lookups strictly on (league, year), so
-  // a second season for the same year would be ambiguous (which one is the
-  // ingest/admin target?). Multi-season-per-year needs season-aware routing
-  // (see PR 2+); until then, refuse rather than create an ambiguous row.
-  const existingByYear = await client.season.findFirst({
-    where: { leagueId: league.id, year },
-    orderBy: { id: "asc" },
-  });
-  if (existingByYear) {
+  const slug = opts.slug?.trim() || slugify(name);
+  if (!slug) {
     throw new Error(
-      `[create-season] league '${leagueSlug}' already has a season for year ${year} ` +
-        `('${existingByYear.name}', id=${existingByYear.id}) — multi-season-per-year support ` +
-        `needs season-aware routing (PR 2+).`,
+      `[create-season] slugifying '${name}' produced an empty slug — pass --slug explicitly.`,
+    );
+  }
+  if (!SLUG_PATTERN.test(slug)) {
+    throw new Error(
+      `[create-season] --slug must be lowercase alphanumeric, hyphen-separated (got '${slug}').`,
+    );
+  }
+  const existingBySlug = await client.season.findFirst({ where: { leagueId: league.id, slug } });
+  if (existingBySlug) {
+    throw new Error(
+      `[create-season] league '${leagueSlug}' already has a season with slug '${slug}' ` +
+        `(name='${existingBySlug.name}', id=${existingBySlug.id}).`,
     );
   }
 
@@ -104,6 +118,7 @@ export async function createSeason(
     data: {
       leagueId: league.id,
       name,
+      slug,
       year,
       plannedEvents,
       scoringPolicy: JSON.stringify(policy),

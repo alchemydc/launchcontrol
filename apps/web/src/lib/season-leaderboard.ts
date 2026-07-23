@@ -1,6 +1,5 @@
-import { PrismaClient, type RunDisposition } from "@/generated/prisma/client";
+import { Prisma, PrismaClient, type RunDisposition } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
-import { CONE_PENALTY_MS } from "@/lib/constants";
 import { resolveDefaultLeague } from "@/lib/league-config";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { prisma as defaultClient } from "@/lib/prisma";
@@ -114,6 +113,7 @@ export type SeasonStandingsRow = {
   driverId: number;
   driverName: string; // "First L." — lastInitial only, never the full last name
   totalPoints: number;
+  averagePoints: number; // totalPoints / counted scores (championship average; dropped scores excluded), 2dp
   eligible: boolean; // false when driver has fewer than qualifyingEvents in this class
   eventsCountedInClass: number;
   qualifyingEvents: number; // threshold for this season (duplicated for per-driver badge rendering)
@@ -181,14 +181,33 @@ async function resolveDefaultLeagueId(client: PrismaClient): Promise<number | nu
 }
 
 /**
- * Return every year with a Season row under the default league, sorted
- * descending (most recent first). Powers the season switcher. Season-driven,
- * not event dates — a league with no Season rows yet returns `[]`.
+ * Return every year with a Season row under a league, sorted descending
+ * (most recent first). Powers the season switcher. Season-driven, not event
+ * dates — a league with no Season rows yet returns `[]`.
+ *
+ * Two forms: `listSeasonYears(client?)` (legacy/default path — the
+ * deployment's default league, byte-identical to pre-Task-4 behavior) and
+ * `listSeasonYears(leagueId, client?)` (explicit target, for league-scoped
+ * routes/tests).
  */
+export async function listSeasonYears(client?: PrismaClient): Promise<number[]>;
 export async function listSeasonYears(
-  client: PrismaClient = defaultClient,
+  leagueId: number,
+  client?: PrismaClient,
+): Promise<number[]>;
+export async function listSeasonYears(
+  leagueIdOrClient?: number | PrismaClient,
+  clientArg: PrismaClient = defaultClient,
 ): Promise<number[]> {
-  const leagueId = await resolveDefaultLeagueId(client);
+  let leagueId: number | null;
+  let client: PrismaClient;
+  if (typeof leagueIdOrClient === "number") {
+    leagueId = leagueIdOrClient;
+    client = clientArg;
+  } else {
+    client = leagueIdOrClient ?? defaultClient;
+    leagueId = await resolveDefaultLeagueId(client);
+  }
   if (leagueId == null) return [];
   const seasons = await client.season.findMany({
     where: { leagueId },
@@ -196,6 +215,56 @@ export async function listSeasonYears(
   });
   const years = Array.from(new Set(seasons.map((s) => s.year)));
   return years.sort((a, b) => b - a);
+}
+
+const seasonLeaderboardInclude = {
+  events: {
+    orderBy: { date: "asc" as const },
+    include: {
+      entries: {
+        include: {
+          class: { select: { code: true } },
+          paxClass: { select: { paxIndex: true } },
+          driver: { select: { id: true, firstName: true, lastInitial: true } },
+          runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.SeasonInclude;
+
+/**
+ * Resolve the Season row (with its full events/entries include) addressed
+ * by `target`: a bare `year` (legacy/default-league path — id-asc tiebreak,
+ * matching pre-Task-4 behavior exactly), `{ seasonId }` (direct address), or
+ * `{ leagueId, year }` (explicit league, same id-asc tiebreak as the legacy
+ * path). Returns `null` when the target doesn't resolve to a season (unknown
+ * default league, or no season for that league/year).
+ */
+async function resolveLeaderboardSeason(
+  target: number | { seasonId: number } | { leagueId: number; year: number },
+  client: PrismaClient,
+) {
+  if (typeof target === "number") {
+    const leagueId = await resolveDefaultLeagueId(client);
+    if (leagueId == null) return null;
+    return client.season.findFirst({
+      where: { leagueId, year: target },
+      orderBy: { id: "asc" },
+      include: seasonLeaderboardInclude,
+    });
+  }
+  if ("seasonId" in target) {
+    return client.season.findUnique({
+      where: { id: target.seasonId },
+      include: seasonLeaderboardInclude,
+    });
+  }
+  return client.season.findFirst({
+    where: { leagueId: target.leagueId, year: target.year },
+    orderBy: { id: "asc" },
+    include: seasonLeaderboardInclude,
+  });
 }
 
 /**
@@ -223,62 +292,53 @@ export async function listSeasonYears(
  * actual ingested group count, so a mid-season standing doesn't drop scores
  * it shouldn't; see `seasonScoringBasis`.
  *
- * League Foundation: events are scoped to the (default league, year) Season
- * row rather than a raw date range, and every scoring knob — drop mode,
- * synthetic PAX section, class metric, planned event count — comes from that
- * row's `scoringPolicy` JSON (`parseScoringPolicy`), not env vars. A year with
- * no Season row returns the original empty-year shape (all zero, no
- * sections) — same as a year with a Season row but zero ingested events,
- * except `totalEvents` there reflects the Season's planned count instead of 0.
+ * League Foundation: events are scoped to a Season row rather than a raw
+ * date range, and every scoring knob — drop mode, synthetic PAX section,
+ * class metric, planned event count — comes from that row's `scoringPolicy`
+ * JSON (`parseScoringPolicy`), not env vars. A year/target with no matching
+ * Season row returns the original empty-year shape (all zero, no sections)
+ * — same as a season with a Season row but zero ingested events, except
+ * `totalEvents` there reflects the Season's planned count instead of 0.
  *
- * Cone-penalty boundary: `scoringPolicy.conePenaltyMs` is read and enforced
- * against the shared `CONE_PENALTY_MS` constant — per-run cone math itself
- * still lives in `entry-best.ts` (and `combined-event.ts`/`leaderboard.ts` for
- * event pages), which stays constant-based this PR, so a season whose policy
- * disagrees with the constant would silently score wrong rather than apply
- * its configured value; this throws instead of allowing that mismatch to
- * pass quietly. Every seeded policy today is 2000, matching the constant, so
- * this never fires in production. Full policy threading of that shared cone
- * math is out of scope here (event-page policy threading beyond PAX display
- * is Task 6+ territory).
+ * Cone-penalty threading (League Foundation PR 2 Task 7):
+ * `scoringPolicy.conePenaltyMs` is passed to `bestCorrectedMsForEntry` below,
+ * so a season configured with a non-default value (e.g. an RMsolo season
+ * using a different per-cone penalty) actually scores with it — the same
+ * value flows from `parseScoringPolicy` end-to-end. Event and combined pages
+ * (`leaderboard.ts`, `combined-event.ts`) independently pass their own
+ * event's season policy value into `buildLeaderboard`/`buildCombinedResults`,
+ * so per-run cone math is consistent everywhere a given season's data is
+ * displayed or scored. Every seeded policy today is 2000 (`CONE_PENALTY_MS`),
+ * so parity holds: default seasons render byte-identically to before this
+ * threading existed.
+ *
+ * Task 4 — explicit league/season targets: two overloads.
+ * `buildSeasonLeaderboard(year, client?)` is the legacy/default path (the
+ * deployment's default league, by year — byte-identical to pre-Task-4
+ * behavior, including the id-asc season tiebreak). `buildSeasonLeaderboard({
+ * seasonId } | { leagueId, year }, client?)` addresses a specific season
+ * directly, for league-scoped routes/tests.
  */
 export async function buildSeasonLeaderboard(
   year: number,
+  client?: PrismaClient,
+): Promise<SeasonLeaderboardResult>;
+export async function buildSeasonLeaderboard(
+  target: { seasonId: number } | { leagueId: number; year: number },
+  client?: PrismaClient,
+): Promise<SeasonLeaderboardResult>;
+export async function buildSeasonLeaderboard(
+  target: number | { seasonId: number } | { leagueId: number; year: number },
   client: PrismaClient = defaultClient,
 ): Promise<SeasonLeaderboardResult> {
-  const leagueId = await resolveDefaultLeagueId(client);
-  const season = leagueId == null
-    ? null
-    : await client.season.findFirst({
-        where: { leagueId, year },
-        orderBy: { id: "asc" },
-        include: {
-          events: {
-            orderBy: { date: "asc" },
-            include: {
-              entries: {
-                include: {
-                  class: { select: { code: true } },
-                  paxClass: { select: { paxIndex: true } },
-                  driver: { select: { id: true, firstName: true, lastInitial: true } },
-                  runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
-                },
-              },
-            },
-          },
-        },
-      });
+  const season = await resolveLeaderboardSeason(target, client);
 
   if (season == null) {
     return { totalEvents: 0, completedEvents: 0, qualifyingEvents: 0, countedEvents: 0, sections: [] };
   }
 
+  const year = season.year;
   const policy = parseScoringPolicy(season.scoringPolicy);
-  if (policy.conePenaltyMs !== CONE_PENALTY_MS) {
-    throw new Error(
-      `season ${year}: scoringPolicy.conePenaltyMs=${policy.conePenaltyMs} differs from the shared CONE_PENALTY_MS constant (${CONE_PENALTY_MS}ms) used by entry-best.ts/combined-event.ts/leaderboard.ts for per-run cone penalties — those call sites are not yet policy-driven, so a season configured with a different value would silently score with ${CONE_PENALTY_MS}ms instead. Set this season's conePenaltyMs to ${CONE_PENALTY_MS} until per-season cone penalties are wired into per-entry scoring.`,
-    );
-  }
 
   // 1. Events for the season, already loaded in chronological order.
   const events: LoadedEvent[] = season.events;
@@ -320,7 +380,7 @@ export async function buildSeasonLeaderboard(
         driverInfo.set(d.id, { firstName: d.firstName, lastInitial: d.lastInitial });
       }
 
-      const best = bestCorrectedMsForEntry(entry);
+      const best = bestCorrectedMsForEntry(entry, policy.conePenaltyMs);
       if (best == null) continue; // no CLEAN run or committed best — excluded from event scoring
 
       const code = entry.class.code;
@@ -510,6 +570,11 @@ export async function buildSeasonLeaderboard(
     const sorted = [...rawScores].sort((a, b) => b.points - a.points);
     const counted = sorted.slice(0, countedEvents);
     const totalPoints = counted.reduce((sum, s) => sum + s.points, 0);
+    // Championship average: counted scores only (BJ, 2026-07-23) — a dropped
+    // score never dilutes it. Mirrors the club sheet's per-event pace metric
+    // but over the counted set, matching what totalPoints is built from.
+    const averagePoints =
+      counted.length === 0 ? 0 : Math.round((totalPoints / counted.length) * 100) / 100;
     const countedSet = new Set(counted.map((s) => s.key));
 
     const scores = rawScores
@@ -532,6 +597,7 @@ export async function buildSeasonLeaderboard(
       driverId,
       driverName: `${info.firstName} ${info.lastInitial}`,
       totalPoints,
+      averagePoints,
       eligible,
       eventsCountedInClass,
       qualifyingEvents,

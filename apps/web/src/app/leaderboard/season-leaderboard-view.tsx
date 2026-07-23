@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DriverLink } from "@/components/driver-link";
@@ -14,11 +15,19 @@ import type {
   SeasonStandingsByClass,
   SeasonStandingsRow,
 } from "@/lib/season-leaderboard";
-import { SeasonSwitcher } from "./season-switcher";
 
 interface SeasonLeaderboardViewProps {
-  year: number;
-  years: number[];
+  /** Heading text, e.g. "2026 Season Leaderboard" (legacy, by year) or
+   *  "<Season name> Leaderboard" (league-scoped, by season). */
+  title: string;
+  /** Rendered in the header's switcher slot (already wrapped in its layout
+   *  div by the caller) — `null`/omitted renders nothing, same as the
+   *  legacy `years.length > 1` guard did inline. */
+  switcher?: ReactNode;
+  /** Short label for the empty-standings message ("No season data available
+   *  for {periodLabel}.") — the bare year for legacy pages, the season name
+   *  for league-scoped pages. */
+  periodLabel: string;
   standings: SeasonStandingsByClass[];
   totalEvents: number;
   completedEvents: number;
@@ -101,7 +110,7 @@ function DriverCard({
             {driver.totalPoints}
           </div>
           <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-            points
+            points · avg {formatAvg(driver.averagePoints)}
           </div>
         </div>
       </div>
@@ -146,6 +155,9 @@ function DriverTableRow({
       <TableCell className="px-3 py-3 text-right tabular-nums font-semibold whitespace-nowrap">
         {driver.totalPoints}
       </TableCell>
+      <TableCell className="px-3 py-3 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+        {formatAvg(driver.averagePoints)}
+      </TableCell>
       <TableCell className="px-3 py-3">
         <EventScoreStrip scores={driver.scores} />
       </TableCell>
@@ -166,6 +178,11 @@ function scoringNote(
     return `Best ${qualifyingEvents} of ${totalEvents} scores count toward the season total.`;
   }
   return `Best ${countedEvents} scores currently count toward the season total (best ${qualifyingEvents} of ${totalEvents} at season end).`;
+}
+
+// "998" / "993.25" — trims trailing zeros like the club sheet's column.
+function formatAvg(avg: number): string {
+  return String(Math.round(avg * 100) / 100);
 }
 
 function classAnchorId(classCode: string): string {
@@ -232,6 +249,12 @@ function ClassSection({
                 Points
               </TableHead>
               <TableHead
+                className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right"
+                title="Average points per counted championship event (dropped scores excluded)"
+              >
+                Avg
+              </TableHead>
+              <TableHead
                 className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
                 title={`${scoringNote(countedEvents, qualifyingEvents, totalEvents)} Dashed border = dropped score.`}
               >
@@ -278,8 +301,9 @@ function ClassJumpBar({
 }
 
 export function SeasonLeaderboardView({
-  year,
-  years,
+  title,
+  switcher,
+  periodLabel,
   standings,
   totalEvents,
   completedEvents,
@@ -297,7 +321,7 @@ export function SeasonLeaderboardView({
             <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
             <div className="min-w-0">
               <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-                {year} Season Leaderboard
+                {title}
               </h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Points are awarded per event: 1000 to the class winner, others
@@ -309,11 +333,7 @@ export function SeasonLeaderboardView({
               </p>
             </div>
           </div>
-          {years.length > 1 && (
-            <div className="sm:shrink-0 sm:ml-4">
-              <SeasonSwitcher years={years} currentYear={year} />
-            </div>
-          )}
+          {switcher}
         </div>
       </header>
 
@@ -333,7 +353,7 @@ export function SeasonLeaderboardView({
         <div className="flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-12">
           <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
           <p className="text-sm text-muted-foreground">
-            No season data available for {year}.
+            No season data available for {periodLabel}.
           </p>
         </div>
       ) : (

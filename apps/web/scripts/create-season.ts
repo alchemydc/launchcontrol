@@ -2,8 +2,10 @@
 //
 // Usage:
 //   pnpm --filter web season:create --league <slug> --name <name> --year <n>
-//     [--planned <n>] [--preset <scoring-system name>] [--policy-file <path.json>]
+//     [--slug <slug>] [--planned <n>] [--preset <scoring-system name>] [--policy-file <path.json>]
 //
+// --slug defaults to slugify(name); multiple seasons per (league, year) are
+// allowed (see src/lib/create-season.ts), each addressable by its own slug.
 // At most one of --preset / --policy-file may be given; with neither, the
 // league's oldest ScoringSystem preset is used (same default `ingestAxdb`
 // applies when auto-creating a Season). See src/lib/create-season.ts for the
@@ -15,7 +17,7 @@ import { prisma } from "@/lib/prisma";
 function usage(): never {
   console.error(
     "Usage: pnpm --filter web season:create --league <slug> --name <name> --year <n> " +
-      "[--planned <n>] [--preset <scoring-system name>] [--policy-file <path.json>]",
+      "[--slug <slug>] [--planned <n>] [--preset <scoring-system name>] [--policy-file <path.json>]",
   );
   process.exit(2);
 }
@@ -24,6 +26,7 @@ type Args = {
   league?: string;
   name?: string;
   year?: number;
+  slug?: string;
   planned?: number;
   preset?: string;
   policyFile?: string;
@@ -47,6 +50,9 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--year":
         args.year = Number(next());
+        break;
+      case "--slug":
+        args.slug = next();
         break;
       case "--planned":
         args.planned = Number(next());
@@ -86,6 +92,7 @@ async function main() {
     leagueSlug: args.league,
     name: args.name,
     year: args.year,
+    slug: args.slug,
     plannedEvents: args.planned,
     presetName: args.preset,
     policyFilePath,

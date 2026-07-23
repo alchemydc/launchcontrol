@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
-import { ingestAxdb } from "@/lib/ingest";
+import { ingestAxdb, slugify } from "@/lib/ingest";
 
 // The league-foundation migration seeds the PCA league + PCA Classic scoring system,
 // backfills a Season per distinct Event year, and league-scopes CarClass. On a fresh
@@ -102,6 +102,7 @@ describe("Season resolution + backfill via ingest", () => {
     expect(seasons.map((s) => s.year)).toEqual([2026, 2027]);
     for (const s of seasons) {
       expect(s.name).toBe(`${s.year} Season`);
+      expect(s.slug).toBe(slugify(s.name));
       expect(s.scoringPolicy).toBe(PCA_POLICY);
       expect(s.paxTable).toBe("{}");
       expect(s.status).toBe("active");
@@ -139,7 +140,28 @@ describe("composite-unique enforcement", () => {
     const season = await prisma.season.findFirstOrThrow();
     await expect(
       prisma.season.create({
-        data: { leagueId: season.leagueId, name: season.name, year: season.year, scoringPolicy: PCA_POLICY },
+        data: {
+          leagueId: season.leagueId,
+          name: season.name,
+          slug: `${season.slug}-2`,
+          year: season.year,
+          scoringPolicy: PCA_POLICY,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects a duplicate (leagueId, slug) Season", async () => {
+    const season = await prisma.season.findFirstOrThrow();
+    await expect(
+      prisma.season.create({
+        data: {
+          leagueId: season.leagueId,
+          name: `${season.name} 2`,
+          slug: season.slug,
+          year: season.year,
+          scoringPolicy: PCA_POLICY,
+        },
       }),
     ).rejects.toThrow();
   });

@@ -4,10 +4,17 @@ import { ingestAxdb } from "@/lib/ingest";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 
+function argValue(flag: string): string | undefined {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+
 async function main() {
-  const arg = process.argv[2];
+  const leagueSlug = argValue("--league");
+  // The path is the first argv entry that isn't --league or its value.
+  const arg = process.argv.slice(2).find((a, i, all) => a !== "--league" && all[i - 1] !== "--league");
   if (!arg) {
-    console.error("Usage: pnpm ingest <path-to-axdb>");
+    console.error("Usage: pnpm ingest [--league <slug>] <path-to-axdb>");
     process.exit(2);
   }
 
@@ -20,7 +27,7 @@ async function main() {
     process.exit(2);
   }
 
-  const result = await ingestAxdb(path);
+  const result = await ingestAxdb(path, prisma, { leagueSlug });
   console.log(JSON.stringify(result, null, 2));
 
   try {

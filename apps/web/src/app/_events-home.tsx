@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { EventsYearSwitcher } from "./events-year-switcher";
 import { prisma } from "@/lib/prisma";
 import { listSeasonYears } from "@/lib/season-leaderboard";
-import { findSmugmugEventFolder } from "@/lib/smugmug";
+import { findSmugmugEventFolder, type SmugmugLeagueTarget } from "@/lib/smugmug";
 
 function formatDateShort(date: Date): string {
   return date.toLocaleDateString("en-US", {
@@ -14,14 +14,36 @@ function formatDateShort(date: Date): string {
   });
 }
 
+const LEGACY_SUBTITLE =
+  "Rocky Mountain Region autocross results, sorted by most recent event.";
+
 export async function EventsHome({
   searchParams,
+  leagueId,
+  basePath = "",
+  smugmugTarget,
+  subtitle = LEGACY_SUBTITLE,
 }: {
   searchParams: Promise<{ year?: string; returnTo?: string | string[] }>;
+  /** Explicit league scope (Task 5) — the legacy home page passes the
+   *  deployment's default league's id; `/l/[league]` passes that league's. */
+  leagueId: number;
+  /** URL prefix for this listing's links — "" for the legacy home page
+   *  (byte-identical to pre-Task-5 hrefs), "/l/[slug]" for league-scoped. */
+  basePath?: string;
+  /** SmugMug lookup target — omitted falls back to the default league
+   *  (pre-Task-5 behavior); `/l/[league]` passes that league's config so
+   *  photos never resolve against the wrong league. */
+  smugmugTarget?: SmugmugLeagueTarget;
+  /** Header subtitle copy — defaults to the legacy PCA RMR string byte-for-byte
+   *  (pre-Task-5 behavior, still used by the unprefixed legacy home page);
+   *  `/l/[league]` passes that league's own `siteDescription` so a non-default
+   *  league's events page never carries the default league's branding. */
+  subtitle?: string;
 }) {
   const { year: yearParam } = await searchParams;
 
-  const years = await listSeasonYears();
+  const years = await listSeasonYears(leagueId);
   const fallbackYear = new Date().getUTCFullYear();
   const requested = yearParam ? Number(yearParam) : NaN;
   const year =
@@ -31,6 +53,7 @@ export async function EventsHome({
 
   const events = await prisma.event.findMany({
     where: {
+      season: { leagueId },
       date: {
         gte: new Date(Date.UTC(year, 0, 1)),
         lt: new Date(Date.UTC(year + 1, 0, 1)),
@@ -56,7 +79,7 @@ export async function EventsHome({
     await Promise.all(
       events.map(
         async (e) =>
-          [e.id, await findSmugmugEventFolder(e.name, e.date)] as const,
+          [e.id, await findSmugmugEventFolder(e.name, e.date, smugmugTarget)] as const,
       ),
     ),
   );
@@ -99,8 +122,7 @@ export async function EventsHome({
                 Event results
               </h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Rocky Mountain Region autocross results, sorted by most recent
-                event.
+                {subtitle}
               </p>
             </div>
           </div>
@@ -109,6 +131,7 @@ export async function EventsHome({
               <EventsYearSwitcher
                 years={years}
                 currentYear={year}
+                basePath={basePath}
               />
             </div>
           )}
@@ -148,7 +171,7 @@ export async function EventsHome({
                         </p>
                         <CardTitle className="group-hover:text-primary transition-colors">
                           <Link
-                            href={`/events/${item.event.slug}`}
+                            href={`${basePath}/events/${item.event.slug}`}
                             className="after:content-[''] after:absolute after:inset-0"
                           >
                             {item.event.name}
@@ -186,7 +209,7 @@ export async function EventsHome({
                         </Badge>
                       </div>
                       <Link
-                        href={`/events/combined/${item.dateKey}`}
+                        href={`${basePath}/events/combined/${item.dateKey}`}
                         className="text-primary hover:underline text-xs"
                       >
                         View combined results →
@@ -202,7 +225,7 @@ export async function EventsHome({
                             <div className="min-w-0">
                               <CardTitle className="group-hover:text-primary transition-colors">
                                 <Link
-                                  href={`/events/${event.slug}`}
+                                  href={`${basePath}/events/${event.slug}`}
                                   className="after:content-[''] after:absolute after:inset-0"
                                 >
                                   {event.name}

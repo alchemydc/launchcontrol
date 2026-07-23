@@ -72,14 +72,18 @@ export type CombinedResults = {
 
 // bestCorrectedMsForEntry() already resolves committed-vs-fallback-CLEAN; this
 // just re-identifies *which* run produced that value so the UI can show
-// "R4: 38.335" the way the club's own handout does. Reuses the same
-// CONE_PENALTY_MS constant rather than re-deriving the cone math.
-function bestRunForEntry(entry: EntryForBest): { runNumber: number | null; correctedMs: number } | null {
-  const bestMs = bestCorrectedMsForEntry(entry);
+// "R4: 38.335" the way the club's own handout does. `penaltyMs` (League
+// Foundation PR 2 Task 7) defaults to CONE_PENALTY_MS and must match whatever
+// was passed to bestCorrectedMsForEntry so the match below actually lines up.
+function bestRunForEntry(
+  entry: EntryForBest,
+  penaltyMs: number = CONE_PENALTY_MS,
+): { runNumber: number | null; correctedMs: number } | null {
+  const bestMs = bestCorrectedMsForEntry(entry, penaltyMs);
   if (bestMs == null) return null;
   const match = entry.runs.find(
     (r: RunForBest) =>
-      r.disposition === "CLEAN" && r.rawTimeMs != null && r.rawTimeMs + r.cones * CONE_PENALTY_MS === bestMs,
+      r.disposition === "CLEAN" && r.rawTimeMs != null && r.rawTimeMs + r.cones * penaltyMs === bestMs,
   );
   return { runNumber: match?.runNumber ?? entry.bestCommittedRunNumber ?? null, correctedMs: bestMs };
 }
@@ -98,7 +102,11 @@ function sortRows(rows: CombinedResultRow[]): { ranked: CombinedResultRow[]; unr
   return { ranked, unranked };
 }
 
-function buildClassSection(events: CombinedSessionEvent[], classCode: string): CombinedSection {
+function buildClassSection(
+  events: CombinedSessionEvent[],
+  classCode: string,
+  penaltyMs: number,
+): CombinedSection {
   const driverIds = new Set<number>();
   for (const event of events) {
     for (const entry of event.entries) {
@@ -124,7 +132,7 @@ function buildClassSection(events: CombinedSessionEvent[], classCode: string): C
         carNumber = entry.carNumber;
         carDescription = entry.carDescription;
       }
-      const best = bestRunForEntry(entry);
+      const best = bestRunForEntry(entry, penaltyMs);
       sessions.push({ ...sessionMeta(event), runNumber: best?.runNumber ?? null, correctedMs: best?.correctedMs ?? null });
     }
 
@@ -147,7 +155,7 @@ function buildClassSection(events: CombinedSessionEvent[], classCode: string): C
   return { classCode, ...sortRows(rows) };
 }
 
-function buildOverallSection(events: CombinedSessionEvent[]): CombinedSection {
+function buildOverallSection(events: CombinedSessionEvent[], penaltyMs: number): CombinedSection {
   const driverIds = new Set<number>();
   for (const event of events) {
     for (const entry of event.entries) driverIds.add(entry.driver.id);
@@ -169,8 +177,8 @@ function buildOverallSection(events: CombinedSessionEvent[]): CombinedSection {
       const candidates = event.entries.filter((e) => e.driver.id === driverId);
       const chosen = candidates.reduce<CombinedEntry | null>((best, c) => {
         if (best == null) return c;
-        const bestMs = bestCorrectedMsForEntry(best);
-        const curMs = bestCorrectedMsForEntry(c);
+        const bestMs = bestCorrectedMsForEntry(best, penaltyMs);
+        const curMs = bestCorrectedMsForEntry(c, penaltyMs);
         if (curMs == null) return best;
         if (bestMs == null || curMs < bestMs) return c;
         return best;
@@ -190,7 +198,7 @@ function buildOverallSection(events: CombinedSessionEvent[]): CombinedSection {
       if (primaryClass === "") primaryClass = chosen.class.code;
       else if (chosen.class.code !== primaryClass) classMismatch = true;
 
-      const best = bestRunForEntry(chosen);
+      const best = bestRunForEntry(chosen, penaltyMs);
       sessions.push({ ...sessionMeta(event), runNumber: best?.runNumber ?? null, correctedMs: best?.correctedMs ?? null });
     }
 
@@ -228,8 +236,15 @@ function buildOverallSection(events: CombinedSessionEvent[]): CombinedSection {
  * (name ascending, so "(A)" sorts before "(B)" even if a session was
  * deleted and re-ingested out of order; `id` breaks exact-name ties) and
  * computes results.
+ *
+ * `penaltyMs` (League Foundation PR 2 Task 7) defaults to the shared
+ * `CONE_PENALTY_MS` constant, so existing call sites are unchanged (parity).
+ * The combined-event page passes the events' season `scoringPolicy.conePenaltyMs`.
  */
-export function buildCombinedResults(events: CombinedSessionEvent[]): CombinedResults {
+export function buildCombinedResults(
+  events: CombinedSessionEvent[],
+  penaltyMs: number = CONE_PENALTY_MS,
+): CombinedResults {
   const ordered = [...events].sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
 
   const classCodes = Array.from(
@@ -239,7 +254,7 @@ export function buildCombinedResults(events: CombinedSessionEvent[]): CombinedRe
   return {
     sessions: ordered.map((e) => ({ id: e.id, slug: e.slug, name: e.name, date: e.date })),
     label: combinedEventLabel(ordered),
-    classes: classCodes.map((code) => buildClassSection(ordered, code)),
-    overall: buildOverallSection(ordered),
+    classes: classCodes.map((code) => buildClassSection(ordered, code, penaltyMs)),
+    overall: buildOverallSection(ordered, penaltyMs),
   };
 }

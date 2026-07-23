@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import { slugify } from "@/lib/ingest";
 
 // Fixture DBs run `prisma migrate deploy`, which seeds the "pca-rmr" League
 // row unconditionally (see the league-foundation migration) but seeds a
@@ -64,10 +65,12 @@ export async function ensureLeagueAndSeasons(
 
     let season = await client.season.findFirst({ where: { leagueId: league.id, year } });
     if (!season) {
+      const seasonName = name ?? `${year} Season`;
       season = await client.season.create({
         data: {
           leagueId: league.id,
-          name: name ?? `${year} Season`,
+          name: seasonName,
+          slug: slugify(seasonName),
           year,
           plannedEvents,
           scoringPolicy: DEFAULT_SCORING_POLICY,

@@ -131,6 +131,7 @@ model League {
   msrOrgId              String?
   smugmugUser           String?
   smugmugDisciplinePath String?
+  logoUrl               String?
   createdAt             DateTime @default(now())
 
   seasons        Season[]
@@ -155,6 +156,7 @@ model Season {
   id            Int    @id @default(autoincrement())
   leagueId      Int
   name          String
+  slug          String // URL-safe addressing key — slugify(name) unless overridden via --slug
   year          Int
   plannedEvents Int    @default(0)
   scoringPolicy String // JSON snapshot — copied from a ScoringSystem, never a live reference
@@ -165,6 +167,7 @@ model Season {
   events Event[]
 
   @@unique([leagueId, name])
+  @@unique([leagueId, slug])
   @@index([leagueId, year])
 }
 

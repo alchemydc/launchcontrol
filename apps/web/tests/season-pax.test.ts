@@ -22,6 +22,7 @@ const FIXED_PAX_CLASSMETRIC_POLICY =
 
 let prisma: PrismaClient;
 let seasonId: number;
+let conePenaltySeasonId: number;
 
 // One event, two standard classes plus an "X" run group whose raw and pax
 // orders INVERT (the run-group correctness case), built via direct Prisma
@@ -103,6 +104,55 @@ beforeAll(async () => {
       },
     });
   }
+
+  // Separate season (2027, same league) for the conePenaltyMs-threading
+  // tests below: a single class ("CS") with two drivers whose relative
+  // order flips depending on the per-cone penalty — Zoe strikes 2 cones,
+  // Wendy is clean. Isolated from the YEAR/2026 fixture above so those
+  // sections/tests (AS/BST/X, PAX ordering) are never touched by changing
+  // this season's policy.
+  const { seasonIdByYear: seasonIdByYear2027 } = await ensureLeagueAndSeasons(prisma, [
+    { year: 2027 },
+  ]);
+  conePenaltySeasonId = seasonIdByYear2027.get(2027)!;
+
+  const cs = await prisma.carClass.create({ data: { leagueId, code: "CS", paxIndex: 0.9 } });
+  const conePenaltyEvent = await prisma.event.create({
+    data: {
+      seasonId: conePenaltySeasonId,
+      slug: "2027-cone-penalty-test",
+      name: "Cone Penalty Test 2027#1",
+      date: new Date("2027-04-18T00:00:00.000Z"),
+    },
+  });
+  const [zoe, wendy] = await Promise.all([
+    prisma.driver.create({ data: { firstName: "Zoe", lastInitial: "Z.", identityHash: "zoe-hash" } }),
+    prisma.driver.create({ data: { firstName: "Wendy", lastInitial: "W.", identityHash: "wendy-hash" } }),
+  ]);
+  const conePenaltyEntrySpecs: Array<{ driverId: number; carNumber: string; ms: number; cones: number }> = [
+    { driverId: zoe!.id, carNumber: "5", ms: 50000, cones: 2 },
+    { driverId: wendy!.id, carNumber: "6", ms: 53000, cones: 0 },
+  ];
+  for (const spec of conePenaltyEntrySpecs) {
+    const entry = await prisma.entry.create({
+      data: {
+        eventId: conePenaltyEvent.id,
+        driverId: spec.driverId,
+        classId: cs.id,
+        paxClassId: cs.id,
+        carNumber: spec.carNumber,
+      },
+    });
+    await prisma.run.create({
+      data: {
+        entryId: entry.id,
+        runNumber: 1,
+        rawTimeMs: spec.ms,
+        cones: spec.cones,
+        disposition: RunDisposition.CLEAN,
+      },
+    });
+  }
 });
 
 afterAll(async () => {
@@ -179,16 +229,62 @@ describe("countedEventTarget (scoringPolicy.drops)", () => {
   });
 });
 
-describe("conePenaltyMs enforcement (unwired per-season cone math)", () => {
-  it("rejects a policy whose conePenaltyMs differs from the shared CONE_PENALTY_MS constant", async () => {
-    await setPolicy(
+describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
+  async function setConePenaltyPolicy(policy: string) {
+    await prisma.season.update({ where: { id: conePenaltySeasonId }, data: { scoringPolicy: policy } });
+  }
+
+  it("a season's default 2000ms policy (matching CONE_PENALTY_MS) is the parity baseline", async () => {
+    await setConePenaltyPolicy(
+      '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+    );
+    const result = await buildSeasonLeaderboard(2027, prisma);
+    const cs = result.sections.find((s) => s.classCode === "CS")!;
+    // Zoe: 50000 + 2×2000 = 54000. Wendy: 53000 (clean). Wendy is faster.
+    expect(cs.drivers.map((d) => d.driverName)).toEqual(["Wendy W.", "Zoe Z."]);
+    expect(cs.drivers[0]!.totalPoints).toBe(1000);
+    expect(cs.drivers[1]!.totalPoints).toBe(981); // round(1000 × 53000 / 54000)
+  });
+
+  it("a 1000ms-penalty season scores this same matchup differently end-to-end — the win flips", async () => {
+    await setConePenaltyPolicy(
       '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":1000}',
     );
-    await expect(buildSeasonLeaderboard(YEAR, prisma)).rejects.toThrow(
-      /scoringPolicy\.conePenaltyMs=1000 differs from the shared CONE_PENALTY_MS constant \(2000ms\)/,
+    const result = await buildSeasonLeaderboard(2027, prisma);
+    const cs = result.sections.find((s) => s.classCode === "CS")!;
+    // Zoe: 50000 + 2×1000 = 52000, now faster than Wendy's clean 53000.
+    expect(cs.drivers.map((d) => d.driverName)).toEqual(["Zoe Z.", "Wendy W."]);
+    expect(cs.drivers[0]!.totalPoints).toBe(1000);
+    expect(cs.drivers[1]!.totalPoints).toBe(981); // round(1000 × 52000 / 53000)
+  });
+
+  it("the same 1000ms penalty also flips the synthetic overall-PAX section (scoringPolicy.paxSection)", async () => {
+    await setConePenaltyPolicy(
+      '{"v":1,"drops":"fixed","paxSection":true,"classMetric":"raw","conePenaltyMs":1000}',
     );
-    // Restore a valid policy so this mutation doesn't leak into any other
-    // test that reuses this season row.
+    const result = await buildSeasonLeaderboard(2027, prisma);
+    const pax = result.sections.find((s) => s.classCode === "PAX")!;
+    // CS paxIndex 0.9: Zoe 52000×0.9=46800, Wendy 53000×0.9=47700 — Zoe wins.
+    expect(pax.drivers.map((d) => d.driverName)).toEqual(["Zoe Z.", "Wendy W."]);
+  });
+
+  it("restoring the 2000ms policy restores the original (parity) order — the threading is not one-directional", async () => {
+    await setConePenaltyPolicy(
+      '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+    );
+    const result = await buildSeasonLeaderboard(2027, prisma);
+    const cs = result.sections.find((s) => s.classCode === "CS")!;
+    expect(cs.drivers.map((d) => d.driverName)).toEqual(["Wendy W.", "Zoe Z."]);
+  });
+
+  it("the unrelated 2026 season fixture is unaffected by any of the above (default seasons unchanged)", async () => {
+    // Reset to this file's baseline policy — a prior describe block
+    // (classMetric=pax) left the 2026 season's policy mutated, same as
+    // every other test in that block does at its own start via setPolicy().
     await setPolicy(FIXED_RAW_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+    expect(result.sections.map((s) => s.classCode)).toEqual(["AS", "BST", "X"]);
+    const x = result.sections.find((s) => s.classCode === "X")!;
+    expect(x.drivers.map((d) => d.driverName)).toEqual(["Yuri Y.", "Xena X."]);
   });
 });

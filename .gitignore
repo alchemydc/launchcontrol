@@ -31,3 +31,6 @@ docs/private/
 
 # logos etc
 assets/
+
+# self-hosted deployment config (real secrets/config; see .example)
+deploy/launchcontrol.env

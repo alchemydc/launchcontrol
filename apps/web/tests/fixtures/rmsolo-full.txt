@@ -1,0 +1,52 @@
+                                         Results
+                                       Summer 2026#1
+
+AS
+Pos      # Name                                                  Runs                               Best
+T1      88 Alex Driver             2003 Chevrolet Corvette Z06    43.969     42.908+1   42.298     42.298
+           Faketown, CO                                           42.492     43.594+1   42.833
+                                                                  DNS
+T2       44 Bobby Racer            2022 Tesla Model 3 Performa    42.878+1   43.063+1   43.266+1   42.316
+      (144) Faketown, CO                                          42.566     47.540     42.316      0.018
+                                                                  42.550
+ 3     144 Casey Racer             2022 Tesla Model 3 Performa    50.847     47.404     48.155     47.220
+      (44) Faketown, CO                                           50.210+1   47.220     DNS         2.085
+                                                                  DNS
+
+BS
+Pos      # Name                                                 Runs                                Best
+T1      26 Dana Pilot              2025 Honda Civic TypeR Whit 46.702        45.380     45.045     42.992
+           Faketown, CO                                         44.612+1     42.992     43.137
+                                                                DNS
+ 2      31 Evan Wheel              2003 Porsche Carrera 2 Arcti 45.498+1     43.836     43.470+3   43.400
+           Faketown, CO                                         43.293+1     43.058+1   43.400      0.408
+                                                                DNS
+                                         Results
+                                       Summer 2026#1
+
+BS
+Pos      # Name                                                Runs                                 Best
+ 3       6 Finn Corner             2022 BMW Z4 M40i Masano      48.435     48.084     47.623       46.044
+           Faketown, CO                                         46.475     46.126     46.044        0.165
+                                                                DNS
+
+XU
+Pos    # Name                                                 Runs                               Best
+T 1 118 Gray Novice               1997 BMW Z3 black           48.457     47.589+1   45.721     44.833
+    (18) Faketown, CO                                         45.482+1   45.379     44.833
+                                                              DNS
+ 2       18 Harper Novice         2012 BMW z3 silver          49.380     47.222    46.668      45.233
+      (118) Faketown, CO                                      45.233     44.715 DNF45.993       0.400
+                                                              DNS
+ 3      40 Indy Absent            2005 Subaru Impreza WRX S   DNS        DNS        DNS         DNS
+           Faketown, CO                                       DNS        DNS        DNS
+                                                              DNS
+ 4      22 Robin Merged           1997 BMW Z3 red            48.457     47.589+1   45.994 DNF   44.833
+      Faketown, CO                                          45.482+1   45.379     44.833
+                                                              DNS
+
+M
+Pos      # Name                                                 Runs                                Best
+T1     146 Max Modified            2002 Mystery Formula Car     43.783     43.347     42.468      37.037
+           Faketown, CO                                         41.125     40.933     40.389
+                                                                DNS
