@@ -65,6 +65,7 @@ model Entry {
   driverId       Int
   classId        Int
   paxClassId     Int
+  paxIndexApplied Decimal? // factor actually applied at ingest (PAX snapshot; PR 3) — null only pre-backfill
   carNumber              String
   carDescription         String?
   bestCommittedRunNumber Int?    // VisualAX-authoritative best-run pointer; resolved from registrations.bestcommittedrun_id by finding the FK's position in the driver's sorted-by-id source runs (1-indexed). Null when VisualAX emits no committed best.
