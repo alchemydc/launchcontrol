@@ -1,7 +1,8 @@
 import { unlinkSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { isAdmin } from "@/lib/admin";
+import { isLeagueAdmin } from "@/lib/admin";
+import { resolveDefaultLeague } from "@/lib/league-config";
 import { validateAxdbBuffer } from "@/lib/axdb-validate";
 import { ingestAxdb } from "@/lib/ingest";
 import { prisma } from "@/lib/prisma";
@@ -20,7 +21,9 @@ export async function POST(request: NextRequest) {
 
   const msrUid = session.msrUid;
 
-  if (!(await isAdmin(msrUid))) {
+  // AxWare upload always targets the deployment's default league by design.
+  const league = await resolveDefaultLeague(prisma);
+  if (!league || !(await isLeagueAdmin(msrUid, league.id))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

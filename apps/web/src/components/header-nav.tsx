@@ -11,7 +11,7 @@
 import Link from "next/link";
 import { getSession } from "@/lib/session";
 import { getLeagueConfig, countLeagues } from "@/lib/league-config";
-import { isAdmin } from "@/lib/admin";
+import { isAnyLeagueAdmin } from "@/lib/admin";
 
 const linkClass =
   "text-sm text-muted-foreground hover:text-foreground transition-colors";
@@ -28,7 +28,7 @@ export async function HeaderNav() {
   const displayName = isSignedIn
     ? `${session!.firstName ?? ""} ${session!.lastInitial ?? ""}`.trim()
     : null;
-  const showAdmin = await isAdmin(session?.msrUid);
+  const showAdmin = await isAnyLeagueAdmin(session?.msrUid);
   // Events/Leaderboard live in the per-league subnav (LeagueSubnav), not
   // here — header links carried no indication of WHICH league they pointed
   // at. The header keeps only global, league-independent items.

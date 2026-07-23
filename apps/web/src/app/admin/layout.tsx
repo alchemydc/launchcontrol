@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { isAdmin } from "@/lib/admin";
+import { isAnyLeagueAdmin } from "@/lib/admin";
 
 export default async function AdminLayout({
   children,
@@ -8,6 +8,6 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const session = await getSession();
-  if (!(await isAdmin(session.msrUid))) notFound();
+  if (!(await isAnyLeagueAdmin(session.msrUid))) notFound();
   return <>{children}</>;
 }

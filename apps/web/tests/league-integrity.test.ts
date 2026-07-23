@@ -6,7 +6,7 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { ingestAxdb } from "@/lib/ingest";
 import { createSeason } from "@/lib/create-season";
 import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
-import { isAdmin } from "@/lib/admin";
+import { isLeagueAdmin, isAnyLeagueAdmin } from "@/lib/admin";
 import { DEFAULT_SCORING_POLICY } from "./helpers/league-fixture";
 import { dbTarget, migrateDeploy } from "./helpers/db";
 
@@ -201,14 +201,18 @@ describe("CarClass cross-league isolation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Membership shim: isAdmin() is env-allowlist OR LeagueMembership(ADMIN)
-// for the default league — never neither, never a plain MEMBER role.
+// 4. Per-league admin gates: isLeagueAdmin(uid, leagueId) is env-allowlist
+// (superuser) OR a LeagueMembership(ADMIN) row FOR THAT SPECIFIC league —
+// never neither, never a plain MEMBER role, and never an ADMIN row for a
+// different league. isAnyLeagueAdmin(uid) gates the /admin entry: superuser
+// OR an ADMIN row for any league.
 // ---------------------------------------------------------------------------
-describe("isAdmin() membership shim", () => {
+describe("isLeagueAdmin() / isAnyLeagueAdmin()", () => {
   const { path, url } = dbTarget("integrity-membership-shim");
   let client: PrismaClient;
   const originalEnv = process.env.ADMIN_MSR_UIDS;
   let leagueId: number;
+  let otherLeagueId: number;
 
   beforeAll(async () => {
     rmSync(path, { force: true });
@@ -216,6 +220,16 @@ describe("isAdmin() membership shim", () => {
     client = new PrismaClient({ adapter: new PrismaLibSql({ url }) });
     const league = await client.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
     leagueId = league.id;
+    const other = await client.league.create({
+      data: {
+        slug: "membership-other-league",
+        name: "Other League",
+        siteTitle: "Other",
+        siteDescription: "Other league test fixture.",
+        landingDescription: "Other league test fixture.",
+      },
+    });
+    otherLeagueId = other.id;
   });
 
   afterEach(() => {
@@ -228,37 +242,58 @@ describe("isAdmin() membership shim", () => {
     rmSync(path, { force: true });
   });
 
-  it("env-only uid (no membership row) is admin", async () => {
+  it("env-only uid (no membership row) is a league admin", async () => {
     process.env.ADMIN_MSR_UIDS = "ENV-ONLY-UID";
-    expect(await isAdmin("ENV-ONLY-UID", client)).toBe(true);
+    expect(await isLeagueAdmin("ENV-ONLY-UID", leagueId, client)).toBe(true);
   });
 
-  it("membership-row-only uid (ADMIN role, not in env) is admin", async () => {
+  it("membership-row-only uid (ADMIN role, not in env) is a league admin", async () => {
     delete process.env.ADMIN_MSR_UIDS;
     await client.leagueMembership.create({
       data: { leagueId, msrUid: "ROW-ONLY-ADMIN-UID", role: "ADMIN" },
     });
-    expect(await isAdmin("ROW-ONLY-ADMIN-UID", client)).toBe(true);
+    expect(await isLeagueAdmin("ROW-ONLY-ADMIN-UID", leagueId, client)).toBe(true);
   });
 
-  it("uid satisfying both env and an ADMIN row is admin", async () => {
+  it("uid satisfying both env and an ADMIN row is a league admin", async () => {
     process.env.ADMIN_MSR_UIDS = "BOTH-UID";
     await client.leagueMembership.create({
       data: { leagueId, msrUid: "BOTH-UID", role: "ADMIN" },
     });
-    expect(await isAdmin("BOTH-UID", client)).toBe(true);
+    expect(await isLeagueAdmin("BOTH-UID", leagueId, client)).toBe(true);
   });
 
-  it("uid satisfying neither is not admin", async () => {
+  it("uid satisfying neither is not a league admin", async () => {
     process.env.ADMIN_MSR_UIDS = "SOME-OTHER-UID";
-    expect(await isAdmin("NEITHER-UID", client)).toBe(false);
+    expect(await isLeagueAdmin("NEITHER-UID", leagueId, client)).toBe(false);
   });
 
-  it("a MEMBER-role membership row does not grant admin", async () => {
+  it("a MEMBER-role membership row does not grant league admin", async () => {
     delete process.env.ADMIN_MSR_UIDS;
     await client.leagueMembership.create({
       data: { leagueId, msrUid: "MEMBER-ROLE-UID", role: "MEMBER" },
     });
-    expect(await isAdmin("MEMBER-ROLE-UID", client)).toBe(false);
+    expect(await isLeagueAdmin("MEMBER-ROLE-UID", leagueId, client)).toBe(false);
+  });
+
+  it("an ADMIN row on league A does not grant isLeagueAdmin on league B", async () => {
+    delete process.env.ADMIN_MSR_UIDS;
+    await client.leagueMembership.create({
+      data: { leagueId, msrUid: "LEAGUE-A-ADMIN-UID", role: "ADMIN" },
+    });
+    expect(await isLeagueAdmin("LEAGUE-A-ADMIN-UID", leagueId, client)).toBe(true);
+    expect(await isLeagueAdmin("LEAGUE-A-ADMIN-UID", otherLeagueId, client)).toBe(false);
+  });
+
+  it("isAnyLeagueAdmin is true for an ADMIN of any league, false for a MEMBER-only user", async () => {
+    delete process.env.ADMIN_MSR_UIDS;
+    await client.leagueMembership.create({
+      data: { leagueId: otherLeagueId, msrUid: "ANY-ADMIN-UID", role: "ADMIN" },
+    });
+    await client.leagueMembership.create({
+      data: { leagueId, msrUid: "ANY-MEMBER-UID", role: "MEMBER" },
+    });
+    expect(await isAnyLeagueAdmin("ANY-ADMIN-UID", client)).toBe(true);
+    expect(await isAnyLeagueAdmin("ANY-MEMBER-UID", client)).toBe(false);
   });
 });
