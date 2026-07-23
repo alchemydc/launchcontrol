@@ -93,6 +93,34 @@ describe("createLeague", () => {
     expect(preset.name).toBe("Named Preset");
   });
 
+  it("happy path: --logo-url is stored verbatim when it's a valid http(s) URL", async () => {
+    const result = await createLeague(
+      { slug: "logo-league", name: "Logo League", logoUrl: "https://example.com/logo.png" },
+      prisma,
+    );
+    expect(result.league.logoUrl).toBe("https://example.com/logo.png");
+  });
+
+  it("defaults logoUrl to null when omitted", async () => {
+    const result = await createLeague({ slug: "no-logo-league", name: "No Logo League" }, prisma);
+    expect(result.league.logoUrl).toBeNull();
+  });
+
+  it("rejects a malformed --logo-url", async () => {
+    await expect(
+      createLeague({ slug: "bad-logo-league", name: "Bad Logo League", logoUrl: "not a url" }, prisma),
+    ).rejects.toThrow(/--logo-url must be a valid http\(s\) URL/);
+  });
+
+  it("rejects a non-http(s) --logo-url scheme", async () => {
+    await expect(
+      createLeague(
+        { slug: "javascript-logo-league", name: "Javascript Logo League", logoUrl: "javascript:alert(1)" },
+        prisma,
+      ),
+    ).rejects.toThrow(/--logo-url must be a valid http\(s\) URL/);
+  });
+
   it("happy path: --policy-file reads, validates, and canonicalizes a policy JSON file for the default preset", async () => {
     const file = policyFile(
       "custom-policy.json",

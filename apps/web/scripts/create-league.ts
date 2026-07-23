@@ -4,6 +4,7 @@
 //   pnpm --filter web league:create --slug <slug> --name <name>
 //     [--title <title>] [--description <text>] [--footer <text>] [--landing <text>]
 //     [--gate optional|none] [--preset-name <name>] [--policy-file <path.json>]
+//     [--logo-url <http(s) url>]
 //
 // --gate defaults to "optional". --gate required is refused: every league created
 // here is non-default by definition (the default league only ever comes from the
@@ -23,7 +24,8 @@ function usage(): never {
   console.error(
     "Usage: pnpm --filter web league:create --slug <slug> --name <name> " +
       "[--title <title>] [--description <text>] [--footer <text>] [--landing <text>] " +
-      "[--gate optional|none] [--preset-name <name>] [--policy-file <path.json>]",
+      "[--gate optional|none] [--preset-name <name>] [--policy-file <path.json>] " +
+      "[--logo-url <http(s) url>]",
   );
   process.exit(2);
 }
@@ -38,6 +40,7 @@ type Args = {
   gate?: string;
   presetName?: string;
   policyFile?: string;
+  logoUrl?: string;
 };
 
 function parseArgs(argv: string[]): Args {
@@ -77,6 +80,9 @@ function parseArgs(argv: string[]): Args {
       case "--policy-file":
         args.policyFile = next();
         break;
+      case "--logo-url":
+        args.logoUrl = next();
+        break;
       default:
         console.error(`Unknown flag: ${flag}`);
         usage();
@@ -108,6 +114,7 @@ async function main() {
     gate: args.gate as "required" | "optional" | "none" | undefined,
     presetName: args.presetName,
     policyFilePath,
+    logoUrl: args.logoUrl,
   });
 
   console.log(JSON.stringify(result, null, 2));

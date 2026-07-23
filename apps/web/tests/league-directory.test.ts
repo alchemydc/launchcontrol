@@ -40,6 +40,75 @@ describe("listLeagueDirectory", () => {
     expect(pca?.name).toBe("PCA Rocky Mountain Region");
     expect(pca?.activeSeasonName).toBeNull();
     expect(pca?.eventCount).toBe(0);
+    expect(pca?.driverCount).toBe(0);
+    expect(pca?.logoUrl).toBeNull();
+    expect(typeof pca?.id).toBe("number");
+    expect(pca?.siteDescription).toEqual(expect.any(String));
+  });
+
+  it("reports a null logoUrl when unset, and the stored URL when set", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "logo-directory-league",
+        name: "Logo Directory League",
+        siteTitle: "x",
+        siteDescription: "x",
+        landingDescription: "x",
+        accessGate: "none",
+        logoUrl: "https://example.com/logo.png",
+      },
+    });
+    const directory = await listLeagueDirectory(prisma);
+    const entry = directory.find((l) => l.slug === "logo-directory-league");
+    expect(entry?.logoUrl).toBe("https://example.com/logo.png");
+    expect(entry?.id).toBe(league.id);
+  });
+
+  it("counts distinct drivers with entries anywhere in the league", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "driver-count-league",
+        name: "Driver Count League",
+        siteTitle: "x",
+        siteDescription: "x",
+        landingDescription: "x",
+        accessGate: "none",
+      },
+    });
+    const season = await prisma.season.create({
+      data: {
+        leagueId: league.id,
+        name: "2026 Season",
+        slug: "2026-season",
+        year: 2026,
+        scoringPolicy: PCA_POLICY,
+        status: "active",
+      },
+    });
+    const event = await prisma.event.create({
+      data: { seasonId: season.id, slug: "event-1", name: "Event 1", date: new Date("2026-04-01T00:00:00.000Z") },
+    });
+    const carClass = await prisma.carClass.create({
+      data: { leagueId: league.id, code: "ST" },
+    });
+    const driverA = await prisma.driver.create({
+      data: { firstName: "A", lastInitial: "A.", identityHash: "driver-count-a" },
+    });
+    const driverB = await prisma.driver.create({
+      data: { firstName: "B", lastInitial: "B.", identityHash: "driver-count-b" },
+    });
+    // driverA enters twice (co-drive/multi-class) — should still count once.
+    await prisma.entry.createMany({
+      data: [
+        { eventId: event.id, driverId: driverA.id, classId: carClass.id, paxClassId: carClass.id, carNumber: "1" },
+        { eventId: event.id, driverId: driverA.id, classId: carClass.id, paxClassId: carClass.id, carNumber: "2" },
+        { eventId: event.id, driverId: driverB.id, classId: carClass.id, paxClassId: carClass.id, carNumber: "3" },
+      ],
+    });
+
+    const directory = await listLeagueDirectory(prisma);
+    const entry = directory.find((l) => l.slug === "driver-count-league");
+    expect(entry?.driverCount).toBe(2);
   });
 
   it("reports the active season's name and event count for a league with data", async () => {

@@ -131,6 +131,7 @@ model League {
   msrOrgId              String?
   smugmugUser           String?
   smugmugDisciplinePath String?
+  logoUrl               String?
   createdAt             DateTime @default(now())
 
   seasons        Season[]

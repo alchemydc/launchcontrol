@@ -35,6 +35,8 @@ export type CreateLeagueOptions = {
   presetName?: string;
   /** Path to a JSON file holding a ScoringPolicy v1 object for the default preset. Defaults to a PCA-shaped policy. */
   policyFilePath?: string;
+  /** Logo image URL for the league gate card grid. Must be http(s) when given. Defaults to null (placeholder tile). */
+  logoUrl?: string | null;
 };
 
 export type CreateLeagueResult = {
@@ -83,6 +85,19 @@ export async function createLeague(
     throw new Error(`[create-league] a league with slug '${slug}' already exists (id=${existing.id}, name='${existing.name}').`);
   }
 
+  const logoUrl = opts.logoUrl?.trim() || null;
+  if (logoUrl) {
+    let parsed: URL;
+    try {
+      parsed = new URL(logoUrl);
+    } catch {
+      throw new Error(`[create-league] --logo-url must be a valid http(s) URL (got '${logoUrl}').`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(`[create-league] --logo-url must be a valid http(s) URL (got '${logoUrl}').`);
+    }
+  }
+
   let rawPolicy: string;
   if (opts.policyFilePath) {
     try {
@@ -116,6 +131,7 @@ export async function createLeague(
         footerText,
         landingDescription,
         accessGate: gate,
+        logoUrl,
       },
     });
     await tx.scoringSystem.create({
