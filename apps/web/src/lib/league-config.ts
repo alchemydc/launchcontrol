@@ -9,7 +9,7 @@
  */
 
 import { cache } from "react";
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { League, PrismaClient } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 export type AccessGate = "required" | "optional" | "none";
@@ -48,12 +48,30 @@ function coerceAccessGate(raw: string): AccessGate {
     : "required";
 }
 
+function defaultLeagueSlug(): string {
+  return process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
+}
+
+/**
+ * Resolve the raw League row named by DEFAULT_LEAGUE_SLUG (default
+ * "pca-rmr"), or `null` if it doesn't exist. Shared by `getLeagueConfig`
+ * (which throws a friendly error on `null`, below) and callers that just
+ * need the row/id and already handle an absent league gracefully —
+ * `season-leaderboard.ts`'s scoping lookups and the admin membership shim.
+ * Not memoized like `getLeagueConfig`: callers needing per-request dedup
+ * inside a React render tree should go through `getLeagueConfig` instead.
+ */
+export async function resolveDefaultLeague(
+  client: PrismaClient = defaultClient,
+): Promise<League | null> {
+  return client.league.findUnique({ where: { slug: defaultLeagueSlug() } });
+}
+
 async function loadLeagueConfig(client: PrismaClient): Promise<LeagueConfig> {
-  const slug = process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
-  const league = await client.league.findUnique({ where: { slug } });
+  const league = await resolveDefaultLeague(client);
   if (!league) {
     throw new Error(
-      `[league-config] no League row for DEFAULT_LEAGUE_SLUG=${JSON.stringify(slug)} — run 'prisma migrate deploy' to seed it.`,
+      `[league-config] no League row for DEFAULT_LEAGUE_SLUG=${JSON.stringify(defaultLeagueSlug())} — run 'prisma migrate deploy' to seed it.`,
     );
   }
 

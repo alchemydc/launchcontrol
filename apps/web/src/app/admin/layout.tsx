@@ -8,6 +8,6 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const session = await getSession();
-  if (!isAdmin(session.msrUid)) notFound();
+  if (!(await isAdmin(session.msrUid))) notFound();
   return <>{children}</>;
 }

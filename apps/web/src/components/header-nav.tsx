@@ -28,7 +28,7 @@ export async function HeaderNav() {
   const displayName = isSignedIn
     ? `${session!.firstName ?? ""} ${session!.lastInitial ?? ""}`.trim()
     : null;
-  const showAdmin = isAdmin(session?.msrUid);
+  const showAdmin = await isAdmin(session?.msrUid);
   const showResultsLinks = publicMode || Boolean(session?.isRmrMember);
 
   return (

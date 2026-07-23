@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
   const msrUid = session.msrUid;
 
-  if (!isAdmin(msrUid)) {
+  if (!(await isAdmin(msrUid))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

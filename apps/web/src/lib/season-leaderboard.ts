@@ -1,7 +1,7 @@
 import { PrismaClient, type RunDisposition } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { CONE_PENALTY_MS } from "@/lib/constants";
-import { getLeagueConfig } from "@/lib/league-config";
+import { resolveDefaultLeague } from "@/lib/league-config";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { prisma as defaultClient } from "@/lib/prisma";
 
@@ -169,15 +169,14 @@ type LoadedEvent = {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the id of the deployment's default League (per `getLeagueConfig`).
- * Returns `null` only if the League row named by DEFAULT_LEAGUE_SLUG has
- * vanished between `getLeagueConfig`'s read and this one — `getLeagueConfig`
- * itself already throws a clear error when the row is entirely missing, so
- * in practice this always resolves.
+ * Resolve the id of the deployment's default League (`resolveDefaultLeague`,
+ * shared with the admin membership shim). Returns `null` only if the row
+ * named by DEFAULT_LEAGUE_SLUG doesn't exist — `getLeagueConfig` is the
+ * caller that throws a clear error for that case; every page reaches it
+ * elsewhere in the render tree, so in practice this always resolves.
  */
 async function resolveDefaultLeagueId(client: PrismaClient): Promise<number | null> {
-  const config = await getLeagueConfig(client);
-  const league = await client.league.findUnique({ where: { slug: config.slug } });
+  const league = await resolveDefaultLeague(client);
   return league?.id ?? null;
 }
 
