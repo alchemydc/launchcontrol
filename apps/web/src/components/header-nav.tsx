@@ -37,7 +37,10 @@ export async function HeaderNav() {
 
   return (
     <nav className="flex flex-wrap items-center gap-3 sm:gap-4">
-      <NavResultsLinks showInDefaultContext={showResultsLinks} />
+      <NavResultsLinks
+        showInDefaultContext={showResultsLinks}
+        defaultLeagueSlug={league.slug}
+      />
       {showLeaguesLink && (
         <Link href="/leagues" className={linkClass}>
           Leagues

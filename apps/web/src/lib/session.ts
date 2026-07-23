@@ -161,11 +161,12 @@ export function decideMemberGate(
  * `getLeagueConfig()` — so `/l/[league]` routes gate on THAT league's
  * config, not the default league's.
  *
- * `homeHref` is where a failed gate redirects to (default "/", matching
- * `requireRmrMember`'s legacy behavior exactly); league-scoped routes pass
- * `/l/[slug]` so a bounced viewer lands on that league's own home (which
- * itself renders the Landing view for a required gate) rather than the
- * default league's.
+ * `homeHref` is where a failed gate redirects to; every caller passes
+ * `/l/[slug]` explicitly (league-scoped routes their own league's slug,
+ * `requireRmrMember` the deployment's default league's slug) so a bounced
+ * viewer lands on that league's own home — which still renders the Landing
+ * sign-in view for a required gate — rather than on ROOT `/`, which is now
+ * always the league gate (card grid) and has no sign-in prompt.
  *
  * Note: `session.isRmrMember` is computed at MSR OAuth login time against
  * only the DEFAULT league's `msrOrgId` (see api/auth/msr/callback/route.ts)
@@ -180,8 +181,8 @@ export function decideMemberGate(
  */
 export async function requireMember(
   league: { accessGate: AccessGate },
-  returnPath?: string,
-  homeHref: string = "/",
+  returnPath: string | undefined,
+  homeHref: string,
 ): Promise<{ session: IronSession<SessionData> | null }> {
   // Public leagues (accessGate optional|none) never gate results pages.
   if (league.accessGate !== "required") {
@@ -206,5 +207,8 @@ export async function requireRmrMember(
   returnPath?: string
 ): Promise<{ session: IronSession<SessionData> | null }> {
   const league = await getLeagueConfig();
-  return requireMember(league, returnPath);
+  // ROOT `/` is now always the league gate (no sign-in prompt) — bounce to
+  // the default league's own scoped home instead, same pattern every
+  // `/l/[league]` route already uses.
+  return requireMember(league, returnPath, `/l/${league.slug}`);
 }

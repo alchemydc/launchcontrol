@@ -187,17 +187,3 @@ export const getLeagueConfigForSlug = cache(
 export const countLeagues = cache(
   (client: PrismaClient = defaultClient): Promise<number> => client.league.count(),
 );
-
-/**
- * Gate-vs-home branch decision for the ROOT `/` route: once a second league
- * exists, `/` becomes the league gate (card grid) instead of the default
- * league's home page — extracted as its own function purely so the branch
- * is unit-testable without rendering `app/page.tsx`. Single-league
- * deployments (e.g. PCA production) get `false` here, so `/` stays on its
- * pre-gate codepath byte-for-byte.
- */
-export async function shouldShowLeagueGate(
-  client: PrismaClient = defaultClient,
-): Promise<boolean> {
-  return (await countLeagues(client)) > 1;
-}

@@ -9,7 +9,6 @@ import {
   getLeagueConfig,
   getLeagueConfigForSlug,
   resolveLeague,
-  shouldShowLeagueGate,
 } from "@/lib/league-config";
 
 // getLeagueConfig() resolves branding/gate/smugmug config from the League row
@@ -339,31 +338,6 @@ describe("countLeagues", () => {
       },
     });
     expect(await countLeagues(prisma)).toBe(2);
-    await prisma.league.delete({ where: { id: league.id } });
-  });
-});
-
-// League gate: ROOT `/` renders the card-grid league gate instead of the
-// default league's home once a second league exists. Single-league
-// deployments (PCA production) must see `false` — byte-parity with the
-// pre-gate home page.
-describe("shouldShowLeagueGate", () => {
-  it("is false for a fresh seed (only the default league)", async () => {
-    expect(await shouldShowLeagueGate(prisma)).toBe(false);
-  });
-
-  it("is true once a second league exists", async () => {
-    const league = await prisma.league.create({
-      data: {
-        slug: "gate-test-league",
-        name: "x",
-        siteTitle: "x",
-        siteDescription: "x",
-        footerText: "x",
-        landingDescription: "x",
-      },
-    });
-    expect(await shouldShowLeagueGate(prisma)).toBe(true);
     await prisma.league.delete({ where: { id: league.id } });
   });
 });

@@ -1,11 +1,12 @@
 /**
- * League gate — the multi-league entry point. Renders a responsive grid of
- * league cards (logo, name, one-liner, stat badges), each linking to
- * `/l/[slug]`. Used two places:
+ * League gate — the entry point for every deployment. Renders a responsive
+ * grid of league cards (logo, name, one-liner, stat badges), each linking to
+ * `/l/[slug]`. Used two places, unconditionally, including single-league
+ * deployments (e.g. PCA production — a disclosed product change from the
+ * pre-gate default league home that used to live at `/`):
  *
- *   - ROOT `/`, when `shouldShowLeagueGate()` is true (a second league
- *     exists) — see app/page.tsx.
- *   - `/leagues`, always — see app/leagues/page.tsx.
+ *   - ROOT `/` — see app/page.tsx.
+ *   - `/leagues` — see app/leagues/page.tsx (kept as an explicit alias).
  *
  * Always public: this page carries no gated content, only directory-level
  * info (name, logo, active season, event/driver counts); the league CONTENT
