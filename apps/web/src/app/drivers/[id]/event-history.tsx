@@ -32,6 +32,11 @@ function formatSignedPercent(value: number | null): string {
 }
 
 export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
+  // Only true for an "All leagues" filter selection that actually spans more
+  // than one league -- every legacy, no-filter (single-league) render keeps
+  // this false, so the badge never appears there.
+  const showLeagueBadge = history.some((r) => r.leagueId !== history[0]?.leagueId);
+
   if (history.length === 0) {
     return (
       <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm mb-6">
@@ -82,6 +87,7 @@ export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
                   </div>
                   <p className="text-[11px] text-muted-foreground tabular-nums mt-0.5">
                     {formatDate(row.eventDate)}
+                    {showLeagueBadge && ` · ${row.leagueName}`}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-0.5 shrink-0 mt-0.5">
@@ -156,6 +162,11 @@ export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
               <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                 Event
               </TableHead>
+              {showLeagueBadge && (
+                <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  League
+                </TableHead>
+              )}
               <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                 Class
               </TableHead>
@@ -200,6 +211,11 @@ export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
                     )}
                   </div>
                 </TableCell>
+                {showLeagueBadge && (
+                  <TableCell className="px-3 text-muted-foreground text-sm">
+                    {row.leagueName}
+                  </TableCell>
+                )}
                 <TableCell className="px-3">
                   <div className="flex items-center gap-1.5">
                     <Badge variant="outline">{row.classCode}</Badge>

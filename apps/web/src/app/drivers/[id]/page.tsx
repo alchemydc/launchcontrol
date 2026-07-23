@@ -1,11 +1,18 @@
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
-import { buildDriverHistory } from "@/lib/driver-history";
+import {
+  buildDriverHistory,
+  listSeasonsForDriver,
+  type DriverHistoryFilter,
+  type DriverHistoryRow,
+} from "@/lib/driver-history";
+import { getLeagueConfig } from "@/lib/league-config";
 import { ProgressionChart, type ProgressionPoint } from "./progression-chart";
 import { TimeDeltaChart } from "./time-delta-chart";
 import { BackButton } from "@/components/back-button";
 import { EventHistory } from "./event-history";
+import { DriverFilterBar } from "./driver-filter-bar";
 import { requireRmrMember } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -24,11 +31,113 @@ function formatPercent(value: number | null, fractionDigits = 1): string {
   return `${(value * 100).toFixed(fractionDigits)}%`;
 }
 
+function toChartData(rows: DriverHistoryRow[]): ProgressionPoint[] {
+  return rows.map((row) => ({
+    date: row.eventDate.toISOString(),
+    label: formatDate(row.eventDate),
+    eventName: row.eventName,
+    position: row.position,
+    percentile: row.percentile,
+    diffFromLeaderPct: row.diffFromLeaderPct,
+    diffFromMedianPct: row.diffFromMedianPct,
+  }));
+}
+
+type TimeScope = "all" | "season" | "range";
+
+type CurrentSelection = {
+  league: "all" | string;
+  timeScope: TimeScope;
+  seasonId?: number;
+  from?: string;
+  to?: string;
+};
+
+/**
+ * URL query params -> DriverHistoryFilter + the UI's current-selection state.
+ * No `league`/`season`/`from`/`to` params at all yields `filter = {}`, which
+ * `buildDriverHistory` resolves to the legacy default-league/all-time scope
+ * -- the Task 6 parity contract (default view on a single-league DB renders
+ * the same event set as before this task).
+ *
+ * An unrecognized `league` slug (stale bookmark, typo) is silently ignored
+ * rather than 404ing -- falls back to the same default-league scope as no
+ * param at all.
+ *
+ * Edge case: a driver whose ONLY league is a non-default one would
+ * otherwise render an empty page on the bare `/drivers/[id]` URL (the
+ * legacy default-league scope resolves to zero events for them) with no
+ * league chips to escape it (chips only render for >1 league, per spec).
+ * When no league/time params are present at all AND the driver has no
+ * footprint in the deployment's default league, fall back to "all leagues"
+ * instead of the bare legacy scope. This never fires on a single-league DB
+ * (every driver's one league IS the default there), so it doesn't affect
+ * the Task 6 parity contract.
+ */
+function parseFilter(
+  searchParams: { league?: string; season?: string; from?: string; to?: string },
+  leagues: Array<{ id: number; slug: string }>,
+  defaultLeague: { id: number; slug: string },
+): { filter: DriverHistoryFilter; current: CurrentSelection } {
+  const filter: DriverHistoryFilter = {};
+  let league: "all" | string = defaultLeague.slug;
+
+  const noParamsGiven =
+    !searchParams.league && !searchParams.season && !searchParams.from && !searchParams.to;
+  const driverHasNoDefaultLeagueFootprint =
+    leagues.length > 0 && !leagues.some((l) => l.id === defaultLeague.id);
+
+  if (searchParams.league === "all") {
+    filter.leagueIds = "all";
+    league = "all";
+  } else if (searchParams.league) {
+    const match = leagues.find((l) => l.slug === searchParams.league);
+    if (match) {
+      filter.leagueIds = [match.id];
+      league = match.slug;
+    }
+  } else if (noParamsGiven && driverHasNoDefaultLeagueFootprint) {
+    filter.leagueIds = "all";
+    league = "all";
+  }
+
+  let timeScope: TimeScope = "all";
+  let seasonId: number | undefined;
+  let from: string | undefined;
+  let to: string | undefined;
+
+  const seasonIdNum = searchParams.season ? Number(searchParams.season) : NaN;
+  if (Number.isInteger(seasonIdNum) && seasonIdNum > 0) {
+    filter.seasonId = seasonIdNum;
+    timeScope = "season";
+    seasonId = seasonIdNum;
+  } else if (searchParams.from || searchParams.to) {
+    timeScope = "range";
+    if (searchParams.from) {
+      const d = new Date(`${searchParams.from}T00:00:00.000Z`);
+      if (!Number.isNaN(d.getTime())) {
+        filter.from = d;
+        from = searchParams.from;
+      }
+    }
+    if (searchParams.to) {
+      const d = new Date(`${searchParams.to}T23:59:59.999Z`);
+      if (!Number.isNaN(d.getTime())) {
+        filter.to = d;
+        to = searchParams.to;
+      }
+    }
+  }
+
+  return { filter, current: { league, timeScope, seasonId, from, to } };
+}
 
 export default async function DriverPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ league?: string; season?: string; from?: string; to?: string }>;
 }) {
   const { id } = await params;
 
@@ -41,7 +150,18 @@ export default async function DriverPage({
   const driver = await prisma.driver.findUnique({ where: { id: driverId } });
   if (!driver) notFound();
 
-  const history = await buildDriverHistory(driverId);
+  // The driver's full league/season breadth, independent of the current
+  // filter selection -- powers the filter bar's options.
+  const driverSeasons = await listSeasonsForDriver(driverId, prisma);
+  const leagues = Array.from(
+    new Map(driverSeasons.map((s) => [s.leagueId, { id: s.leagueId, slug: s.leagueSlug, name: s.leagueName }])).values(),
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  const defaultLeague = await getLeagueConfig();
+  const rawSearchParams = await searchParams;
+  const { filter, current } = parseFilter(rawSearchParams, leagues, defaultLeague);
+
+  const history = await buildDriverHistory(driverId, filter, prisma);
   const driverName = `${driver.firstName} ${driver.lastInitial}`;
 
   const cleanRows = history.filter((r) => r.position != null);
@@ -64,15 +184,21 @@ export default async function DriverPage({
       : cleanRows.reduce((sum, r) => sum + (r.percentile as number), 0) /
         cleanRows.length;
 
-  const chartData: ProgressionPoint[] = history.map((row) => ({
-    date: row.eventDate.toISOString(),
-    label: formatDate(row.eventDate),
-    eventName: row.eventName,
-    position: row.position,
-    percentile: row.percentile,
-    diffFromLeaderPct: row.diffFromLeaderPct,
-    diffFromMedianPct: row.diffFromMedianPct,
-  }));
+  // Cross-league aggregation rule (spec §5): the summary counts/positions
+  // above combine across leagues freely. Time-series charts do not -- a
+  // shared x-axis position/percentile line spanning two leagues' distinct
+  // fields would be meaningless, so each league gets its own chart pair
+  // when the filtered set actually spans more than one.
+  const distinctLeagueIds = Array.from(new Set(history.map((r) => r.leagueId)));
+  const chartSections =
+    distinctLeagueIds.length > 1
+      ? distinctLeagueIds.map((leagueId) => {
+          const rows = history.filter((r) => r.leagueId === leagueId);
+          return { leagueName: rows[0]!.leagueName, data: toChartData(rows) };
+        })
+      : distinctLeagueIds.length === 1
+        ? [{ leagueName: null, data: toChartData(history) }]
+        : [];
 
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
@@ -99,6 +225,19 @@ export default async function DriverPage({
           </div>
         </div>
       </header>
+
+      <DriverFilterBar
+        driverId={driverId}
+        leagues={leagues.map((l) => ({ slug: l.slug, name: l.name }))}
+        seasons={driverSeasons.map((s) => ({
+          seasonId: s.seasonId,
+          seasonName: s.seasonName,
+          year: s.year,
+          leagueSlug: s.leagueSlug,
+          leagueName: s.leagueName,
+        }))}
+        current={current}
+      />
 
       <div className="mb-6 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
         <div className="bg-muted/40 px-4 py-3 border-b border-border/60">
@@ -150,8 +289,13 @@ export default async function DriverPage({
         </div>
       </div>
 
-      {history.length > 0 && (
-        <>
+      {chartSections.map((section, i) => (
+        <div key={section.leagueName ?? i}>
+          {section.leagueName && (
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              {section.leagueName}
+            </h3>
+          )}
           <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm mb-6">
             <div className="bg-muted/40 px-4 py-3 border-b border-border/60">
               <h2 className="text-sm font-semibold tracking-wide uppercase text-foreground">
@@ -159,7 +303,7 @@ export default async function DriverPage({
               </h2>
             </div>
             <div className="p-4">
-              <ProgressionChart data={chartData} />
+              <ProgressionChart data={section.data} />
             </div>
           </div>
 
@@ -170,11 +314,11 @@ export default async function DriverPage({
               </h2>
             </div>
             <div className="p-4">
-              <TimeDeltaChart data={chartData} />
+              <TimeDeltaChart data={section.data} />
             </div>
           </div>
-        </>
-      )}
+        </div>
+      ))}
 
       <EventHistory history={history} />
     </main>

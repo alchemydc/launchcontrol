@@ -1,5 +1,6 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
+import { resolveDefaultLeague } from "@/lib/league-config";
 import { prisma } from "@/lib/prisma";
 import { combinedEventLabel } from "@/lib/season-leaderboard";
 
@@ -22,6 +23,27 @@ export type DriverHistoryRow = {
   diffFromMedianPct: number | null;
   href: string; // `/events/[slug]` (single event) or `/events/combined/[date]` (M1.17)
   combined: boolean; // true when this row collapses a same-date multi-session group (M1.17)
+  leagueId: number; // Task 6: driver is global; every row carries its league so callers can
+  leagueSlug: string; // aggregate counts/positions across leagues while keeping time-series
+  leagueName: string; // charts split into one series per league (never mixed on one axis).
+};
+
+/**
+ * Task 6 driver-stats filter. `leagueIds`/`seasonId` are mutually exclusive
+ * scoping modes (a season pins exactly one league already); `seasonId` wins
+ * if both are given. Omitting `leagueIds` entirely (the legacy call shape)
+ * scopes to the deployment's default league, all time -- this is also the
+ * Task-4-flagged carry-forward fix: `buildDriverHistory(driverId)` used to
+ * query events completely unscoped by league, which was latent-safe on a
+ * single-league DB but would silently blend another league's events into a
+ * cross-league driver's history once a second league exists. Passing no
+ * filter now makes that default-league scoping explicit rather than absent.
+ */
+export type DriverHistoryFilter = {
+  leagueIds?: number[] | "all";
+  seasonId?: number;
+  from?: Date;
+  to?: Date;
 };
 
 export type EntryForHistory = {
@@ -68,11 +90,25 @@ function medianOf(sortedAscMs: number[]): number | null {
 // is one of `dates` -- NOT filtered by driverId, so a same-date combined
 // group's full sibling-session and entrant pool resolves even when the
 // subject driver only entered one of its sessions (see buildCombinedHistoryRow).
-function loadEventsForDates(prismaClient: PrismaClient, dates: Date[]) {
+//
+// `scopeWhere` (the same league/season fragment applied to the driver-date
+// discovery query in `buildDriverHistory`) is applied here too -- without
+// it, a coincidental same-date event in a DIFFERENT league (impossible
+// pre-multi-league, now merely unlikely) would be fetched, and a driver with
+// no entry in it would make `buildSingleEventRow`'s displayEntry lookup
+// blow up. The date-range half of the filter is deliberately NOT re-applied
+// here: `dates` was already derived from the range-filtered discovery query,
+// and every sibling shares one of those exact dates by definition.
+function loadEventsForDates(
+  prismaClient: PrismaClient,
+  dates: Date[],
+  scopeWhere: Prisma.EventWhereInput,
+) {
   return prismaClient.event.findMany({
-    where: { date: { in: dates } },
+    where: { date: { in: dates }, ...scopeWhere },
     orderBy: { date: "asc" },
     include: {
+      season: { select: { leagueId: true, league: { select: { slug: true, name: true } } } },
       entries: {
         include: {
           class: { select: { code: true } },
@@ -149,6 +185,9 @@ function buildSingleEventRow(event: LoadedEvent, driverId: number): DriverHistor
     diffFromMedianPct,
     href: `/events/${event.slug}`,
     combined: false,
+    leagueId: event.season.leagueId,
+    leagueSlug: event.season.league.slug,
+    leagueName: event.season.league.name,
   };
 }
 
@@ -274,12 +313,56 @@ function buildCombinedHistoryRow(
     diffFromMedianPct,
     href: `/events/combined/${dateKey}`,
     combined: true,
+    // All sessions in a group necessarily share one league -- buildDriverHistory's
+    // (leagueId, dateKey) grouping key guarantees it, so sessions[0] speaks for the group.
+    leagueId: sessions[0]!.season.leagueId,
+    leagueSlug: sessions[0]!.season.league.slug,
+    leagueName: sessions[0]!.season.league.name,
   };
+}
+
+// A resolved, unambiguous scoping mode -- the three DriverHistoryFilter
+// shapes (explicit leagueIds, "all", or the implicit default-league legacy
+// call) collapse to one of these before any query runs.
+type ResolvedScope =
+  | { kind: "season"; seasonId: number }
+  | { kind: "leagues"; leagueIds: number[] }
+  | { kind: "all" };
+
+async function resolveScope(
+  filter: DriverHistoryFilter,
+  client: PrismaClient,
+): Promise<ResolvedScope | null> {
+  if (filter.seasonId != null) return { kind: "season", seasonId: filter.seasonId };
+  if (filter.leagueIds === "all") return { kind: "all" };
+  if (Array.isArray(filter.leagueIds)) return { kind: "leagues", leagueIds: filter.leagueIds };
+
+  // No league filter given at all -- the legacy call shape. Scope to the
+  // deployment's default league (see DriverHistoryFilter's doc comment).
+  const defaultLeague = await resolveDefaultLeague(client);
+  if (!defaultLeague) return null;
+  return { kind: "leagues", leagueIds: [defaultLeague.id] };
+}
+
+function scopeWhereClause(scope: ResolvedScope): Prisma.EventWhereInput {
+  if (scope.kind === "season") return { seasonId: scope.seasonId };
+  if (scope.kind === "leagues") return { season: { leagueId: { in: scope.leagueIds } } };
+  return {};
+}
+
+function dateRangeWhereClause(filter: DriverHistoryFilter): Prisma.EventWhereInput {
+  if (filter.from == null && filter.to == null) return {};
+  const date: Prisma.DateTimeFilter = {};
+  if (filter.from != null) date.gte = filter.from;
+  if (filter.to != null) date.lte = filter.to;
+  return { date };
 }
 
 /**
  * Build the full driver-history row set for one driver, in strict
- * chronological order.
+ * chronological order, optionally scoped by league/season/date-range
+ * (Task 6's `DriverHistoryFilter`; omit for the legacy default-league,
+ * all-time behavior -- see the type's doc comment for the parity contract).
  *
  * M1.17: events sharing a calendar date (a "combined event", M1.15) collapse
  * into ONE row via `buildCombinedHistoryRow` instead of appearing as
@@ -287,46 +370,120 @@ function buildCombinedHistoryRow(
  * second, driver-unfiltered query -- the initial per-driver query only
  * returns events this driver personally entered, which would miss a sibling
  * session they skipped (the forfeit case) and so under-detect the group.
+ *
+ * Task 6: that second query's grouping key is (leagueId, dateKey), not just
+ * dateKey -- under an "all leagues" scope there's no league where-clause at
+ * all, so two unrelated leagues' events that happen to share a calendar date
+ * must still never collapse into one combined-event row together.
  */
 export async function buildDriverHistory(
   driverId: number,
+  filter: DriverHistoryFilter = {},
   prismaClient: PrismaClient = prisma,
 ): Promise<DriverHistoryRow[]> {
+  const scope = await resolveScope(filter, prismaClient);
+  if (scope == null) return [];
+
+  const scopeWhere = scopeWhereClause(scope);
+  const dateRangeWhere = dateRangeWhereClause(filter);
+
   const driverEventDates = await prismaClient.event.findMany({
-    where: { entries: { some: { driverId } } },
+    where: { entries: { some: { driverId } }, ...scopeWhere, ...dateRangeWhere },
     orderBy: { date: "asc" },
     select: { date: true },
   });
   if (driverEventDates.length === 0) return [];
 
-  // De-duplicated list of every calendar date the driver has any entry on.
+  // De-duplicated list of every calendar date the driver has any entry on
+  // (within scope).
   const dates = Array.from(new Set(driverEventDates.map((d) => d.date.getTime()))).map(
     (t) => new Date(t),
   );
 
-  // Re-fetch every session sharing one of those dates -- not filtered by
-  // driverId -- so a combined-event group resolves with its full sibling
-  // session(s) and entrant pool even when this driver only entered one
-  // session of the group.
-  const events = await loadEventsForDates(prismaClient, dates);
+  // Re-fetch every in-scope session sharing one of those dates -- not
+  // filtered by driverId -- so a combined-event group resolves with its
+  // full sibling session(s) and entrant pool even when this driver only
+  // entered one session of the group.
+  const events = await loadEventsForDates(prismaClient, dates, scopeWhere);
 
-  // Group by UTC date key -- the same key used in season-leaderboard.ts and
-  // the combined event page. `events` is already date-ascending, so Map
-  // insertion order preserves chronological group order.
-  const groupsByDateKey = new Map<string, LoadedEvent[]>();
+  // Group by (leagueId, UTC date key) -- see the function doc comment above
+  // for why leagueId is part of the key. `events` is already date-ascending,
+  // so Map insertion order preserves chronological group order.
+  const groupsByKey = new Map<string, LoadedEvent[]>();
   for (const event of events) {
     const dateKey = event.date.toISOString().slice(0, 10);
-    let group = groupsByDateKey.get(dateKey);
+    const key = `${event.season.leagueId}:${dateKey}`;
+    let group = groupsByKey.get(key);
     if (group == null) {
       group = [];
-      groupsByDateKey.set(dateKey, group);
+      groupsByKey.set(key, group);
     }
     group.push(event);
   }
 
-  return Array.from(groupsByDateKey.values()).map((group) =>
+  return Array.from(groupsByKey.values()).map((group) =>
     group.length === 1
       ? buildSingleEventRow(group[0]!, driverId)
       : buildCombinedHistoryRow(group, driverId),
+  );
+}
+
+export type DriverSeasonOption = {
+  seasonId: number;
+  seasonSlug: string;
+  seasonName: string;
+  year: number;
+  leagueId: number;
+  leagueSlug: string;
+  leagueName: string;
+};
+
+/**
+ * Every season a driver has at least one entry in, across every league --
+ * powers the driver-stats filter UI's season picker and league-chip set
+ * (Task 6). Deliberately ignores any DriverHistoryFilter: the UI needs the
+ * driver's full breadth of leagues/seasons to build its options regardless
+ * of what's currently selected. Sorted newest-year-first, then by league
+ * name, then season name, for a deterministic display order.
+ */
+export async function listSeasonsForDriver(
+  driverId: number,
+  client: PrismaClient = prisma,
+): Promise<DriverSeasonOption[]> {
+  const events = await client.event.findMany({
+    where: { entries: { some: { driverId } } },
+    select: {
+      season: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          year: true,
+          leagueId: true,
+          league: { select: { slug: true, name: true } },
+        },
+      },
+    },
+  });
+
+  const bySeasonId = new Map<number, DriverSeasonOption>();
+  for (const { season } of events) {
+    if (bySeasonId.has(season.id)) continue;
+    bySeasonId.set(season.id, {
+      seasonId: season.id,
+      seasonSlug: season.slug,
+      seasonName: season.name,
+      year: season.year,
+      leagueId: season.leagueId,
+      leagueSlug: season.league.slug,
+      leagueName: season.league.name,
+    });
+  }
+
+  return Array.from(bySeasonId.values()).sort(
+    (a, b) =>
+      b.year - a.year ||
+      a.leagueName.localeCompare(b.leagueName) ||
+      a.seasonName.localeCompare(b.seasonName),
   );
 }

@@ -237,7 +237,7 @@ describe("bestPaxMsForEntry", () => {
 
 describe("buildDriverHistory", () => {
   it("returns events in strict chronological order", async () => {
-    const history = await buildDriverHistory(alexId, prisma);
+    const history = await buildDriverHistory(alexId, {}, prisma);
     expect(history).toHaveLength(5);
     for (let i = 1; i < history.length; i++) {
       expect(history[i]!.eventDate.getTime()).toBeGreaterThan(
@@ -247,7 +247,7 @@ describe("buildDriverHistory", () => {
   });
 
   it("omits events where the driver had no entry (Cam absent from event 4)", async () => {
-    const history = await buildDriverHistory(camId, prisma);
+    const history = await buildDriverHistory(camId, {}, prisma);
     const eventNames = history.map((h) => h.eventName);
     expect(eventNames).toEqual([
       "Season Event 1",
@@ -259,7 +259,7 @@ describe("buildDriverHistory", () => {
   });
 
   it("computes Alex's per-event best, position, and leader delta", async () => {
-    const history = await buildDriverHistory(alexId, prisma);
+    const history = await buildDriverHistory(alexId, {}, prisma);
 
     // Event 1: Alex is pooled leader → pos=1, delta=0
     // 7 entrants: Alex(C1), Cam(CS), Gina(CS), Bea(C1), Fred(CS), Dee(C1), Evan(C1)
@@ -288,7 +288,7 @@ describe("buildDriverHistory", () => {
   });
 
   it("computes Bea's leader-delta at event 1", async () => {
-    const history = await buildDriverHistory(beaId, prisma);
+    const history = await buildDriverHistory(beaId, {}, prisma);
     const e1 = history.find((h) => h.eventName === "Season Event 1")!;
     // PAX order at event 1: Alex=50000(1), Cam=52440(2), Gina=53360(3), Bea=55000(4), ...
     // Adding Fred and Gina to event 1 pushes Bea from pos=3 to pos=4.
@@ -300,7 +300,7 @@ describe("buildDriverHistory", () => {
   });
 
   it("renders Cam's DNF-only event 5 with nulls but still includes the row", async () => {
-    const history = await buildDriverHistory(camId, prisma);
+    const history = await buildDriverHistory(camId, {}, prisma);
     const e5 = history.find((h) => h.eventName === "Season Event 5")!;
     expect(e5).toBeDefined();
     expect(e5.bestRawMs).toBeNull();
@@ -320,7 +320,7 @@ describe("buildDriverHistory", () => {
   });
 
   it("computes entrantCount and percentile correctly", async () => {
-    const history = await buildDriverHistory(evanId, prisma);
+    const history = await buildDriverHistory(evanId, {}, prisma);
     // Evan only attended event 1 (7 entrants: original 5 + Fred + Gina), placed 7th (slowest PAX).
     expect(history).toHaveLength(1);
     expect(history[0]!.entrantCount).toBe(7);
@@ -330,7 +330,7 @@ describe("buildDriverHistory", () => {
 
   it("computes median PAX correctly at event 1 (odd count)", async () => {
     // Sorted PAX at event 1: [50000, 52440, 55000, 60000, 62000] → median = 55000 (Bea).
-    const history = await buildDriverHistory(beaId, prisma);
+    const history = await buildDriverHistory(beaId, {}, prisma);
     const e1 = history.find((h) => h.eventName === "Season Event 1")!;
     expect(e1.medianPaxMs).toBe(55000);
     expect(e1.diffFromMedianPct).toBe(0); // Bea IS the median
@@ -339,14 +339,14 @@ describe("buildDriverHistory", () => {
   it("computes median PAX correctly at event 5 (even count)", async () => {
     // Sorted PAX at event 5: [Bea=55200, Alex=56000, Fred=60720, Gina=74520]
     // Even count (4): median = round((56000 + 60720) / 2) = 58360.
-    const history = await buildDriverHistory(alexId, prisma);
+    const history = await buildDriverHistory(alexId, {}, prisma);
     const e5 = history.find((h) => h.eventName === "Season Event 5")!;
     expect(e5.medianPaxMs).toBe(58360);
     expect(e5.diffFromMedianPct).toBeCloseTo((56000 - 58360) / 58360, 6);
   });
 
   it("returns [] for a driver with no entries", async () => {
-    const history = await buildDriverHistory(999_999, prisma);
+    const history = await buildDriverHistory(999_999, {}, prisma);
     expect(history).toEqual([]);
   });
 });
@@ -364,7 +364,7 @@ describe("buildDriverHistory", () => {
 // ---------------------------------------------------------------------------
 describe("buildDriverHistory — combined events (M1.17)", () => {
   it("collapses a same-date session pair into one combined row, pooled-PAX ranked", async () => {
-    const history = await buildDriverHistory(quinnId, prisma);
+    const history = await buildDriverHistory(quinnId, {}, prisma);
 
     // 4 underlying Event rows (opener, classic, session A, session B)
     // collapse to 3 history rows.
@@ -393,7 +393,7 @@ describe("buildDriverHistory — combined events (M1.17)", () => {
   });
 
   it("ranks a second qualifier in the same combined group correctly", async () => {
-    const history = await buildDriverHistory(raeId, prisma);
+    const history = await buildDriverHistory(raeId, {}, prisma);
     const combined = history.find((h) => h.combined);
     expect(combined).toBeDefined();
     expect(combined!.bestRawMs).toBe(86000); // 50000 + 36000
@@ -409,7 +409,7 @@ describe("buildDriverHistory — combined events (M1.17)", () => {
     // Leo only entered session A of the pair (no entry at all in session B) —
     // forfeits the ranked pool but the row is still rendered, like today's
     // DNF-only single-event rows.
-    const history = await buildDriverHistory(leoId, prisma);
+    const history = await buildDriverHistory(leoId, {}, prisma);
     expect(history).toHaveLength(1);
     const row = history[0]!;
 
