@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
-import { buildEventSlug, ingestAxdb } from "@/lib/ingest";
+import { buildEventSlug, ingestAxdb, slugify } from "@/lib/ingest";
 import { writeAudit } from "@/lib/audit";
 import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
 import {
@@ -273,6 +273,7 @@ describe("updateEventMetadata — cross-year season re-resolution", () => {
       data: {
         leagueId,
         name: "2025 Season",
+        slug: slugify("2025 Season"),
         year: 2025,
         plannedEvents: 0,
         scoringPolicy: season2026.scoringPolicy,
