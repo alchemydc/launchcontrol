@@ -2,6 +2,7 @@ import { Prisma, PrismaClient, type RunDisposition } from "@/generated/prisma/cl
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { resolveDefaultLeague } from "@/lib/league-config";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
+import { appliedPaxIndex } from "@/lib/pax-applied";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 /**
@@ -150,7 +151,10 @@ type LoadedEntry = {
   // Prisma Decimal — Number() before arithmetic. paxClass equals the entered
   // class for most entries; run-group classes (M/N/S/P/X-style splits, ported
   // for the RMsolo league in a later PR) carry a distinct derived factor here.
+  // `paxIndexApplied` (PR 3, Task 10) is the snapshot actually scored with —
+  // see `appliedPaxIndex` — `paxClass.paxIndex` is read only as its fallback.
   paxClass: { paxIndex: unknown };
+  paxIndexApplied: unknown;
   driver: { id: number; firstName: string; lastInitial: string };
   bestCommittedRunNumber: number | null;
   runs: Array<{ runNumber: number; rawTimeMs: number | null; cones: number; disposition: RunDisposition }>;
@@ -222,7 +226,9 @@ const seasonLeaderboardInclude = {
     orderBy: { date: "asc" as const },
     include: {
       entries: {
-        include: {
+        select: {
+          bestCommittedRunNumber: true,
+          paxIndexApplied: true,
           class: { select: { code: true } },
           paxClass: { select: { paxIndex: true } },
           driver: { select: { id: true, firstName: true, lastInitial: true } },
@@ -396,7 +402,7 @@ export async function buildSeasonLeaderboard(
       // entries carry per-driver derived factors (the printed group results
       // are indexed).
       const classMetric = policy.classMetric === "pax"
-        ? Math.round(best * Number(entry.paxClass.paxIndex))
+        ? Math.round(best * appliedPaxIndex(entry))
         : best;
       const existing = byDriver.get(d.id);
       if (existing == null || classMetric < existing) {
@@ -408,7 +414,7 @@ export async function buildSeasonLeaderboard(
       // across every class. Everything downstream (points formula, combined
       // groups, qualifying threshold, drops) treats it as one more class.
       if (paxSectionEnabled) {
-        const paxMs = Math.round(best * Number(entry.paxClass.paxIndex));
+        const paxMs = Math.round(best * appliedPaxIndex(entry));
         let paxByDriver = byClass.get(PAX_SECTION_CODE);
         if (paxByDriver == null) {
           paxByDriver = new Map();

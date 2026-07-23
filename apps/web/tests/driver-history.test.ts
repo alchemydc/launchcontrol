@@ -101,6 +101,7 @@ function entry(
     driverId: 1,
     carNumber: "1",
     bestCommittedRunNumber,
+    paxIndexApplied: paxIndex,
     class: { code: "C1" },
     paxClass: { code: "C1", paxIndex: { toString: () => String(paxIndex) } },
     runs: runs.map((r, i) => ({

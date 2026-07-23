@@ -134,6 +134,43 @@ describe("seed parity: buildSeasonLeaderboard(2026) matches main's fixture expec
       { name: "Bea B.", totalPoints: 1000, eligible: false },
     ]);
   });
+
+  // PR 3, Task 10: scoring reads must use the Entry.paxIndexApplied snapshot
+  // stamped at ingest, not a live join to CarClass.paxIndex — otherwise a
+  // later rules-committee correction to a class's PAX factor would silently
+  // reach back and re-score every past event that used it. paxSection is
+  // switched on here (last test in this describe block, so it doesn't
+  // disturb the raw-metric assertions above): the synthetic PAX section
+  // pools entries ACROSS classes by their paxIndex-adjusted time, so
+  // rescaling one class's factor actually shifts cross-class ranking/points
+  // — unlike per-class classMetric="pax", which rescales every entry sharing
+  // a uniform class factor by the same constant and so is order-invariant
+  // (see the comment on classMetric in season-leaderboard.ts), a vacuous
+  // check that would pass even against a live join.
+  it("editing CarClass.paxIndex after ingest no longer changes buildSeasonLeaderboard output", async () => {
+    const season = await client.season.findFirstOrThrow({ where: { year: 2026 } });
+    await client.season.update({
+      where: { id: season.id },
+      data: {
+        scoringPolicy:
+          '{"v":1,"drops":"fixed","paxSection":true,"classMetric":"raw","conePenaltyMs":2000}',
+      },
+    });
+
+    const before = await buildSeasonLeaderboard(2026, client);
+
+    const usedEntry = await client.entry.findFirstOrThrow({
+      where: { event: { seasonId: season.id } },
+      select: { paxClassId: true },
+    });
+    await client.carClass.update({
+      where: { id: usedEntry.paxClassId },
+      data: { paxIndex: 0.123 },
+    });
+
+    const after = await buildSeasonLeaderboard(2026, client);
+    expect(after).toEqual(before);
+  });
 });
 
 // ---------------------------------------------------------------------------
