@@ -468,6 +468,7 @@ describe("buildSeasonLeaderboard empty year", () => {
       totalEvents: 6,
       qualifyingEvents: 4,
       completedEvents: 0,
+      countedEvents: 4, // fixed-mode default policy (DEFAULT_SCORING_POLICY): counted == qualifying
       sections: [],
     });
   });
