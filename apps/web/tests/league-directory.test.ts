@@ -41,7 +41,7 @@ describe("listLeagueDirectory", () => {
     expect(pca?.activeSeasonName).toBeNull();
     expect(pca?.eventCount).toBe(0);
     expect(pca?.driverCount).toBe(0);
-    expect(pca?.logoUrl).toBeNull();
+    expect(pca?.logoUrl).toBe("/league-pca-rmr.jpg");
     expect(typeof pca?.id).toBe("number");
     expect(pca?.siteDescription).toEqual(expect.any(String));
   });

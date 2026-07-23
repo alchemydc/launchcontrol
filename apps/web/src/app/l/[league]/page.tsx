@@ -17,7 +17,7 @@ export default async function LeagueHomePage({
   searchParams,
 }: {
   params: Promise<{ league: string }>;
-  searchParams: Promise<{ year?: string; returnTo?: string | string[] }>;
+  searchParams: Promise<{ season?: string; returnTo?: string | string[] }>;
 }) {
   const { league: slug } = await params;
   const league = await getLeagueConfigForSlug(slug);
