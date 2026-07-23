@@ -13,6 +13,9 @@ describe("decideLeagueAccess", () => {
   it("BLOCKED denies despite org match", () => {
     expect(decideLeagueAccess({ ...GATED, membershipRole: "BLOCKED", superUser: false, session: ORG_MEMBER })).toBe("deny");
   });
+  it.each(["optional", "none"])("BLOCKED denies even on public gate %s", (accessGate) => {
+    expect(decideLeagueAccess({ accessGate, msrOrgId: null, membershipRole: "BLOCKED", superUser: false, session: { msrUid: "U" } })).toBe("deny");
+  });
   it.each(["ADMIN", "MEMBER"] as const)("%s row allows without org", (role) => {
     expect(decideLeagueAccess({ ...GATED, membershipRole: role, superUser: false, session: OTHER_ORG })).toBe("allow");
   });
