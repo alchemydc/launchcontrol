@@ -23,6 +23,7 @@ interface SeasonLeaderboardViewProps {
   totalEvents: number;
   completedEvents: number;
   qualifyingEvents: number;
+  countedEvents: number;
 }
 
 type EventScore = SeasonStandingsRow["scores"][number];
@@ -152,6 +153,21 @@ function DriverTableRow({
   );
 }
 
+// Scoring-rule copy that stays truthful in both SEASON_DROPS modes: in fixed
+// mode countedEvents === qualifyingEvents, reproducing the original sentence
+// byte-for-byte; in proportional mode mid-season it states the current
+// counted target and the season-end rule.
+function scoringNote(
+  countedEvents: number,
+  qualifyingEvents: number,
+  totalEvents: number,
+): string {
+  if (countedEvents === qualifyingEvents) {
+    return `Best ${qualifyingEvents} of ${totalEvents} scores count toward the season total.`;
+  }
+  return `Best ${countedEvents} scores currently count toward the season total (best ${qualifyingEvents} of ${totalEvents} at season end).`;
+}
+
 function classAnchorId(classCode: string): string {
   return `class-${classCode.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 }
@@ -160,10 +176,12 @@ function ClassSection({
   section,
   totalEvents,
   qualifyingEvents,
+  countedEvents,
 }: {
   section: SeasonStandingsByClass;
   totalEvents: number;
   qualifyingEvents: number;
+  countedEvents: number;
 }) {
   if (section.drivers.length === 0) return null;
   const leader = section.drivers[0];
@@ -215,7 +233,7 @@ function ClassSection({
               </TableHead>
               <TableHead
                 className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
-                title={`Best ${qualifyingEvents} of ${totalEvents} scores count toward season total. Dashed border = dropped score.`}
+                title={`${scoringNote(countedEvents, qualifyingEvents, totalEvents)} Dashed border = dropped score.`}
               >
                 Event scores
               </TableHead>
@@ -240,11 +258,10 @@ function ClassJumpBar({
   const sections = standings.filter((s) => s.drivers.length > 0);
   if (sections.length < 2) return null;
   return (
-    <nav
-      aria-label="Jump to class"
-      className="-mx-4 sm:-mx-6 px-4 sm:px-6 mb-6 overflow-x-auto"
-    >
-      <ul className="flex gap-1.5 w-max">
+    <nav aria-label="Jump to class" className="mb-6">
+      {/* flex-wrap (not overflow-x-auto) so the class list wraps to multiple
+          lines like the event page's class filter. */}
+      <ul className="flex flex-wrap gap-1.5">
         {sections.map((s) => (
           <li key={s.classCode}>
             <a
@@ -267,6 +284,7 @@ export function SeasonLeaderboardView({
   totalEvents,
   completedEvents,
   qualifyingEvents,
+  countedEvents,
 }: SeasonLeaderboardViewProps) {
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
@@ -284,10 +302,10 @@ export function SeasonLeaderboardView({
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Points are awarded per event: 1000 to the class winner, others
                 proportional. Combined (same-date, multi-session) events score
-                once, on summed session times. Best {qualifyingEvents} of{" "}
-                {totalEvents} scores count toward the season total. Drivers
-                with fewer than {qualifyingEvents} scoring events are marked
-                Provisional.
+                once, on summed session times.{" "}
+                {scoringNote(countedEvents, qualifyingEvents, totalEvents)}{" "}
+                Drivers with fewer than {qualifyingEvents} scoring events are
+                marked Provisional.
               </p>
             </div>
           </div>
@@ -325,6 +343,7 @@ export function SeasonLeaderboardView({
             section={section}
             totalEvents={totalEvents}
             qualifyingEvents={qualifyingEvents}
+            countedEvents={countedEvents}
           />
         ))
       )}

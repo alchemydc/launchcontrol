@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { buildLeaderboard } from "@/lib/leaderboard";
 import { findSmugmugEventFolder } from "@/lib/smugmug";
 import { requireRmrMember } from "@/lib/session";
+import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { LeaderboardTable } from "./leaderboard-table";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ export default async function EventPage({
   const event = await prisma.event.findFirst({
     where: { slug },
     include: {
+      season: { select: { scoringPolicy: true } },
       entries: {
         include: {
           driver: true,
@@ -47,6 +49,11 @@ export default async function EventPage({
   });
 
   if (!event) notFound();
+
+  // showPaxView is server-resolved from this event's season policy — the
+  // client leaderboard table only ever sees the resulting boolean, never
+  // the policy itself.
+  const showPaxView = parseScoringPolicy(event.season.scoringPolicy).paxSection;
 
   // Combined-event cross-link (M1.15): any other events sharing this event's
   // calendar date form one combined scoring event.
@@ -102,7 +109,7 @@ export default async function EventPage({
         )}
       </header>
 
-      <LeaderboardTable rows={rows} classCodes={classCodes} />
+      <LeaderboardTable rows={rows} classCodes={classCodes} showPaxView={showPaxView} />
     </main>
   );
 }
