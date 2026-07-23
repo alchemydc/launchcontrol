@@ -3,7 +3,12 @@
 // Usage:
 //   pnpm --filter web league:create --slug <slug> --name <name>
 //     [--title <title>] [--description <text>] [--footer <text>] [--landing <text>]
-//     [--gate required|optional|none] [--preset-name <name>] [--policy-file <path.json>]
+//     [--gate optional|none] [--preset-name <name>] [--policy-file <path.json>]
+//
+// --gate defaults to "optional". --gate required is refused: every league created
+// here is non-default by definition (the default league only ever comes from the
+// seed), and only the default league may use accessGate "required" until per-league
+// membership ships (PR 3) — see src/lib/league-config.ts's `toLeagueConfig` guard.
 //
 // A new league has no ScoringSystem preset — resolveOrCreateSeason's ingest-time
 // auto-create path (season-resolve.ts) needs one, so this always creates a default
@@ -18,7 +23,7 @@ function usage(): never {
   console.error(
     "Usage: pnpm --filter web league:create --slug <slug> --name <name> " +
       "[--title <title>] [--description <text>] [--footer <text>] [--landing <text>] " +
-      "[--gate required|optional|none] [--preset-name <name>] [--policy-file <path.json>]",
+      "[--gate optional|none] [--preset-name <name>] [--policy-file <path.json>]",
   );
   process.exit(2);
 }

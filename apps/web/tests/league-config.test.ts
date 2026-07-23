@@ -265,6 +265,56 @@ describe("getLeagueConfigForSlug — Task 5 arbitrary-league resolution", () => 
   });
 });
 
+// Final-review fix: toLeagueConfig is the single choke point every League row
+// passes through, so this is where a non-default league configured with
+// accessGate "required" is refused outright — a non-default "required" league
+// would otherwise silently gate on the DEFAULT league's MSR membership (login
+// is not per-league yet; PR 3 territory).
+describe("toLeagueConfig (via getLeagueConfigForSlug/getLeagueConfig) — non-default 'required' guard", () => {
+  it("throws a clear, league-naming error for a non-default league with accessGate 'required'", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "required-non-default",
+        name: "Required Non Default",
+        siteTitle: "x",
+        siteDescription: "x",
+        footerText: "x",
+        landingDescription: "x",
+        accessGate: "required",
+      },
+    });
+    await expect(getLeagueConfigForSlug("required-non-default", prisma)).rejects.toThrow(
+      /required-non-default[\s\S]*only the default league[\s\S]*may use "required"/,
+    );
+    await prisma.league.delete({ where: { id: league.id } });
+  });
+
+  it("does not affect the default league's own accessGate 'required'", async () => {
+    const config = await getLeagueConfig(prisma);
+    expect(config.slug).toBe("pca-rmr");
+    expect(config.accessGate).toBe("required");
+  });
+
+  it("does not affect a non-default league when it resolves as the DEFAULT_LEAGUE_SLUG target", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "required-as-default",
+        name: "Required As Default",
+        siteTitle: "x",
+        siteDescription: "x",
+        footerText: "x",
+        landingDescription: "x",
+        accessGate: "required",
+      },
+    });
+    process.env.DEFAULT_LEAGUE_SLUG = "required-as-default";
+    const config = await getLeagueConfig(prisma);
+    expect(config.slug).toBe("required-as-default");
+    expect(config.accessGate).toBe("required");
+    await prisma.league.delete({ where: { id: league.id } });
+  });
+});
+
 // Task 5: header nav's "Leagues" link only renders when >1 league exists.
 describe("countLeagues", () => {
   it("returns 1 for a fresh seed (only the default league)", async () => {

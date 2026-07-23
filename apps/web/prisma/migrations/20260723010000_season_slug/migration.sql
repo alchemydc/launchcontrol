@@ -23,6 +23,12 @@
 -- for that same string, though it will still be a valid, unique slug for this
 -- table. Hand-inspect the backfilled `slug` column after migrating a
 -- production DB with unusual season names.
+--
+-- LIMITATION: SQLite's built-in `lower()` only folds ASCII case — a Season
+-- name with non-ASCII letters (e.g. accented characters) backfills a slug
+-- whose casing diverges from what the TS `slugify()` (locale-aware
+-- `.toLowerCase()`) would produce for the same string, on top of the
+-- punctuation-set gap above.
 PRAGMA defer_foreign_keys=ON;
 PRAGMA foreign_keys=OFF;
 

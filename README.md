@@ -88,9 +88,9 @@ pnpm --filter web ingest:rmsolo --league rmsolo   # no --file: scrapes the RMsol
 The exact commands to stand up a second league (RMsolo) alongside the default `pca-rmr` league in your local DB:
 
 ```sh
-# 1. Create the RMsolo league. --gate optional (never "required" on a
-#    non-default league today — see "Operational note" below).
-pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo" --gate optional
+# 1. Create the RMsolo league. --gate defaults to optional; --gate required
+#    is refused for any league created here — see "Operational note" below.
+pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo"
 
 # 2. Write a scoring policy for the season (proportional drops + PAX standings,
 #    a common RMsolo-style preset) and create the season from it.
@@ -109,7 +109,7 @@ pnpm --filter web dev
 # open http://localhost:3000/leagues
 ```
 
-**Operational note:** only the seeded default league (`pca-rmr`) is expected to run with `accessGate: "required"` today — per-login MSR membership is checked against the *default* league's org only (`isRmrMember` is computed at sign-in time, not per-league). Setting a non-default league's gate to `"required"` mis-gates it (it inherits the default league's membership, not its own). Use `--gate optional` or `--gate none` for every non-default league until per-league membership ships (PR 3).
+**Operational note:** only the seeded default league (`pca-rmr`) may run with `accessGate: "required"` — per-login MSR membership is checked against the *default* league's org only (`isRmrMember` is computed at sign-in time, not per-league), so a non-default league would mis-gate on the wrong org's membership. This is enforced, not just documented: `league:create` refuses `--gate required` outright, and `league-config.ts`'s League-row-to-config resolver throws for any non-default league whose `accessGate` is `"required"` however it got there. Use `--gate optional` or `--gate none` (the default) for every non-default league until per-league membership ships (PR 3).
 
 **`SESSION_SECRET` is required** whenever the *default* league's `accessGate` is `"required"` — that's the seeded `pca-rmr` config, so any deployment serving it (including this local walkthrough, since `pca-rmr` stays the default league) needs `SESSION_SECRET` set in `apps/web/.env`, or every gated page 500s. Generate one with `openssl rand -hex 32`.
 

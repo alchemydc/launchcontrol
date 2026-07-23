@@ -107,13 +107,28 @@ export function getRmsoloPaxIndex(classCode: string): number {
  * Parses a Season.paxTable JSON string (see schema.prisma) into a plain
  * code->factor map. Returns `{}` (and warns once) for anything that isn't a
  * JSON object — a malformed table must not crash an ingest, just fall
- * through to the built-in table for every class code.
+ * through to the built-in table for every class code. Per-entry values are
+ * validated too: an entry whose value isn't a finite number is dropped (with
+ * a warning), not coerced — a numeric STRING like `"0.83"` is dropped rather
+ * than parsed, so a class with a dropped/invalid entry falls through to
+ * `getRmsoloPaxIndex`'s built-in table exactly like a class missing from the
+ * paxTable altogether, instead of silently taking on a value of the wrong type.
  */
 export function parseSeasonPaxTable(raw: string): Record<string, number> {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, number>;
+      const table: Record<string, number> = {};
+      for (const [classCode, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          table[classCode] = value;
+        } else {
+          console.warn(
+            `[rmsolo-pax] season paxTable entry '${classCode}' is not a finite number — ignoring it: ${JSON.stringify(value)}`,
+          );
+        }
+      }
+      return table;
     }
   } catch {
     // fall through to the warning below

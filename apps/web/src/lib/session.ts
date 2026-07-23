@@ -170,10 +170,12 @@ export function decideMemberGate(
  * Note: `session.isRmrMember` is computed at MSR OAuth login time against
  * only the DEFAULT league's `msrOrgId` (see api/auth/msr/callback/route.ts)
  * — per-league membership (the unused `LeagueMembership` table) isn't wired
- * into login yet, so a non-default league configured with accessGate
- * "required" gates on default-league membership today. Every league created
- * via `league:create` for this PR (RMsolo) is expected to use "optional" or
- * "none", so this doesn't bite in practice; wiring login to per-league org
+ * into login yet, so a non-default league with accessGate "required" would
+ * gate on default-league membership. This can't actually reach here: a
+ * League row in that state is refused up front by `league-config.ts`'s
+ * `toLeagueConfig` (and `league:create --gate required` is refused too), so
+ * every `league` passed to `requireMember` is already guaranteed "optional"
+ * or "none" unless it's the default league. Wiring login to per-league org
  * membership is PR 3 territory (roles UI).
  */
 export async function requireMember(

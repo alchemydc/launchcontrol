@@ -14,11 +14,15 @@ function formatDateShort(date: Date): string {
   });
 }
 
+const LEGACY_SUBTITLE =
+  "Rocky Mountain Region autocross results, sorted by most recent event.";
+
 export async function EventsHome({
   searchParams,
   leagueId,
   basePath = "",
   smugmugTarget,
+  subtitle = LEGACY_SUBTITLE,
 }: {
   searchParams: Promise<{ year?: string; returnTo?: string | string[] }>;
   /** Explicit league scope (Task 5) — the legacy home page passes the
@@ -31,6 +35,11 @@ export async function EventsHome({
    *  (pre-Task-5 behavior); `/l/[league]` passes that league's config so
    *  photos never resolve against the wrong league. */
   smugmugTarget?: SmugmugLeagueTarget;
+  /** Header subtitle copy — defaults to the legacy PCA RMR string byte-for-byte
+   *  (pre-Task-5 behavior, still used by the unprefixed legacy home page);
+   *  `/l/[league]` passes that league's own `siteDescription` so a non-default
+   *  league's events page never carries the default league's branding. */
+  subtitle?: string;
 }) {
   const { year: yearParam } = await searchParams;
 
@@ -113,8 +122,7 @@ export async function EventsHome({
                 Event results
               </h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Rocky Mountain Region autocross results, sorted by most recent
-                event.
+                {subtitle}
               </p>
             </div>
           </div>

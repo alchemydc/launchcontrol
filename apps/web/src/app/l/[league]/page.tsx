@@ -32,6 +32,7 @@ export default async function LeagueHomePage({
         leagueId={league.id}
         basePath={basePath}
         smugmugTarget={league}
+        subtitle={league.siteDescription}
       />
     );
   }
@@ -47,6 +48,7 @@ export default async function LeagueHomePage({
         leagueId={league.id}
         basePath={basePath}
         smugmugTarget={league}
+        subtitle={league.siteDescription}
       />
     );
   }

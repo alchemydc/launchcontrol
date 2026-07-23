@@ -49,7 +49,7 @@ describe("createLeague", () => {
     expect(result.league.siteDescription).toBe("Rocky Mountain Solo results, calendar, and community media.");
     expect(result.league.landingDescription).toBe("Public results and standings for Rocky Mountain Solo.");
     expect(result.league.footerText).toBeNull();
-    expect(result.league.accessGate).toBe("required");
+    expect(result.league.accessGate).toBe("optional");
     expect(result.scoringSystemName).toBe("Rocky Mountain Solo Default");
 
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: result.league.id } });
@@ -128,6 +128,13 @@ describe("createLeague", () => {
         prisma,
       ),
     ).rejects.toThrow(/--gate must be one of required, optional, none/);
+  });
+
+  it("rejects --gate required — every created league is non-default, and only the default league may use it", async () => {
+    await expect(
+      createLeague({ slug: "required-gate-league", name: "Required Gate League", gate: "required" }, prisma),
+    ).rejects.toThrow(/--gate required is not allowed/);
+    expect(await prisma.league.findUnique({ where: { slug: "required-gate-league" } })).toBeNull();
   });
 
   it("rejects an invalid --policy-file (fails parseScoringPolicy)", async () => {

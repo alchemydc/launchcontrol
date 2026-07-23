@@ -82,6 +82,19 @@ describe("parseSeasonPaxTable", () => {
     expect(parseSeasonPaxTable("42")).toEqual({});
     warnSpy.mockRestore();
   });
+
+  it("drops a non-finite-number entry with a warning, falling back to the built-in table for that class", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(parseSeasonPaxTable('{"AS":"abc"}')).toEqual({});
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("'AS' is not a finite number"));
+    warnSpy.mockRestore();
+  });
+
+  it("keeps well-formed entries alongside a dropped one", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(parseSeasonPaxTable('{"AS": 0.5, "BS": "bad", "CS": null}')).toEqual({ AS: 0.5 });
+    warnSpy.mockRestore();
+  });
 });
 
 describe("resolveSeasonPaxIndex — precedence", () => {

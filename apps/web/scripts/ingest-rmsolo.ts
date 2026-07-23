@@ -15,6 +15,11 @@ const POLITE_DELAY_MS = 1500;
 const UA = "Mozilla/5.0 (compatible; launchcontrol-ingest)";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Same env var and fallback as ingestRmsoloEvent's own DEFAULT_LEAGUE_SLUG
+// (rmsolo-ingest.ts) — kept in sync here so the pre-check below scopes to the
+// exact same league that a non-skipped run would actually ingest into.
+const DEFAULT_LEAGUE_SLUG = process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
+
 function argValue(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
   return i >= 0 ? process.argv[i + 1] : undefined;
@@ -22,10 +27,17 @@ function argValue(flag: string): string | undefined {
 
 async function ingestBuffer(pdf: Buffer, sourceName: string, date: string, name: string | undefined, leagueSlug: string | undefined) {
   const sha256 = createHash("sha256").update(pdf).digest("hex");
+  const effectiveLeagueSlug = leagueSlug?.trim() || DEFAULT_LEAGUE_SLUG;
   // Cheap skip before we bother shelling out to pdftotext / parsing: if a
-  // prior run already ingested this exact PDF, do nothing. ingestRmsoloEvent
-  // itself provides slug-level idempotency (unchanged vs update) beyond this.
-  const existing = await prisma.event.findFirst({ where: { sourceSha256: sha256 } });
+  // prior run already ingested this exact PDF INTO THIS LEAGUE, do nothing.
+  // Scoped by league (not global) — the same PDF sha256 ingested into two
+  // different leagues (e.g. a shared results source) must ingest into both,
+  // not skip the second because the first already claimed that hash.
+  // ingestRmsoloEvent itself provides slug-level idempotency (unchanged vs
+  // update) beyond this.
+  const existing = await prisma.event.findFirst({
+    where: { sourceSha256: sha256, season: { league: { slug: effectiveLeagueSlug } } },
+  });
   if (existing) {
     console.log(`[skip] ${sourceName} — already ingested (event ${existing.slug})`);
     return null;
