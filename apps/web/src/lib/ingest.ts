@@ -46,13 +46,6 @@ const REQUIRED_TABLES = ["events", "classes", "drivers", "registrations", "runs"
 // resolve its target League/Season without depending on unbuilt Task 3 code.
 const DEFAULT_LEAGUE_SLUG = process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
 
-// Default ScoringPolicy v1 snapshot for a Season auto-created at ingest when the
-// event's year has no seeded Season (PR 1 login-less self-heal). Matches the PCA
-// Classic preset seeded by the league-foundation migration. Task 7 replaces this
-// with a proper snapshot of the league's chosen ScoringSystem preset.
-const DEFAULT_SCORING_POLICY =
-  '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
-
 
 export function slugify(s: string): string {
   return s
@@ -198,8 +191,14 @@ export async function ingestAxdb(
     return await client.$transaction(async (tx) => {
       // Resolve the target League → Season for this event. The league is seeded by
       // the league-foundation migration; a missing league means the DB was never
-      // migrated. The Season is resolved by (league, event year); if none exists
-      // it is auto-created as a bare default-policy Season (Task 7 refines this).
+      // migrated. The Season is resolved by (league, event year); if none exists,
+      // it is auto-created (login-less self-heal — seasons otherwise come from
+      // seeds or `pnpm --filter web season:create`). The auto-created row snapshots
+      // the league's OLDEST ScoringSystem preset (deterministic; seeded leagues
+      // carry exactly one) rather than any hardcoded policy, so a league with a
+      // non-default preset self-heals correctly too. It carries plannedEvents=0
+      // until an operator edits it (via create-season or a future admin UI) — the
+      // ingest boundary has no signal for the season's actual event count.
       const league = await tx.league.findUnique({ where: { slug: DEFAULT_LEAGUE_SLUG } });
       if (!league) {
         throw new Error(
@@ -211,13 +210,22 @@ export async function ingestAxdb(
         where: { leagueId: league.id, year: eventYear },
       });
       if (!season) {
+        const preset = await tx.scoringSystem.findFirst({
+          where: { leagueId: league.id },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        });
+        if (!preset) {
+          throw new Error(
+            `[ingest] league '${league.slug}' has no ScoringSystem presets — create a scoring system for league '${league.slug}' first (e.g. 'pnpm --filter web season:create').`,
+          );
+        }
         season = await tx.season.create({
           data: {
             leagueId: league.id,
             name: `${eventYear} Season`,
             year: eventYear,
             plannedEvents: 0,
-            scoringPolicy: DEFAULT_SCORING_POLICY,
+            scoringPolicy: preset.policy,
           },
         });
       }
