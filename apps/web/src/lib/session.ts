@@ -2,7 +2,7 @@
  * iron-session typed wrappers for Launch Control.
  *
  * Two cookies:
- *   lc_session      — main session (30 days). Stores the six SessionData fields.
+ *   lc_session      — main session (30 days). Stores the seven SessionData fields.
  *   lc_msr_req      — transient request-token cookie (10 min, path-scoped to
  *                     the callback route). Stashes oauth_token_secret between
  *                     /api/auth/msr/login and /api/auth/msr/callback.
@@ -47,6 +47,8 @@ export interface SessionData {
   accessToken?: string;
   accessTokenSecret?: string;
   isRmrMember?: boolean;
+  /** MSR org IDs from the login profile — enables per-league org gating (PR 3). */
+  msrOrgIds?: string[];
 }
 
 // ---------------------------------------------------------------------------

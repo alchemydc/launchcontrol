@@ -114,6 +114,7 @@ export async function GET(request: NextRequest) {
   session.accessToken = accessToken;
   session.accessTokenSecret = accessSecret;
   session.isRmrMember = isRmrMember;
+  session.msrOrgIds = profile.organizations.map((o) => o.id);
   await session.save();
 
   // 9. Redirect: RMR members go to returnTo (re-validated) or home; non-members
