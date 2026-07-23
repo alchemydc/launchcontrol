@@ -128,4 +128,48 @@ describe("reapplySeasonPaxFactors", () => {
   it("empty paxTable is a no-op", async () => {
     expect(await reapplySeasonPaxFactors(client, seasonBId)).toEqual({ updated: 0, codes: [] });
   });
+
+  it("does not touch an entry on seasonA's own event whose paxClass is a same-code CarClass in a different league", async () => {
+    // Deliberately adversarial construction, built with raw prisma calls
+    // (never producible by real ingest, which always keeps an entry's
+    // paxClass in its own event's league): the entry's `eventId` is
+    // seasonA's OWN event, so the `event: { seasonId }` half of the
+    // where-clause alone would already match it — that half is not what's
+    // under test here. Its `paxClassId` instead points at an "AS"
+    // CarClass row created in a SECOND league. Only the
+    // `paxClass: { ..., leagueId: season.leagueId }` guard can exclude
+    // this entry; if that guard were deleted from the where-clause, this
+    // entry would be caught by the `code: "AS"` match alone and rewritten
+    // (and `res.updated` would read 2, not 1).
+    const { leagueId: otherLeagueId } = await ensureLeagueAndSeasons(
+      client,
+      [{ year: 2060, name: "Other League Season" }],
+      "other-league-pax-reapply",
+    );
+
+    const otherAsClass = await client.carClass.create({
+      data: { leagueId: otherLeagueId, code: "AS", paxIndex: 0.9 },
+    });
+
+    const eventA = await client.event.findFirstOrThrow({ where: { seasonId: seasonAId } });
+    const aliceDriver = await client.driver.findFirstOrThrow({
+      where: { identityHash: "alice-hash-reapply" },
+    });
+
+    const adversarialEntry = await client.entry.create({
+      data: {
+        eventId: eventA.id, // seasonA's own event
+        driverId: aliceDriver.id,
+        classId: otherAsClass.id,
+        paxClassId: otherAsClass.id, // ...but paxClass belongs to a different league
+        carNumber: "99",
+        paxIndexApplied: 0.9,
+      },
+    });
+
+    const res = await reapplySeasonPaxFactors(client, seasonAId);
+    expect(res).toEqual({ updated: 1, codes: ["AS"] }); // only the legit leagueA/AS entry (e1) — not 2
+    expect(Number((await get(e1Id)).paxIndexApplied)).toBe(0.85); // legit seasonA/leagueA "AS" entry: rewritten
+    expect(Number((await get(adversarialEntry.id)).paxIndexApplied)).toBe(0.9); // cross-league paxClass: untouched
+  });
 });
