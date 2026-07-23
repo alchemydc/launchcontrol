@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -9,6 +8,7 @@ import { createSeason } from "@/lib/create-season";
 import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
 import { isAdmin } from "@/lib/admin";
 import { DEFAULT_SCORING_POLICY } from "./helpers/league-fixture";
+import { dbTarget, migrateDeploy } from "./helpers/db";
 
 // Task 8: cross-cutting integrity guarantees the per-task suites don't
 // individually pin — every case here runs against a fresh `prisma migrate
@@ -16,23 +16,6 @@ import { DEFAULT_SCORING_POLICY } from "./helpers/league-fixture";
 // ingest-season-policy.test.ts and league-config.test.ts.
 
 const FIXTURES_DIR = resolve(__dirname, "fixtures");
-
-function migrateDeploy(dbUrl: string) {
-  execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-    cwd: resolve(__dirname, ".."),
-    env: { ...process.env, DATABASE_URL: dbUrl },
-    stdio: "pipe",
-  });
-}
-
-/** Path + connection-string pair for a fresh per-suite SQLite file, migrated
- *  (not seeded further) in `beforeAll`; deleted in `afterAll`. */
-function dbTarget(name: string): { path: string; url: string } {
-  return {
-    path: resolve(__dirname, "..", `test-${name}.db`),
-    url: `file:./test-${name}.db`,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // 1. Snapshot semantics at the SEASON level, via the createSeason lib.
