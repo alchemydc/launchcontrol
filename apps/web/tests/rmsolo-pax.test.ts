@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { RMSOLO_PAX_2026, getRmsoloPaxIndex, nearestPaxClass } from "@/lib/rmsolo-pax";
+import { describe, expect, it, vi } from "vitest";
+import {
+  RMSOLO_PAX_2026,
+  getRmsoloPaxIndex,
+  nearestPaxClass,
+  parseSeasonPaxTable,
+  resolveSeasonPaxIndex,
+} from "@/lib/rmsolo-pax";
 
 describe("RMsolo PAX table", () => {
   it("covers every class code seen in the 2026 Full-PDF fixture", () => {
@@ -51,5 +57,47 @@ describe("2026 season-sheet reconciliation additions", () => {
   it("nearestPaxClass rejects factors far from any class", () => {
     expect(nearestPaxClass(0.5)).toBeNull();
     expect(nearestPaxClass(1.0 - 0.05)).toBeNull();
+  });
+});
+
+describe("parseSeasonPaxTable", () => {
+  it("parses a well-formed JSON object", () => {
+    expect(parseSeasonPaxTable('{"AS": 0.5, "BS": 0.6}')).toEqual({ AS: 0.5, BS: 0.6 });
+  });
+
+  it("parses the schema default '{}' as an empty table", () => {
+    expect(parseSeasonPaxTable("{}")).toEqual({});
+  });
+
+  it("warns and returns {} for invalid JSON", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(parseSeasonPaxTable("not json")).toEqual({});
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not a valid JSON object"));
+    warnSpy.mockRestore();
+  });
+
+  it("warns and returns {} for a JSON array or scalar", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(parseSeasonPaxTable("[1,2,3]")).toEqual({});
+    expect(parseSeasonPaxTable("42")).toEqual({});
+    warnSpy.mockRestore();
+  });
+});
+
+describe("resolveSeasonPaxIndex — precedence", () => {
+  it("a season paxTable entry overrides the built-in RMSOLO_PAX_2026 table", () => {
+    expect(RMSOLO_PAX_2026.AS).not.toBe(0.5); // sanity: the override differs from the built-in value
+    expect(resolveSeasonPaxIndex("AS", { AS: 0.5 })).toBe(0.5);
+  });
+
+  it("falls back to the built-in table when the season paxTable has no entry for the class", () => {
+    expect(resolveSeasonPaxIndex("AS", {})).toBe(RMSOLO_PAX_2026.AS);
+    expect(resolveSeasonPaxIndex("AS", { BS: 0.9 })).toBe(RMSOLO_PAX_2026.AS);
+  });
+
+  it("falls back to 1.0 (with a warning) when neither the season table nor the built-in table has the class", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolveSeasonPaxIndex("ZZZ-UNKNOWN", {})).toBe(1.0);
+    warnSpy.mockRestore();
   });
 });

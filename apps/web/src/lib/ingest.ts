@@ -73,7 +73,7 @@ function toDisposition(raw: string | null): RunDisposition {
   }
 }
 
-function computeIdentityHash(
+export function computeIdentityHash(
   memberNum: string | null,
   firstName: string,
   lastName: string,
@@ -106,9 +106,15 @@ export function normalizeMemberNum(raw: string | null): string | null {
   return stripped.length > 0 ? stripped : null;
 }
 
+export type IngestAxdbOptions = {
+  /** Target league slug. Defaults to DEFAULT_LEAGUE_SLUG (unchanged single-league behavior). */
+  leagueSlug?: string;
+};
+
 export async function ingestAxdb(
   path: string,
   client: PrismaClient = defaultClient,
+  opts: IngestAxdbOptions = {},
 ): Promise<IngestSummary> {
   const sha = createHash("sha256").update(readFileSync(path)).digest("hex");
 
@@ -199,10 +205,12 @@ export async function ingestAxdb(
       // `pnpm --filter web season:create`) if none exists — via the shared
       // resolveOrCreateSeason(), also used by admin-events.ts's cross-year
       // re-resolution on a date edit.
-      const league = await tx.league.findUnique({ where: { slug: DEFAULT_LEAGUE_SLUG } });
+      const leagueSlug = opts.leagueSlug?.trim() || DEFAULT_LEAGUE_SLUG;
+      const league = await tx.league.findUnique({ where: { slug: leagueSlug } });
       if (!league) {
         throw new Error(
-          `[ingest] default league '${DEFAULT_LEAGUE_SLUG}' not found — run 'prisma migrate deploy' to seed it.`,
+          `[ingest] league '${leagueSlug}' not found — check --league, or run 'prisma migrate deploy' ` +
+            `to seed the default league (or 'pnpm --filter web league:create' for a new one).`,
         );
       }
       const eventYear = eventDate.getUTCFullYear();

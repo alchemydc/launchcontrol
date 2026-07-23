@@ -102,3 +102,37 @@ export function getRmsoloPaxIndex(classCode: string): number {
   }
   return 1.0;
 }
+
+/**
+ * Parses a Season.paxTable JSON string (see schema.prisma) into a plain
+ * code->factor map. Returns `{}` (and warns once) for anything that isn't a
+ * JSON object — a malformed table must not crash an ingest, just fall
+ * through to the built-in table for every class code.
+ */
+export function parseSeasonPaxTable(raw: string): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, number>;
+    }
+  } catch {
+    // fall through to the warning below
+  }
+  console.warn(`[rmsolo-pax] season paxTable is not a valid JSON object — ignoring it: ${JSON.stringify(raw)}`);
+  return {};
+}
+
+/**
+ * PAX index precedence for a class code during RMsolo ingest (see
+ * docs/superpowers/specs/2026-07-23-league-multiclub-design.md "paxTable
+ * precedence"): the season's own paxTable overrides the built-in 2026 table,
+ * which itself falls back to 1.0 (with a warning) for an unknown class.
+ * Run-group factor DERIVATION (nearestPaxClass, matching a printed indexed
+ * Best back to a class code) is unrelated and unchanged by this — this
+ * function only resolves the final numeric factor for a class code once
+ * that code is already known.
+ */
+export function resolveSeasonPaxIndex(classCode: string, seasonPaxTable: Record<string, number>): number {
+  const override = seasonPaxTable[classCode];
+  return override != null ? override : getRmsoloPaxIndex(classCode);
+}

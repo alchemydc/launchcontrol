@@ -42,11 +42,28 @@ export async function resolveOrCreateSeason(
   }
 
   const name = `${year} Season`;
+  const slug = slugify(name);
+
+  // Guard against the auto-create slug colliding with an operator-created
+  // season for a DIFFERENT year (e.g. a custom-named season whose slugified
+  // form happens to match "<year> Season"'s slug) — without this check the
+  // create() below fails with a raw Prisma P2002 on the (leagueId, slug)
+  // unique index, which is useless to an operator watching ingest logs.
+  const slugCollision = await client.season.findFirst({ where: { leagueId: league.id, slug } });
+  if (slugCollision) {
+    throw new Error(
+      `[season-resolve] cannot auto-create a ${year} season for league '${league.slug}': ` +
+        `slug '${slug}' is already used by season '${slugCollision.name}' ` +
+        `(id=${slugCollision.id}, year=${slugCollision.year}). Create the ${year} season ` +
+        `explicitly with an unambiguous --slug (or --name) via 'season:create'.`,
+    );
+  }
+
   return client.season.create({
     data: {
       leagueId: league.id,
       name,
-      slug: slugify(name),
+      slug,
       year,
       plannedEvents: 0,
       scoringPolicy: preset.policy,

@@ -46,6 +46,31 @@ describe("resolveOrCreateSeason", () => {
     expect(season.slug).toBe(slugify("2091 Season"));
     expect(season.slug).toBe("2091-season");
   });
+
+  // Task 3 folded fix: an operator-created season whose slug happens to match
+  // what auto-create would produce for a DIFFERENT year must not surface a raw
+  // Prisma P2002 on the (leagueId, slug) unique index — the operator gets a
+  // friendly message naming the colliding slug/season instead.
+  it("throws a friendly error when an operator-created season's slug collides with the auto-create slug for a different year", async () => {
+    // "2026-season" is exactly what auto-create would slugify `${2026} Season`
+    // to — but here it's an operator-created season for 2099, not 2026.
+    const colliding = await prisma.season.create({
+      data: {
+        leagueId,
+        name: "2026 Season",
+        slug: "2026-season",
+        year: 2099,
+        scoringPolicy:
+          '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+      },
+    });
+
+    await expect(resolveOrCreateSeason(prisma, { id: leagueId, slug: "pca-rmr" }, 2026)).rejects.toThrow(
+      new RegExp(
+        `slug '2026-season' is already used by season '2026 Season' \\(id=${colliding.id}, year=2099\\)`,
+      ),
+    );
+  });
 });
 
 describe("resolveSeasonBySlug", () => {
