@@ -6,8 +6,13 @@ import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 
 export const dynamic = "force-dynamic";
 
-export default async function LeaderboardPage() {
+export default async function LeaderboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ class?: string }>;
+}) {
   await requireRmrMember("/leaderboard");
+  const { class: activeClassCode } = await searchParams;
 
   const years = await listSeasonYears();
   const currentYear = years[0] ?? new Date().getUTCFullYear();
@@ -18,6 +23,7 @@ export default async function LeaderboardPage() {
       <DefaultLeagueSubnav />
       <SeasonLeaderboardView
         title={`${currentYear} Season Leaderboard`}
+        activeClassCode={activeClassCode}
         switcher={
           years.length > 1 ? (
             <div className="sm:shrink-0 sm:ml-4">

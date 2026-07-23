@@ -12,15 +12,13 @@ import { SeasonLeaderboardView } from "@/app/leaderboard/season-leaderboard-view
  * is not).
  */
 export async function renderLeagueSeasonLeaderboard({
-  leagueId,
   leagueName,
-  leagueSlug,
   season,
+  activeClassCode,
 }: {
-  leagueId: number;
   leagueName: string;
-  leagueSlug: string;
   season: { id: number; slug: string; name: string } | null;
+  activeClassCode?: string | null;
 }) {
   if (!season) {
     return (
@@ -44,6 +42,7 @@ export async function renderLeagueSeasonLeaderboard({
     <SeasonLeaderboardView
       title={`${season.name} Leaderboard`}
       periodLabel={season.name}
+      activeClassCode={activeClassCode}
       standings={result.sections}
       totalEvents={result.totalEvents}
       completedEvents={result.completedEvents}

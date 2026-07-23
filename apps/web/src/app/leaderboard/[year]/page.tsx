@@ -9,10 +9,13 @@ export const dynamic = "force-dynamic";
 
 export default async function LeaderboardYearPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ year: string }>;
+  searchParams: Promise<{ class?: string }>;
 }) {
   const { year: yearStr } = await params;
+  const { class: activeClassCode } = await searchParams;
 
   // Gate runs before the year range check so unauth viewers can't probe valid vs invalid years.
   await requireRmrMember(`/leaderboard/${yearStr}`);
@@ -32,6 +35,7 @@ export default async function LeaderboardYearPage({
       <DefaultLeagueSubnav />
       <SeasonLeaderboardView
         title={`${year} Season Leaderboard`}
+        activeClassCode={activeClassCode}
         switcher={
           years.length > 1 ? (
             <div className="sm:shrink-0 sm:ml-4">
