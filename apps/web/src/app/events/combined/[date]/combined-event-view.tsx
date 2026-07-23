@@ -9,6 +9,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { buildCombinedResults } from "@/lib/combined-event";
 import { findEventsByDate } from "@/lib/event-queries";
+import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { findSmugmugEventFolder, type SmugmugLeagueTarget } from "@/lib/smugmug";
 import { CombinedResultsView } from "./combined-results-view";
 
@@ -44,7 +45,11 @@ export async function CombinedEventPageView({
   if (events.length === 0) notFound();
   if (events.length === 1) redirect(`${basePath}/events/${events[0]!.slug}`);
 
-  const results = buildCombinedResults(events);
+  // All sessions in a combined group share a calendar date within one
+  // league, so in practice they share one Season row — the first session's
+  // policy is the group's policy (Task 7: conePenaltyMs threading).
+  const conePenaltyMs = parseScoringPolicy(events[0]!.season.scoringPolicy).conePenaltyMs;
+  const results = buildCombinedResults(events, conePenaltyMs);
   const photosUrl = await findSmugmugEventFolder(results.label, dayStart, league);
 
   return (

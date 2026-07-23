@@ -6,7 +6,8 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { ingestAxdb } from "@/lib/ingest";
 import { buildSeasonLeaderboard, combinedEventLabel } from "@/lib/season-leaderboard";
-import { buildCombinedResults } from "@/lib/combined-event";
+import { buildCombinedResults, type CombinedEntry, type CombinedSessionEvent } from "@/lib/combined-event";
+import { CONE_PENALTY_MS } from "@/lib/constants";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-combined-event.db");
 const TEST_DB_URL = "file:./test-combined-event.db";
@@ -319,5 +320,67 @@ describe("buildCombinedResults", () => {
       expect(session.runNumber).toBe(1); // single-run drivers in this fixture
       expect(session.correctedMs).not.toBeNull();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildCombinedResults — penaltyMs (League Foundation PR 2 Task 7), pure
+// in-memory fixtures (no DB): a two-session group, two drivers in one class.
+// Champ has 2 cones in session 1 only; Steady is always clean. Whether Champ
+// or Steady wins the class flips depending on the per-cone penalty, and the
+// overall section (single class here) mirrors it — proving the threaded
+// value drives session correctedMs, class sumMs, and overall sumMs alike.
+// ---------------------------------------------------------------------------
+
+describe("buildCombinedResults() — penaltyMs threading", () => {
+  function session(id: number, name: string, entries: CombinedEntry[]): CombinedSessionEvent {
+    return { id, slug: `s${id}`, name, date: new Date("2026-05-01T00:00:00.000Z"), entries };
+  }
+
+  const champ = (cones: number): CombinedEntry => ({
+    bestCommittedRunNumber: null,
+    carNumber: "1",
+    carDescription: null,
+    driver: { id: 1, firstName: "Champ", lastInitial: "C." },
+    class: { code: "AS" },
+    runs: [{ runNumber: 1, rawTimeMs: 50000, cones, disposition: "CLEAN" }],
+  });
+  const steady: CombinedEntry = {
+    bestCommittedRunNumber: null,
+    carNumber: "2",
+    carDescription: null,
+    driver: { id: 2, firstName: "Steady", lastInitial: "S." },
+    class: { code: "AS" },
+    runs: [{ runNumber: 1, rawTimeMs: 51500, cones: 0, disposition: "CLEAN" }],
+  };
+
+  function twoSessionEvents(champConesSession1: number): CombinedSessionEvent[] {
+    return [
+      session(1, "Session A (A)", [champ(champConesSession1), steady]),
+      session(2, "Session A (B)", [champ(0), { ...steady, runs: [{ runNumber: 1, rawTimeMs: 51500, cones: 0, disposition: "CLEAN" }] }]),
+    ];
+  }
+
+  it("defaults to CONE_PENALTY_MS — Champ's 2-cone session costs him the class", () => {
+    const results = buildCombinedResults(twoSessionEvents(2));
+    const as = results.classes.find((c) => c.classCode === "AS")!;
+    expect(as.ranked.map((r) => r.driverName)).toEqual(["Steady S.", "Champ C."]);
+    const champRow = as.ranked.find((r) => r.driverName === "Champ C.")!;
+    expect(champRow.sessions[0]!.correctedMs).toBe(50000 + 2 * CONE_PENALTY_MS);
+    expect(champRow.sumMs).toBe(50000 + 2 * CONE_PENALTY_MS + 50000);
+  });
+
+  it("an explicit penaltyMs equal to the constant matches the default (parity)", () => {
+    const events = twoSessionEvents(2);
+    expect(buildCombinedResults(events, CONE_PENALTY_MS)).toEqual(buildCombinedResults(events));
+  });
+
+  it("a 250ms-penalty flips the class win to Champ, in both the class and overall sections", () => {
+    const results = buildCombinedResults(twoSessionEvents(2), 250);
+    const as = results.classes.find((c) => c.classCode === "AS")!;
+    expect(as.ranked.map((r) => r.driverName)).toEqual(["Champ C.", "Steady S."]);
+    expect(results.overall.ranked.map((r) => r.driverName)).toEqual(["Champ C.", "Steady S."]);
+    const champRow = as.ranked.find((r) => r.driverName === "Champ C.")!;
+    expect(champRow.sessions[0]!.correctedMs).toBe(50000 + 2 * 250);
   });
 });

@@ -1,6 +1,5 @@
 import { Prisma, PrismaClient, type RunDisposition } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
-import { CONE_PENALTY_MS } from "@/lib/constants";
 import { resolveDefaultLeague } from "@/lib/league-config";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { prisma as defaultClient } from "@/lib/prisma";
@@ -301,16 +300,17 @@ async function resolveLeaderboardSeason(
  * — same as a season with a Season row but zero ingested events, except
  * `totalEvents` there reflects the Season's planned count instead of 0.
  *
- * Cone-penalty boundary: `scoringPolicy.conePenaltyMs` is read and enforced
- * against the shared `CONE_PENALTY_MS` constant — per-run cone math itself
- * still lives in `entry-best.ts` (and `combined-event.ts`/`leaderboard.ts` for
- * event pages), which stays constant-based this PR, so a season whose policy
- * disagrees with the constant would silently score wrong rather than apply
- * its configured value; this throws instead of allowing that mismatch to
- * pass quietly. Every seeded policy today is 2000, matching the constant, so
- * this never fires in production. Full policy threading of that shared cone
- * math is out of scope here (event-page policy threading beyond PAX display
- * is Task 6+ territory).
+ * Cone-penalty threading (League Foundation PR 2 Task 7):
+ * `scoringPolicy.conePenaltyMs` is passed to `bestCorrectedMsForEntry` below,
+ * so a season configured with a non-default value (e.g. an RMsolo season
+ * using a different per-cone penalty) actually scores with it — the same
+ * value flows from `parseScoringPolicy` end-to-end. Event and combined pages
+ * (`leaderboard.ts`, `combined-event.ts`) independently pass their own
+ * event's season policy value into `buildLeaderboard`/`buildCombinedResults`,
+ * so per-run cone math is consistent everywhere a given season's data is
+ * displayed or scored. Every seeded policy today is 2000 (`CONE_PENALTY_MS`),
+ * so parity holds: default seasons render byte-identically to before this
+ * threading existed.
  *
  * Task 4 — explicit league/season targets: two overloads.
  * `buildSeasonLeaderboard(year, client?)` is the legacy/default path (the
@@ -339,11 +339,6 @@ export async function buildSeasonLeaderboard(
 
   const year = season.year;
   const policy = parseScoringPolicy(season.scoringPolicy);
-  if (policy.conePenaltyMs !== CONE_PENALTY_MS) {
-    throw new Error(
-      `season ${year}: scoringPolicy.conePenaltyMs=${policy.conePenaltyMs} differs from the shared CONE_PENALTY_MS constant (${CONE_PENALTY_MS}ms) used by entry-best.ts/combined-event.ts/leaderboard.ts for per-run cone penalties — those call sites are not yet policy-driven, so a season configured with a different value would silently score with ${CONE_PENALTY_MS}ms instead. Set this season's conePenaltyMs to ${CONE_PENALTY_MS} until per-season cone penalties are wired into per-entry scoring.`,
-    );
-  }
 
   // 1. Events for the season, already loaded in chronological order.
   const events: LoadedEvent[] = season.events;
@@ -385,7 +380,7 @@ export async function buildSeasonLeaderboard(
         driverInfo.set(d.id, { firstName: d.firstName, lastInitial: d.lastInitial });
       }
 
-      const best = bestCorrectedMsForEntry(entry);
+      const best = bestCorrectedMsForEntry(entry, policy.conePenaltyMs);
       if (best == null) continue; // no CLEAN run or committed best — excluded from event scoring
 
       const code = entry.class.code;

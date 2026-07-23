@@ -42,7 +42,15 @@ export type LeaderboardRow = {
   runs: LeaderboardRun[];
 };
 
-export function buildLeaderboard(entries: EntryWithRelations[]): LeaderboardRow[] {
+/**
+ * `penaltyMs` (League Foundation PR 2 Task 7): defaults to the shared
+ * `CONE_PENALTY_MS` constant, so existing call sites are unchanged (parity).
+ * Event pages pass their event's season `scoringPolicy.conePenaltyMs`.
+ */
+export function buildLeaderboard(
+  entries: EntryWithRelations[],
+  penaltyMs: number = CONE_PENALTY_MS,
+): LeaderboardRow[] {
   const rows = entries.map((entry): LeaderboardRow => {
     const paxIndex = Number(entry.paxClass.paxIndex.toString());
 
@@ -53,11 +61,11 @@ export function buildLeaderboard(entries: EntryWithRelations[]): LeaderboardRow[
       disposition: r.disposition,
       correctedMs:
         r.disposition === "CLEAN" && r.rawTimeMs != null
-          ? r.rawTimeMs + r.cones * CONE_PENALTY_MS
+          ? r.rawTimeMs + r.cones * penaltyMs
           : null,
     }));
 
-    const bestRawMs = bestCorrectedMsForEntry(entry);
+    const bestRawMs = bestCorrectedMsForEntry(entry, penaltyMs);
     const bestPaxMs = bestRawMs == null ? null : Math.round(bestRawMs * paxIndex);
 
     return {

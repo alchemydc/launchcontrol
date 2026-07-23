@@ -59,6 +59,7 @@ export async function countSiblingEventsByDate(
 }
 
 const combinedSessionInclude = {
+  season: { select: { scoringPolicy: true } },
   entries: {
     include: {
       driver: true,

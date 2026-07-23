@@ -41,17 +41,18 @@ export async function EventPageView({
   const event = await findEventBySlug(league.id, slug, prisma);
   if (!event) notFound();
 
-  // showPaxView is server-resolved from this event's season policy — the
-  // client leaderboard table only ever sees the resulting boolean, never
-  // the policy itself.
-  const showPaxView = parseScoringPolicy(event.season.scoringPolicy).paxSection;
+  // Server-resolved from this event's season policy (Task 7: conePenaltyMs
+  // threading) — the client leaderboard table only ever sees the resulting
+  // boolean/corrected-times, never the policy itself.
+  const policy = parseScoringPolicy(event.season.scoringPolicy);
+  const showPaxView = policy.paxSection;
 
   // Combined-event cross-link (M1.15): any other events sharing this event's
   // calendar date (within the same league) form one combined scoring event.
   const siblingCount = await countSiblingEventsByDate(league.id, event.date, event.id, prisma);
   const dateKey = event.date.toISOString().slice(0, 10);
 
-  const rows = buildLeaderboard(event.entries);
+  const rows = buildLeaderboard(event.entries, policy.conePenaltyMs);
   const photosUrl = await findSmugmugEventFolder(event.name, event.date, league);
   const classCodes = Array.from(new Set(rows.map((r) => r.classCode))).sort();
 
