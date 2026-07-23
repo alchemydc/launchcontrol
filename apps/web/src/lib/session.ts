@@ -188,6 +188,10 @@ export async function checkLeagueAccess(
   // BLOCKED membership row can't deny access on a public gate.
   if (league.accessGate !== "required") return "allow";
 
+  // Gated, but no session secret configured (login disabled on this deploy):
+  // there is nothing to authenticate with, so never admit.
+  if (!hasSessionSecret()) return "redirect";
+
   const session = await getSession();
   const [superUser, membershipRole] = await Promise.all([
     isSuperUser(session.msrUid),
