@@ -6,7 +6,7 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { ingestAxdb } from "@/lib/ingest";
 import { createSeason } from "@/lib/create-season";
 import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
-import { isLeagueAdmin, isAnyLeagueAdmin } from "@/lib/admin";
+import { isLeagueAdmin, isAnyLeagueAdmin, administeredLeagues } from "@/lib/admin";
 import { DEFAULT_SCORING_POLICY } from "./helpers/league-fixture";
 import { dbTarget, migrateDeploy } from "./helpers/db";
 
@@ -332,5 +332,38 @@ describe("isLeagueAdmin() / isAnyLeagueAdmin()", () => {
     });
     expect(await isAnyLeagueAdmin("ANY-ADMIN-UID", client)).toBe(true);
     expect(await isAnyLeagueAdmin("ANY-MEMBER-UID", client)).toBe(false);
+  });
+
+  it("administeredLeagues returns every league (name-ordered) for a superuser", async () => {
+    process.env.ADMIN_MSR_UIDS = "ADMINISTERED-SUPER-UID";
+    const result = await administeredLeagues("ADMINISTERED-SUPER-UID", client);
+    const slugs = result.map((l) => l.slug);
+    expect(slugs).toContain("pca-rmr");
+    expect(slugs).toContain("membership-other-league");
+    // Name-ordered, ascending.
+    const names = result.map((l) => l.name);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+  });
+
+  it("administeredLeagues returns only ADMIN-row leagues for a non-superuser, name-ordered", async () => {
+    delete process.env.ADMIN_MSR_UIDS;
+    await client.leagueMembership.create({
+      data: { leagueId: otherLeagueId, msrUid: "ADMINISTERED-ROW-UID", role: "ADMIN" },
+    });
+    // Also give it a MEMBER (not ADMIN) row on the other league — should not appear.
+    await client.leagueMembership.create({
+      data: { leagueId, msrUid: "ADMINISTERED-ROW-MEMBER-ONLY-UID", role: "MEMBER" },
+    });
+    const result = await administeredLeagues("ADMINISTERED-ROW-UID", client);
+    expect(result.map((l) => l.slug)).toEqual(["membership-other-league"]);
+
+    const memberOnly = await administeredLeagues("ADMINISTERED-ROW-MEMBER-ONLY-UID", client);
+    expect(memberOnly).toEqual([]);
+  });
+
+  it("administeredLeagues returns [] for a missing msrUid", async () => {
+    expect(await administeredLeagues(undefined, client)).toEqual([]);
+    expect(await administeredLeagues(null, client)).toEqual([]);
+    expect(await administeredLeagues("", client)).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { League, PrismaClient } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
 import { isSuperUser } from "@/lib/super-user";
 
@@ -38,4 +38,26 @@ export async function isAnyLeagueAdmin(
     where: { msrUid, role: "ADMIN" },
   });
   return row !== null;
+}
+
+/**
+ * Leagues `msrUid` administers, for the `/admin` index (and the events/audit
+ * league filters, Task 17): a superuser administers every league, ordered by
+ * name; anyone else gets only the leagues where they hold an ADMIN
+ * `LeagueMembership` row. Returns `[]` for a blank/missing `msrUid` rather
+ * than throwing — callers can render an empty "Leagues" section.
+ */
+export async function administeredLeagues(
+  msrUid: string | null | undefined,
+  client: PrismaClient = defaultClient,
+): Promise<League[]> {
+  if (!msrUid) return [];
+  if (await isSuperUser(msrUid, client)) {
+    return client.league.findMany({ orderBy: { name: "asc" } });
+  }
+  const memberships = await client.leagueMembership.findMany({
+    where: { msrUid, role: "ADMIN" },
+    include: { league: true },
+  });
+  return memberships.map((m) => m.league).sort((a, b) => a.name.localeCompare(b.name));
 }
