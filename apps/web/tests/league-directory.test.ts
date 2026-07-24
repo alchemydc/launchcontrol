@@ -12,7 +12,7 @@ import { listLeagueDirectory } from "@/lib/league-directory";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-league-directory.db");
 const TEST_DB_URL = "file:./test-league-directory.db";
-const PCA_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 let prisma: PrismaClient;
 

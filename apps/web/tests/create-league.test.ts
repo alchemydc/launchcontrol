@@ -55,7 +55,7 @@ describe("createLeague", () => {
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: result.league.id } });
     expect(preset.name).toBe("Rocky Mountain Solo Default");
     expect(preset.policy).toBe(
-      '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+      '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
     );
 
     // The whole point: a league created this way can immediately resolveOrCreateSeason.
@@ -124,7 +124,7 @@ describe("createLeague", () => {
   it("happy path: --policy-file reads, validates, and canonicalizes a policy JSON file for the default preset", async () => {
     const file = policyFile(
       "custom-policy.json",
-      '{\n  "v": 1,\n  "drops": "proportional",\n  "paxSection": true,\n  "classMetric": "pax",\n  "conePenaltyMs": 1000\n}\n',
+      '{\n  "v": 2,\n  "drops": "proportional",\n  "paxSection": true,\n  "conePenaltyMs": 1000\n}\n',
     );
     const result = await createLeague(
       { slug: "policy-file-league", name: "Policy File League", policyFilePath: file },
@@ -132,7 +132,7 @@ describe("createLeague", () => {
     );
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: result.league.id } });
     expect(preset.policy).toBe(
-      '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":1000}',
+      '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1000}',
     );
   });
 
@@ -171,7 +171,7 @@ describe("createLeague", () => {
   it("rejects an invalid --policy-file (fails parseScoringPolicy)", async () => {
     const file = policyFile(
       "bad-policy.json",
-      '{"v":1,"drops":"sideways","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+      '{"v":2,"drops":"sideways","paxSection":false,"conePenaltyMs":2000}',
     );
     await expect(
       createLeague({ slug: "bad-policy-league", name: "Bad Policy League", policyFilePath: file }, prisma),
@@ -188,7 +188,7 @@ describe("createLeague", () => {
   });
 
   it("does not create a League row when the ScoringSystem preset creation would fail (transactional)", async () => {
-    const file = policyFile("bad-transactional.json", '{"v":1,"drops":"sideways"}');
+    const file = policyFile("bad-transactional.json", '{"v":2,"drops":"sideways"}');
     await expect(
       createLeague({ slug: "rolled-back-league", name: "Rolled Back League", policyFilePath: file }, prisma),
     ).rejects.toThrow();

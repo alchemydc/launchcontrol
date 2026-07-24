@@ -11,9 +11,8 @@ import { dbTarget, migrateDeploy } from "./helpers/db";
 // parseScoringPolicy). Mirrors league-admin-crud.test.ts's updateSeason
 // conventions — each test builds its own scratch league+season.
 
-const FIXED_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
-const PROPORTIONAL_POLICY =
-  '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":2000}';
+const FIXED_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
+const PROPORTIONAL_POLICY = '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}';
 
 const { path: TEST_DB_PATH, url: TEST_DB_URL } = dbTarget("update-season-policy");
 

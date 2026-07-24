@@ -63,7 +63,7 @@ beforeAll(async () => {
     data: {
       leagueId: otherLeague.id,
       name: "RMsolo Default",
-      policy: '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":2000}',
+      policy: '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}',
     },
   });
   await prisma.season.create({
@@ -72,7 +72,7 @@ beforeAll(async () => {
       name: "2026 Season",
       slug: "2026-season",
       year: 2026,
-      scoringPolicy: '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":2000}',
+      scoringPolicy: '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}',
       paxTable: JSON.stringify({ AS: 0.5 }),
     },
   });

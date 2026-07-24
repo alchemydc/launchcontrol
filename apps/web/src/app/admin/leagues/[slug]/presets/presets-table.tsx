@@ -29,11 +29,6 @@ const DROPS_LABEL: Record<ScoringPolicy["drops"], string> = {
   proportional: "Proportional",
 };
 
-const CLASS_METRIC_LABEL: Record<ScoringPolicy["classMetric"], string> = {
-  raw: "Raw",
-  pax: "PAX",
-};
-
 export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: PresetRow[] }) {
   const router = useRouter();
   const [editingRow, setEditingRow] = useState<PresetRow | null>(null);
@@ -49,7 +44,6 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Drops</TableHead>
-            <TableHead>Class metric</TableHead>
             <TableHead>PAX section</TableHead>
             <TableHead>Cone penalty</TableHead>
             <TableHead>Actions</TableHead>
@@ -62,7 +56,6 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
               {row.policy ? (
                 <>
                   <TableCell>{DROPS_LABEL[row.policy.drops]}</TableCell>
-                  <TableCell>{CLASS_METRIC_LABEL[row.policy.classMetric]}</TableCell>
                   <TableCell>
                     <Badge variant={row.policy.paxSection ? "default" : "outline"}>
                       {row.policy.paxSection ? "On" : "Off"}
@@ -71,7 +64,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
                   <TableCell>{row.policy.conePenaltyMs} ms</TableCell>
                 </>
               ) : (
-                <TableCell colSpan={4} className="text-destructive">
+                <TableCell colSpan={3} className="text-destructive">
                   Stored policy could not be parsed — edit to fix.
                 </TableCell>
               )}
@@ -84,7 +77,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
           ))}
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
+              <TableCell colSpan={5} className="text-center text-muted-foreground">
                 No scoring rulesets yet.
               </TableCell>
             </TableRow>

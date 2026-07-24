@@ -12,7 +12,7 @@ import { slugify } from "@/lib/ingest";
 // (the "season:create" CLI) and, indirectly, documents the same resolution rules
 // ingestAxdb's auto-create path follows (see tests/ingest-season-policy.test.ts).
 
-const PCA_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-create-season.db");
 const TEST_DB_URL = "file:./test-create-season.db";
@@ -81,14 +81,14 @@ describe("createSeason", () => {
     // the same shape parseScoringPolicy produces.
     const file = policyFile(
       "rmsolo.json",
-      '{\n  "v": 1,\n  "drops": "proportional",\n  "paxSection": true,\n  "classMetric": "pax",\n  "conePenaltyMs": 2000\n}\n',
+      '{\n  "v": 2,\n  "drops": "proportional",\n  "paxSection": true,\n  "conePenaltyMs": 2000\n}\n',
     );
     const season = await createSeason(
       { leagueSlug: "pca-rmr", name: "2031 File Policy Season", year: 2031, policyFilePath: file },
       prisma,
     );
     expect(season.scoringPolicy).toBe(
-      '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":2000}',
+      '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}',
     );
   });
 
@@ -170,7 +170,7 @@ describe("createSeason", () => {
   });
 
   it("rejects an invalid --policy-file (fails parseScoringPolicy)", async () => {
-    const file = policyFile("bad.json", '{"v":1,"drops":"sideways","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}');
+    const file = policyFile("bad.json", '{"v":2,"drops":"sideways","paxSection":false,"conePenaltyMs":2000}');
     await expect(
       createSeason({ leagueSlug: "pca-rmr", name: "2035 Bad Policy", year: 2035, policyFilePath: file }, prisma),
     ).rejects.toThrow(/scoringPolicy\.drops/);

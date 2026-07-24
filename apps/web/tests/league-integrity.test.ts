@@ -52,7 +52,7 @@ describe("Season.scoringPolicy snapshot semantics (createSeason)", () => {
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     const editedPolicy =
-      '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":1500}';
+      '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1500}';
     await client.scoringSystem.update({ where: { id: preset.id }, data: { policy: editedPolicy } });
 
     const seasonB = await createSeason(
@@ -140,20 +140,19 @@ describe("seed parity: buildSeasonLeaderboard(2026) matches main's fixture expec
   // later rules-committee correction to a class's PAX factor would silently
   // reach back and re-score every past event that used it. paxSection is
   // switched on here (last test in this describe block, so it doesn't
-  // disturb the raw-metric assertions above): the synthetic PAX section
-  // pools entries ACROSS classes by their paxIndex-adjusted time, so
-  // rescaling one class's factor actually shifts cross-class ranking/points
-  // — unlike per-class classMetric="pax", which rescales every entry sharing
-  // a uniform class factor by the same constant and so is order-invariant
-  // (see the comment on classMetric in season-leaderboard.ts), a vacuous
-  // check that would pass even against a live join.
+  // disturb the assertions above): the synthetic PAX section pools entries
+  // ACROSS classes by their paxIndex-adjusted time, so rescaling one class's
+  // factor actually shifts cross-class ranking/points — unlike the ordinary
+  // per-class ranking metric, which rescales every entry sharing a uniform
+  // class factor by the same constant and so is order-invariant (see the
+  // comment on the class ranking metric in season-leaderboard.ts), a
+  // vacuous check that would pass even against a live join.
   it("editing CarClass.paxIndex after ingest no longer changes buildSeasonLeaderboard output", async () => {
     const season = await client.season.findFirstOrThrow({ where: { year: 2026 } });
     await client.season.update({
       where: { id: season.id },
       data: {
-        scoringPolicy:
-          '{"v":1,"drops":"fixed","paxSection":true,"classMetric":"raw","conePenaltyMs":2000}',
+        scoringPolicy: '{"v":2,"drops":"fixed","paxSection":true,"conePenaltyMs":2000}',
       },
     });
 

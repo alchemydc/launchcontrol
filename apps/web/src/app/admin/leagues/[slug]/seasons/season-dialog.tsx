@@ -36,24 +36,17 @@ const STATUS_OPTIONS: { value: SeasonStatus; label: string }[] = [
 ];
 
 type Drops = ScoringPolicy["drops"];
-type ClassMetric = ScoringPolicy["classMetric"];
 
 const DROPS_OPTIONS: { value: Drops; label: string }[] = [
   { value: "fixed", label: "Fixed — best N scores count, nothing drops mid-season" },
   { value: "proportional", label: "Proportional — drops scale with completed events" },
 ];
 
-const CLASS_METRIC_OPTIONS: { value: ClassMetric; label: string }[] = [
-  { value: "raw", label: "Raw — class sections rank on best corrected time" },
-  { value: "pax", label: "PAX — class sections rank on time × PAX index" },
-];
-
 /** Fallback when a stored Season.scoringPolicy can't be parsed — mirrors preset-dialog's DEFAULT_POLICY. */
 const DEFAULT_POLICY: ScoringPolicy = {
-  v: 1,
+  v: 2,
   drops: "fixed",
   paxSection: false,
-  classMetric: "raw",
   conePenaltyMs: 2000,
 };
 
@@ -265,7 +258,6 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
   }
   const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
   const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
-  const [classMetric, setClassMetric] = useState<ClassMetric>(initialPolicy.classMetric);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(initialPolicy.conePenaltyMs));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -306,7 +298,7 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
     if (status !== season.status) patch.status = status;
     if (canonicalPaxJson(paxTable) !== canonicalPaxJson(season.paxTable)) patch.paxTable = paxTable;
     const newPolicy = JSON.stringify({
-      v: 1, drops, paxSection, classMetric, conePenaltyMs: coneNum,
+      v: 2, drops, paxSection, conePenaltyMs: coneNum,
     });
     // Force a canonical rewrite when the stored policy couldn't be parsed,
     // even if the form's fields still match the fallback defaults — same as
@@ -423,24 +415,6 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
               </SelectTrigger>
               <SelectContent>
                 {DROPS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-season-class-metric">Class ranking metric</Label>
-            <Select
-              value={classMetric}
-              onValueChange={(v) => setClassMetric(v as ClassMetric)}
-            >
-              <SelectTrigger id="edit-season-class-metric" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CLASS_METRIC_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>

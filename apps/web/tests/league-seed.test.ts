@@ -16,7 +16,7 @@ const TEST_DB_URL = "file:./test-league-seed.db";
 const FIXTURES_DIR = resolve(__dirname, "fixtures");
 
 // Exact production branding strings (club-config defaults) copied into the seed.
-const PCA_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 let prisma: PrismaClient;
 
@@ -76,7 +76,7 @@ describe("fresh migrate deploy seeds", () => {
     await prisma.league.delete({ where: { id: created.id } });
   });
 
-  it("creates the PCA Classic scoring system with the v1 policy", async () => {
+  it("creates the PCA Classic scoring system with the v2 policy (canonicalized by the scoring-policy-v2 migration)", async () => {
     const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
     const systems = await prisma.scoringSystem.findMany({ where: { leagueId: league.id } });
     expect(systems).toHaveLength(1);

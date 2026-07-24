@@ -71,7 +71,7 @@ describe("paxTable precedence, end-to-end through ingestRmsoloEvent", () => {
         name: "2027 Season",
         slug: "2027-season",
         year: 2027,
-        scoringPolicy: '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+        scoringPolicy: '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
         paxTable: JSON.stringify({ AS: 0.5 }),
       },
     });
@@ -96,7 +96,7 @@ describe("paxTable precedence, end-to-end through ingestRmsoloEvent", () => {
         name: "2028 Season",
         slug: "2028-season",
         year: 2028,
-        scoringPolicy: '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+        scoringPolicy: '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
         paxTable: JSON.stringify({ ZZ: 0.75 }), // covers ZZ, but not the class used below
       },
     });

@@ -21,7 +21,7 @@ import {
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-season-resolve.db");
 const TEST_DB_URL = "file:./test-season-resolve.db";
-const PCA_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 let prisma: PrismaClient;
 let leagueId: number;
@@ -66,7 +66,7 @@ describe("resolveOrCreateSeason", () => {
         slug: "2026-season",
         year: 2099,
         scoringPolicy:
-          '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+          '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
       },
     });
 

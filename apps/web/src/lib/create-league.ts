@@ -30,11 +30,11 @@ function validateLogoUrl(logoUrl: string): void {
 
 // A new league needs a default policy to snapshot when neither --preset-name
 // (there IS no preset yet — this call creates the first one) nor
-// --policy-file is given. PCA-shaped: fixed drops, no PAX section, raw class
-// metric, 2000ms cone penalty — the same defaults `league-foundation`
-// seeded for pca-rmr, a reasonable starting point for any new league.
+// --policy-file is given. PCA-shaped: fixed drops, no PAX section, 2000ms
+// cone penalty — the same defaults `league-foundation` seeded for pca-rmr
+// (now canonicalized to v2), a reasonable starting point for any new league.
 const DEFAULT_POLICY_JSON =
-  '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+  '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 export type CreateLeagueOptions = {
   slug: string;

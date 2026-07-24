@@ -1,5 +1,5 @@
 /**
- * ScoringPolicy v1 — the scoring knobs stored as a JSON snapshot on a Season
+ * ScoringPolicy v2 — the scoring knobs stored as a JSON snapshot on a Season
  * row (copied from a ScoringSystem preset at adoption time, never a live
  * reference — see schema.prisma `Season.scoringPolicy`). This is the only
  * shape in play right now: no formula DSL, no per-field defaulting. Every
@@ -7,9 +7,21 @@
  * league-foundation migration and `ingest.ts`'s bare-Season default), so
  * `parseScoringPolicy` never needs to paper over a partial row — a malformed
  * or incomplete policy is a data bug and should throw, not silently coerce.
+ *
+ * v2 (Task R1) drops v1's per-policy raw/pax class-ranking toggle: class
+ * sections now always rank on the entry's applied-PAX-indexed best time
+ * (see season-leaderboard.ts). For a class whose entries all share one PAX
+ * factor this is a pure rescale of the raw best — identical order and
+ * points to the old "raw" behavior — and for run-group classes whose
+ * entries carry per-driver derived factors it's the official (indexed)
+ * ordering the old "pax" setting existed to produce. Since there was never
+ * a case where "raw" gave a *different, still-correct* ordering, the toggle
+ * only ever hid a bug for run-group classes — so it's removed rather than
+ * defaulted. `v1` payloads are rejected outright; no dual v1/v2 support in
+ * app code.
  */
 export type ScoringPolicy = {
-  v: 1;
+  v: 2;
   /**
    * fixed: count the best qualifying-threshold scores regardless of season
    * progress (PCA — mid-season, nothing drops).
@@ -19,8 +31,6 @@ export type ScoringPolicy = {
   drops: "fixed" | "proportional";
   /** Synthetic overall-PAX standings section, pinned first (season-leaderboard.ts PAX_SECTION_CODE). */
   paxSection: boolean;
-  /** raw: class sections rank on best-corrected time. pax: rank on time × entry.paxClass.paxIndex. */
-  classMetric: "raw" | "pax";
   /** Milliseconds added per cone struck. PCA convention is 2000. */
   conePenaltyMs: number;
 };
@@ -50,8 +60,8 @@ export function parseScoringPolicy(json: string): ScoringPolicy {
   }
   const obj = raw as Record<string, unknown>;
 
-  if (obj.v !== 1) {
-    fail("v", "1", obj.v);
+  if (obj.v !== 2) {
+    fail("v", "2", obj.v);
   }
   if (obj.drops !== "fixed" && obj.drops !== "proportional") {
     fail("drops", '"fixed" or "proportional"', obj.drops);
@@ -59,18 +69,14 @@ export function parseScoringPolicy(json: string): ScoringPolicy {
   if (typeof obj.paxSection !== "boolean") {
     fail("paxSection", "a boolean", obj.paxSection);
   }
-  if (obj.classMetric !== "raw" && obj.classMetric !== "pax") {
-    fail("classMetric", '"raw" or "pax"', obj.classMetric);
-  }
   if (typeof obj.conePenaltyMs !== "number" || !Number.isFinite(obj.conePenaltyMs) || obj.conePenaltyMs < 0) {
     fail("conePenaltyMs", "a non-negative number", obj.conePenaltyMs);
   }
 
   return {
-    v: 1,
+    v: 2,
     drops: obj.drops,
     paxSection: obj.paxSection,
-    classMetric: obj.classMetric,
     conePenaltyMs: obj.conePenaltyMs,
   };
 }

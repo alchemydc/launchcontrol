@@ -14,8 +14,8 @@ import { dbTarget, migrateDeploy } from "./helpers/db";
 // each test builds its own scratch league (via createLeague) so tests stay
 // independent within a single shared DB file.
 
-const PCA_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
-const RMSOLO_POLICY = '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":1000}';
+const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
+const RMSOLO_POLICY = '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1000}';
 
 const { path: TEST_DB_PATH, url: TEST_DB_URL } = dbTarget("league-admin-crud");
 
@@ -306,7 +306,7 @@ describe("scoring systems", () => {
       createScoringSystem(prisma, {
         leagueSlug: league.slug,
         name: "Bad Policy Preset",
-        policyJson: '{"v":1,"drops":"sideways","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+        policyJson: '{"v":2,"drops":"sideways","paxSection":false,"conePenaltyMs":2000}',
       }),
     ).rejects.toThrow(/scoringPolicy\.drops/);
   });
@@ -335,7 +335,7 @@ describe("scoring systems", () => {
       updateScoringSystem(
         prisma,
         { leagueSlug: league.slug, name: "Preset A" },
-        { policyJson: '{"v":1,"drops":"sideways"}' },
+        { policyJson: '{"v":2,"drops":"sideways"}' },
       ),
     ).rejects.toThrow(/scoringPolicy\.drops/);
 

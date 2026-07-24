@@ -16,7 +16,7 @@ export const DEFAULT_LEAGUE_SLUG = "pca-rmr";
 // Matches the "PCA Classic" preset seeded by the league-foundation migration
 // and the bare-Season default `ingestAxdb` auto-creates (apps/web/src/lib/ingest.ts).
 export const DEFAULT_SCORING_POLICY =
-  '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+  '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 export type SeasonFixtureSpec = {
   year: number;

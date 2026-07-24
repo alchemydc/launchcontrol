@@ -25,34 +25,26 @@ import type { ScoringPolicy } from "@/lib/scoring-policy";
 import type { PresetRow } from "./presets-table";
 
 type Drops = ScoringPolicy["drops"];
-type ClassMetric = ScoringPolicy["classMetric"];
 
 const DROPS_OPTIONS: { value: Drops; label: string }[] = [
   { value: "fixed", label: "Fixed — count best qualifying scores regardless of season progress" },
   { value: "proportional", label: "Proportional — drops scale with completed events" },
 ];
 
-const CLASS_METRIC_OPTIONS: { value: ClassMetric; label: string }[] = [
-  { value: "raw", label: "Raw — class sections rank on best corrected time" },
-  { value: "pax", label: "PAX — class sections rank on time × PAX index" },
-];
-
 /** Sensible defaults when creating a preset, or recovering from an unparseable stored policy. */
 const DEFAULT_POLICY: ScoringPolicy = {
-  v: 1,
+  v: 2,
   drops: "fixed",
   paxSection: false,
-  classMetric: "raw",
   conePenaltyMs: 2000,
 };
 
 function serializePolicy(fields: {
   drops: Drops;
   paxSection: boolean;
-  classMetric: ClassMetric;
   conePenaltyMs: number;
 }): string {
-  const policy: ScoringPolicy = { v: 1, ...fields };
+  const policy: ScoringPolicy = { v: 2, ...fields };
   return JSON.stringify(policy);
 }
 
@@ -79,7 +71,6 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [drops, setDrops] = useState<Drops>(DEFAULT_POLICY.drops);
-  const [classMetric, setClassMetric] = useState<ClassMetric>(DEFAULT_POLICY.classMetric);
   const [paxSection, setPaxSection] = useState(DEFAULT_POLICY.paxSection);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(DEFAULT_POLICY.conePenaltyMs));
   const [pending, setPending] = useState(false);
@@ -88,7 +79,6 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
   function reset() {
     setName("");
     setDrops(DEFAULT_POLICY.drops);
-    setClassMetric(DEFAULT_POLICY.classMetric);
     setPaxSection(DEFAULT_POLICY.paxSection);
     setConePenaltyMs(String(DEFAULT_POLICY.conePenaltyMs));
     setError(null);
@@ -112,7 +102,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          policyJson: serializePolicy({ drops, classMetric, paxSection, conePenaltyMs: coneMs }),
+          policyJson: serializePolicy({ drops, paxSection, conePenaltyMs: coneMs }),
         }),
       });
       const json = (await res.json()) as Record<string, unknown>;
@@ -175,24 +165,6 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="preset-class-metric">Class ranking metric</Label>
-            <Select
-              value={classMetric}
-              onValueChange={(v) => setClassMetric(v as ClassMetric)}
-            >
-              <SelectTrigger id="preset-class-metric" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CLASS_METRIC_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="flex items-center justify-between gap-4">
             <Label htmlFor="preset-pax-section">Overall PAX standings section</Label>
             <Switch
@@ -236,7 +208,6 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
   const initialPolicy = preset.policy ?? DEFAULT_POLICY;
   const [name, setName] = useState(preset.name);
   const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
-  const [classMetric, setClassMetric] = useState<ClassMetric>(initialPolicy.classMetric);
   const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(initialPolicy.conePenaltyMs));
   const [pending, setPending] = useState(false);
@@ -256,7 +227,6 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
 
     const policyChanged =
       drops !== initialPolicy.drops ||
-      classMetric !== initialPolicy.classMetric ||
       paxSection !== initialPolicy.paxSection ||
       coneMs !== initialPolicy.conePenaltyMs ||
       preset.policy === null; // unparseable stored row — always rewrite it in canonical form
@@ -264,7 +234,7 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
     const patch: Record<string, unknown> = {};
     if (name !== preset.name) patch.name = name;
     if (policyChanged) {
-      patch.policyJson = serializePolicy({ drops, classMetric, paxSection, conePenaltyMs: coneMs });
+      patch.policyJson = serializePolicy({ drops, paxSection, conePenaltyMs: coneMs });
     }
 
     if (Object.keys(patch).length === 0) {
@@ -329,24 +299,6 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
               </SelectTrigger>
               <SelectContent>
                 {DROPS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-preset-class-metric">Class ranking metric</Label>
-            <Select
-              value={classMetric}
-              onValueChange={(v) => setClassMetric(v as ClassMetric)}
-            >
-              <SelectTrigger id="edit-preset-class-metric" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CLASS_METRIC_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>

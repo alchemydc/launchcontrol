@@ -15,7 +15,11 @@ import { ingestAxdb } from "@/lib/ingest";
 // ScoringSystem preset at all fails loudly rather than falling back to anything.
 
 const FIXTURES_DIR = resolve(__dirname, "fixtures");
-const PCA_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+// Task R1: the scoring-policy-v2 migration canonicalizes the league-foundation
+// seed's v1 policy to this v2 shape (the old class-ranking-metric field
+// dropped, v bumped) — see
+// prisma/migrations/20260724030000_scoring_policy_v2/migration.sql.
+const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 function migrateDeploy(dbUrl: string) {
   execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
@@ -59,7 +63,7 @@ describe("ingest snapshots the league's current ScoringSystem preset", () => {
     const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: league.id } });
     const editedPolicy =
-      '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":1500}';
+      '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1500}';
     await prisma.scoringSystem.update({ where: { id: preset.id }, data: { policy: editedPolicy } });
 
     // A new year (2027), no Season row yet — auto-create must pick up the edit.

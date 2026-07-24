@@ -395,18 +395,16 @@ export async function buildSeasonLeaderboard(
         byDriver = new Map();
         byClass.set(code, byDriver);
       }
-      // Class metric (scoringPolicy.classMetric): raw best by default. Under
-      // "pax", classes score on the PAX-indexed best instead — a pure
-      // rescale (identical order and points) for classes whose entries share
-      // one factor, and the official ordering for run-group classes whose
-      // entries carry per-driver derived factors (the printed group results
-      // are indexed).
-      const classMetric = policy.classMetric === "pax"
-        ? Math.round(best * appliedPaxIndex(entry))
-        : best;
+      // Class ranking metric: every class ranks on the PAX-indexed best time
+      // — a pure rescale (identical order and points) for classes whose
+      // entries share one factor, and the official ordering for run-group
+      // classes whose entries carry per-driver derived factors (the printed
+      // group results are indexed). (scoring-policy.ts v2 dropped the old
+      // per-policy raw/pax ranking toggle — this is unconditional now.)
+      const rankMetric = Math.round(best * appliedPaxIndex(entry));
       const existing = byDriver.get(d.id);
-      if (existing == null || classMetric < existing) {
-        byDriver.set(d.id, classMetric);
+      if (existing == null || rankMetric < existing) {
+        byDriver.set(d.id, rankMetric);
       }
 
       // Synthetic overall-PAX section (scoringPolicy.paxSection=true): index
