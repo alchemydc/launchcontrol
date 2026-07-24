@@ -23,6 +23,7 @@ export async function EventsHome({
   basePath = "",
   smugmugTarget,
   subtitle = LEGACY_SUBTITLE,
+  season,
 }: {
   searchParams: Promise<{ year?: string; returnTo?: string | string[] }>;
   /** Explicit league scope (Task 5) — the legacy home page passes the
@@ -40,6 +41,14 @@ export async function EventsHome({
    *  `/l/[league]` passes that league's own `siteDescription` so a non-default
    *  league's events page never carries the default league's branding. */
   subtitle?: string;
+  /** Season scope (Task 21): when present, the event list is filtered by
+   *  `seasonId` (no calendar-year date range) and this season — not the
+   *  `?year=` param/year-switcher below — drives the header and empty state.
+   *  `/l/[league]/page.tsx` resolves this (requested `?season=` slug, else
+   *  the league's active season) and always passes it; omitted only by the
+   *  legacy home page, which keeps the pre-existing year-based behavior
+   *  byte-identical. */
+  season?: { id: number; slug: string; name: string };
 }) {
   const { year: yearParam } = await searchParams;
 
@@ -52,13 +61,15 @@ export async function EventsHome({
       : (years[0] ?? fallbackYear);
 
   const events = await prisma.event.findMany({
-    where: {
-      season: { leagueId },
-      date: {
-        gte: new Date(Date.UTC(year, 0, 1)),
-        lt: new Date(Date.UTC(year + 1, 0, 1)),
-      },
-    },
+    where: season
+      ? { seasonId: season.id }
+      : {
+          season: { leagueId },
+          date: {
+            gte: new Date(Date.UTC(year, 0, 1)),
+            lt: new Date(Date.UTC(year + 1, 0, 1)),
+          },
+        },
     // Secondary `name asc` after `date desc` gives deterministic A/B ordering
     // for combined-event sessions (both store the date at 00:00 UTC, so date
     // alone doesn't disambiguate).
@@ -112,7 +123,7 @@ export async function EventsHome({
     <main className="w-full mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-12">
       <header className="mb-6 sm:mb-8">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary mb-3">
-          {year} Season
+          {season ? season.name : `${year} Season`}
         </p>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-4 min-w-0">
@@ -126,7 +137,9 @@ export async function EventsHome({
               </p>
             </div>
           </div>
-          {years.length > 1 && (
+          {/* One time-control per page: on a season-scoped view, the league
+              subnav's season switcher already owns this job. */}
+          {!season && years.length > 1 && (
             <div className="sm:shrink-0 sm:ml-4">
               <EventsYearSwitcher
                 years={years}
@@ -152,6 +165,8 @@ export async function EventsHome({
                 <code className="bg-muted rounded px-1.5 py-0.5">apps/web</code>{" "}
                 to publish results.
               </>
+            ) : season ? (
+              <>No events for {season.name}. Try a different season above.</>
             ) : (
               <>No events for {year}. Try a different season above.</>
             )}

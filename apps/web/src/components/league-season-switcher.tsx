@@ -12,23 +12,34 @@ import {
 interface LeagueSeasonSwitcherProps {
   seasons: Array<{ slug: string; name: string }>;
   currentSlug: string;
-  /** e.g. "/l/rmsolo/leaderboard/s" — every option links to `${basePath}/${slug}`. */
+  /** e.g. "/l/rmsolo/leaderboard/s" — every option links to `${basePath}/${slug}`
+   *  unless `buildHref` is given (Task 21: the Events tab targets
+   *  `${leagueBasePath}?season=${slug}` instead of a path segment). */
   basePath: string;
   /** Slimmer trigger for the subnav bar. */
   compact?: boolean;
+  /** Overrides the default `${basePath}/${slug}` destination — the league
+   *  subnav passes this on the Events tab so switching seasons there stays
+   *  on the league home with `?season=<slug>` rather than navigating to a
+   *  leaderboard path. */
+  buildHref?: (slug: string) => string;
 }
 
 /**
- * Season switcher for league-scoped leaderboard routes (Task 5) — addresses
- * seasons by slug and labels them by name, unlike the legacy `SeasonSwitcher`
- * (bare year, `/leaderboard/[year]`), since a league can have more than one
- * season per year (e.g. a Winter Series alongside the main season).
+ * Season switcher for league-scoped routes (Task 5, extended Task 21) —
+ * addresses seasons by slug and labels them by name, unlike the legacy
+ * `SeasonSwitcher` (bare year, `/leaderboard/[year]`), since a league can
+ * have more than one season per year (e.g. a Winter Series alongside the
+ * main season). Tab-aware: on the leaderboard tab it navigates to a
+ * season-scoped path; on the Events tab it navigates to `?season=<slug>` on
+ * the league home (see `buildHref`).
  */
 export function LeagueSeasonSwitcher({
   seasons,
   currentSlug,
   basePath,
   compact,
+  buildHref,
 }: LeagueSeasonSwitcherProps) {
   const router = useRouter();
 
@@ -36,7 +47,7 @@ export function LeagueSeasonSwitcher({
     <Select
       value={currentSlug}
       onValueChange={(v) => {
-        if (v) router.push(`${basePath}/${v}`);
+        if (v) router.push(buildHref ? buildHref(v) : `${basePath}/${v}`);
       }}
     >
       <SelectTrigger
