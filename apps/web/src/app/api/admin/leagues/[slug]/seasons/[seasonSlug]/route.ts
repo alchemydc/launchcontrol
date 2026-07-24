@@ -13,6 +13,7 @@ const PATCH_KEYS = [
   "plannedEvents",
   "status",
   "paxTable",
+  "scoringPolicy",
 ] as const satisfies readonly (keyof UpdateSeasonPatch)[];
 
 function toPatch(body: Record<string, unknown>): UpdateSeasonPatch {

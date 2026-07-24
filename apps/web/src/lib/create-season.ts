@@ -140,6 +140,8 @@ export type UpdateSeasonPatch = Partial<{
   status: SeasonStatus;
   /** Raw JSON string, strict-parsed via `parseSeasonPaxTableStrict` and re-serialized in canonical form before writing. */
   paxTable: string;
+  /** Raw ScoringPolicy JSON, strict-validated via `parseScoringPolicy` and re-serialized canonically. */
+  scoringPolicy: string;
 }>;
 
 /**
@@ -148,11 +150,14 @@ export type UpdateSeasonPatch = Partial<{
  * `createSeason` uses — NOT re-slugified) and, like `name`, is checked for
  * a duplicate within the league before writing.
  *
- * Deliberately never touches `scoringPolicy` — a Season's policy is a
- * snapshot taken once at creation/adoption time (see `createSeason`'s
- * doc comment); there is no "re-adopt the preset" operation. Editing a
- * ScoringSystem preset (`scoring-system.ts`) never reaches back to update
- * seasons that previously snapshotted it.
+ * `scoringPolicy` IS editable per-season (BJ 2026-07-24 — drops etc. must
+ * be adjustable per season, including for past seasons; standings recompute
+ * at read time, so there's no data rewrite to worry about). The
+ * snapshot-at-creation contract from `createSeason`'s doc comment still
+ * holds in one sense: editing a ScoringSystem preset (`scoring-system.ts`)
+ * never reaches back to update seasons that previously snapshotted it —
+ * only an explicit season-level `scoringPolicy` patch (this function)
+ * changes a season's policy.
  */
 export async function updateSeason(
   client: PrismaClient,
@@ -207,6 +212,11 @@ export async function updateSeason(
   const newPaxTable =
     patch.paxTable !== undefined ? JSON.stringify(parseSeasonPaxTableStrict(patch.paxTable)) : undefined;
 
+  // Throws a field-level error on invalid JSON or a malformed policy shape —
+  // never write a Season row with a scoringPolicy scoring code can't parse.
+  const newScoringPolicy =
+    patch.scoringPolicy !== undefined ? JSON.stringify(parseScoringPolicy(patch.scoringPolicy)) : undefined;
+
   const data: Prisma.SeasonUpdateInput = {};
   if (patch.name !== undefined) data.name = patch.name;
   if (newSlug !== undefined) data.slug = newSlug;
@@ -214,6 +224,7 @@ export async function updateSeason(
   if (patch.plannedEvents !== undefined) data.plannedEvents = patch.plannedEvents;
   if (patch.status !== undefined) data.status = patch.status;
   if (newPaxTable !== undefined) data.paxTable = newPaxTable;
+  if (newScoringPolicy !== undefined) data.scoringPolicy = newScoringPolicy;
 
   return client.season.update({ where: { id: season.id }, data });
 }
