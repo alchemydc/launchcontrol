@@ -12,11 +12,15 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
-import { buildLeaderboard } from "@/lib/leaderboard";
+import {
+  buildLeaderboard,
+  formatMs,
+  summarizeEventClasses,
+} from "@/lib/leaderboard";
 import { countSiblingEventsByDate, findEventBySlug } from "@/lib/event-queries";
 import { findSmugmugEventFolder, type SmugmugLeagueTarget } from "@/lib/smugmug";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
-import { LeaderboardTable } from "./leaderboard-table";
+import { EventClassNav } from "./event-class-nav";
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", {
@@ -54,7 +58,10 @@ export async function EventPageView({
 
   const rows = buildLeaderboard(event.entries, policy.conePenaltyMs);
   const photosUrl = await findSmugmugEventFolder(event.name, event.date, league);
-  const classCodes = Array.from(new Set(rows.map((r) => r.classCode))).sort();
+  const summaries = summarizeEventClasses(rows, showPaxView);
+  const paxAvailable =
+    showPaxView && !rows.some((row) => row.classCode.toLowerCase() === "pax");
+  const eventHref = `${basePath}/events/${slug}`;
 
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
@@ -99,12 +106,62 @@ export async function EventPageView({
         )}
       </header>
 
-      <LeaderboardTable
-        rows={rows}
-        classCodes={classCodes}
-        showPaxView={showPaxView}
-        driverBasePath={basePath}
+      <EventClassNav
+        slug={slug}
+        classCodes={summaries.map((summary) => summary.classCode)}
+        paxAvailable={paxAvailable}
+        basePath={basePath}
       />
+
+      <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+        <div className="bg-muted/40 px-4 py-3 border-b border-border/60">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Classes — pick one for full results
+          </h2>
+        </div>
+        <ul className="divide-y divide-border/60">
+          {paxAvailable && (
+            <li>
+              <Link
+                href={`${eventHref}/pax`}
+                className="flex items-center gap-3 bg-primary/5 px-4 py-3 transition-colors hover:bg-primary/10"
+              >
+                <span className="w-14 shrink-0 text-sm font-semibold uppercase tracking-wide text-primary">
+                  PAX
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  Overall standings — every entry ranked on indexed time
+                </span>
+                <span aria-hidden className="shrink-0 text-muted-foreground">→</span>
+              </Link>
+            </li>
+          )}
+          {summaries.map((summary) => (
+            <li key={summary.classCode}>
+              <Link
+                href={`${eventHref}/${encodeURIComponent(summary.classCode)}`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors odd:bg-background even:bg-muted/10 hover:bg-accent/40"
+              >
+                <span className="w-14 shrink-0 text-sm font-semibold uppercase tracking-wide text-foreground">
+                  {summary.classCode}
+                </span>
+                <Badge variant="secondary" className="shrink-0 text-[10px] tabular-nums">
+                  {summary.entryCount} {summary.entryCount === 1 ? "entry" : "entries"}
+                </Badge>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {summary.winner != null && (
+                    <>
+                      Winner: <span className="text-foreground">{summary.winner.driverName}</span>{" "}
+                      · <span className="tabular-nums">{formatMs(summary.winner.bestRawMs)}</span>
+                    </>
+                  )}
+                </span>
+                <span aria-hidden className="shrink-0 text-muted-foreground">→</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
     </main>
   );
 }

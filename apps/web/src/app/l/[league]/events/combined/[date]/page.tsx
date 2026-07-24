@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
-import { requireMember } from "@/lib/session";
+import { gateResultsPage } from "@/lib/session";
 import { CombinedEventPageView } from "@/app/events/combined/[date]/combined-event-view";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 /**
  * League-scoped combined-event page — not explicitly named in the Task 5
@@ -20,7 +20,7 @@ export default async function LeagueCombinedEventPage({
   const league = await getLeagueConfigForSlug(leagueSlug);
   if (!league) notFound();
 
-  await requireMember(
+  await gateResultsPage(
     league,
     `/l/${leagueSlug}/events/combined/${date}`,
     `/l/${leagueSlug}`,

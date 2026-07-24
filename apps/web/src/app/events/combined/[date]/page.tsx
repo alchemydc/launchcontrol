@@ -1,11 +1,10 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { resolveLeague } from "@/lib/league-config";
-import { requireRmrMember } from "@/lib/session";
+import { getLeagueConfig } from "@/lib/league-config";
+import { gateResultsPage } from "@/lib/session";
 import { CombinedEventPageView } from "./combined-event-view";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export default async function CombinedEventPage({
   params,
@@ -16,13 +15,17 @@ export default async function CombinedEventPage({
 
   // Gate runs before any validation/data fetch so unauth viewers can't probe
   // valid vs. invalid dates (same pattern as /events/[slug]).
-  await requireRmrMember(`/events/combined/${date}`);
+  const league = await getLeagueConfig();
+  await gateResultsPage(
+    league,
+    `/events/combined/${date}`,
+    `/l/${league.slug}`,
+  );
 
   // This route serves the deployment's default league (legacy URL —
   // /l/[league]/events/combined/[date] is the league-scoped equivalent).
   // CombinedEventPageView scopes its lookup by `league.id` so a different
   // league's event on this date can never be pulled into these results.
-  const league = await resolveLeague(undefined, prisma);
   if (!league) notFound();
 
   return (

@@ -1,5 +1,6 @@
 import { unlinkSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
+import { expireResultsCache } from "@/lib/results-cache";
 import { getSession } from "@/lib/session";
 import { isLeagueAdmin } from "@/lib/admin";
 import { resolveDefaultLeague } from "@/lib/league-config";
@@ -82,6 +83,8 @@ export async function POST(request: NextRequest) {
       // Audit is best-effort — a logging hiccup must not fail a completed ingest.
       console.error("[admin-ingest] failed to write audit log", auditErr);
     }
+
+    expireResultsCache();
 
     return NextResponse.json({ status, event, counts }, { status: 200 });
   } catch (err) {

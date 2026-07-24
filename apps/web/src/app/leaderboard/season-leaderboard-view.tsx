@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type {
+  SeasonClassSummary,
   SeasonStandingsByClass,
   SeasonStandingsRow,
 } from "@/lib/season-leaderboard";
@@ -24,19 +25,14 @@ interface SeasonLeaderboardViewProps {
    *  div by the caller) — `null`/omitted renders nothing, same as the
    *  legacy `years.length > 1` guard did inline. */
   switcher?: ReactNode;
-  /** Short label for the empty-standings message ("No season data available
-   *  for {periodLabel}.") — the bare year for legacy pages, the season name
-   *  for league-scoped pages. */
-  periodLabel: string;
-  standings: SeasonStandingsByClass[];
+  section: SeasonStandingsByClass;
+  allSummaries: SeasonClassSummary[];
+  overviewHref: string;
+  classBasePath: string;
   totalEvents: number;
   completedEvents: number;
   qualifyingEvents: number;
   countedEvents: number;
-  /** `?class=` query value — only this class's table is rendered (the full
-   *  page for a big league is megabytes of HTML; see ClassJumpBar). Unknown
-   *  or omitted → the first non-empty section (PAX when present). */
-  activeClassCode?: string | null;
   /** `?sort=` query value — row order within the class. Rank pills always
    *  show the CHAMPIONSHIP position (by points) regardless of sort. */
   sortBy?: string | null;
@@ -217,41 +213,24 @@ function classAnchorId(classCode: string): string {
 
 // One class renders at a time: a season with hundreds of drivers across
 // dozens of classes produced an ~8 MB page when every section rendered.
-// The jump bar navigates via `?class=` (server renders just that section)
-// instead of in-page anchors.
-function resolveActiveSection(
-  standings: SeasonStandingsByClass[],
-  activeClassCode: string | null | undefined,
-): SeasonStandingsByClass | null {
-  const nonEmpty = standings.filter((s) => s.drivers.length > 0);
-  return (
-    nonEmpty.find((s) => s.classCode === activeClassCode) ??
-    nonEmpty[0] ??
-    null
-  );
-}
-
 function SortHeaderLink({
   label,
   sortKey,
   currentSort,
-  activeClassCode,
+  classHref,
   title,
 }: {
   label: string;
   sortKey: SortKey;
   currentSort: SortKey;
-  activeClassCode: string;
+  classHref: string;
   title?: string;
 }) {
   const active = currentSort === sortKey;
-  const query =
-    sortKey === "points"
-      ? `?class=${encodeURIComponent(activeClassCode)}`
-      : `?class=${encodeURIComponent(activeClassCode)}&sort=avg`;
+  const href = sortKey === "points" ? classHref : `${classHref}?sort=avg`;
   return (
     <Link
-      href={query}
+      href={href}
       scroll={false}
       title={title}
       className={
@@ -273,6 +252,7 @@ function ClassSection({
   qualifyingEvents,
   countedEvents,
   sort,
+  classHref,
   driverBasePath,
 }: {
   section: SeasonStandingsByClass;
@@ -280,6 +260,7 @@ function ClassSection({
   qualifyingEvents: number;
   countedEvents: number;
   sort: SortKey;
+  classHref: string;
   driverBasePath?: string;
 }) {
   if (section.drivers.length === 0) return null;
@@ -350,7 +331,7 @@ function ClassSection({
                   label="Points"
                   sortKey="points"
                   currentSort={sort}
-                  activeClassCode={section.classCode}
+                  classHref={classHref}
                 />
               </TableHead>
               <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right">
@@ -358,7 +339,7 @@ function ClassSection({
                   label="Avg"
                   sortKey="avg"
                   currentSort={sort}
-                  activeClassCode={section.classCode}
+                  classHref={classHref}
                   title="Average points per counted championship event (dropped scores excluded)"
                 />
               </TableHead>
@@ -386,31 +367,35 @@ function ClassSection({
   );
 }
 
-function ClassJumpBar({
-  standings,
+function ClassLinkBar({
+  summaries,
   activeClassCode,
-  sort,
+  overviewHref,
+  classBasePath,
 }: {
-  standings: SeasonStandingsByClass[];
-  activeClassCode: string | null;
-  sort: SortKey;
+  summaries: SeasonClassSummary[];
+  activeClassCode: string;
+  overviewHref: string;
+  classBasePath: string;
 }) {
-  const sections = standings.filter((s) => s.drivers.length > 0);
-  if (sections.length < 2) return null;
-  const sortSuffix = sort === "avg" ? "&sort=avg" : "";
   return (
     <nav aria-label="Select class" className="mb-6">
-      {/* flex-wrap (not overflow-x-auto) so the class list wraps to multiple
-          lines like the event page's class filter. `?class=` navigation —
-          the server renders only the selected class's section. */}
       <ul className="flex flex-wrap gap-1.5">
-        {sections.map((s) => {
-          const active = s.classCode === activeClassCode;
+        <li>
+          <Link
+            href={overviewHref}
+            className="inline-flex items-center rounded-full border border-border bg-background px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none"
+          >
+            Overview
+          </Link>
+        </li>
+        {summaries.map((summary) => {
+          const active = summary.classCode === activeClassCode;
           return (
-            <li key={s.classCode}>
+            <li key={summary.classCode}>
               <Link
-                href={`?class=${encodeURIComponent(s.classCode)}${sortSuffix}`}
-                scroll={false}
+                href={`${classBasePath}/${encodeURIComponent(summary.classCode)}`}
+                aria-current={active ? "page" : undefined}
                 className={
                   "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide transition-colors focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none " +
                   (active
@@ -418,7 +403,7 @@ function ClassJumpBar({
                     : "border-border bg-background text-foreground/80 hover:border-primary/40 hover:text-primary")
                 }
               >
-                {s.classCode}
+                {summary.classCode}
               </Link>
             </li>
           );
@@ -431,18 +416,19 @@ function ClassJumpBar({
 export function SeasonLeaderboardView({
   title,
   switcher,
-  periodLabel,
-  standings,
+  section,
+  allSummaries,
+  overviewHref,
+  classBasePath,
   totalEvents,
   completedEvents,
   qualifyingEvents,
   countedEvents,
-  activeClassCode,
   sortBy,
   driverBasePath,
 }: SeasonLeaderboardViewProps) {
-  const activeSection = resolveActiveSection(standings, activeClassCode);
   const sort = resolveSort(sortBy);
+  const classHref = `${classBasePath}/${encodeURIComponent(section.classCode)}`;
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <header className="mb-6 sm:mb-8">
@@ -470,7 +456,7 @@ export function SeasonLeaderboardView({
         </div>
       </header>
 
-      {completedEvents < qualifyingEvents && standings.length > 0 && (
+      {completedEvents < qualifyingEvents && (
         <div className="mb-6 flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-4">
           <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
           <p className="text-sm text-muted-foreground">
@@ -480,30 +466,22 @@ export function SeasonLeaderboardView({
         </div>
       )}
 
-      <ClassJumpBar
-        standings={standings}
-        activeClassCode={activeSection?.classCode ?? null}
-        sort={sort}
+      <ClassLinkBar
+        summaries={allSummaries}
+        activeClassCode={section.classCode}
+        overviewHref={overviewHref}
+        classBasePath={classBasePath}
       />
 
-      {activeSection == null ? (
-        <div className="flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-12">
-          <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
-          <p className="text-sm text-muted-foreground">
-            No season data available for {periodLabel}.
-          </p>
-        </div>
-      ) : (
-        <ClassSection
-          key={activeSection.classCode}
-          section={activeSection}
-          totalEvents={totalEvents}
-          qualifyingEvents={qualifyingEvents}
-          countedEvents={countedEvents}
-          sort={sort}
-          driverBasePath={driverBasePath}
-        />
-      )}
+      <ClassSection
+        section={section}
+        totalEvents={totalEvents}
+        qualifyingEvents={qualifyingEvents}
+        countedEvents={countedEvents}
+        sort={sort}
+        classHref={classHref}
+        driverBasePath={driverBasePath}
+      />
     </main>
   );
 }

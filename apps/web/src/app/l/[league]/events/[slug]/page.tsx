@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
-import { requireMember } from "@/lib/session";
+import { gateResultsPage } from "@/lib/session";
 import { EventPageView } from "@/app/events/[slug]/event-page-view";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export default async function LeagueEventPage({
   params,
@@ -16,7 +16,7 @@ export default async function LeagueEventPage({
 
   // Gate runs before EventPageView's notFound() so unauth viewers can't
   // probe slug existence.
-  await requireMember(
+  await gateResultsPage(
     league,
     `/l/${leagueSlug}/events/${slug}`,
     `/l/${leagueSlug}`,

@@ -1,60 +1,92 @@
-import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
+import { notFound } from "next/navigation";
+import {
+  buildSeasonLeaderboard,
+  findSeasonSection,
+  summarizeSeasonSections,
+} from "@/lib/season-leaderboard";
 import { prisma } from "@/lib/prisma";
 import { SeasonLeaderboardView } from "@/app/leaderboard/season-leaderboard-view";
+import { SeasonOverviewView } from "@/app/leaderboard/season-overview-view";
 
-/**
- * Shared render body for both /l/[league]/leaderboard (bare — active season)
- * and /l/[league]/leaderboard/s/[seasonSlug] (Task 5), so both address the
- * same season-standings view through one place. `season: null` renders the
- * same graceful empty state the legacy /leaderboard page does for a league
- * with no season data yet (an unknown league or unknown SEASON SLUG is a
- * 404, handled by the caller before this runs — a league with zero seasons
- * is not).
- */
+function decodeClassParam(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export async function renderLeagueSeasonLeaderboard({
   leagueSlug,
   leagueName,
   season,
-  activeClassCode,
+  classParam,
   sortBy,
 }: {
-  /** Drives `driverBasePath` (`/l/[slug]`) so driver links from this
-   *  leaderboard stay inside the league instead of exiting to the legacy
-   *  global `/drivers/[id]` route (Task 20). */
   leagueSlug: string;
   leagueName: string;
   season: { id: number; slug: string; name: string } | null;
-  activeClassCode?: string | null;
+  classParam?: string;
   sortBy?: string | null;
 }) {
   const driverBasePath = `/l/${leagueSlug}`;
+  const activeSeasonPath = `${driverBasePath}/leaderboard`;
+  const classBasePath = season
+    ? `${activeSeasonPath}/s/${season.slug}`
+    : activeSeasonPath;
+  const title = season
+    ? `${season.name} Leaderboard`
+    : `${leagueName} Leaderboard`;
+  const periodLabel = season?.name ?? leagueName;
 
   if (!season) {
+    if (classParam != null) notFound();
     return (
-      <SeasonLeaderboardView
-        title={`${leagueName} Leaderboard`}
-        periodLabel={leagueName}
-        standings={[]}
+      <SeasonOverviewView
+        title={title}
+        periodLabel={periodLabel}
+        classBasePath={classBasePath}
+        summaries={[]}
         totalEvents={0}
         completedEvents={0}
         qualifyingEvents={0}
         countedEvents={0}
-        driverBasePath={driverBasePath}
       />
     );
   }
 
   const result = await buildSeasonLeaderboard({ seasonId: season.id }, prisma);
+  const summaries = summarizeSeasonSections(result.sections);
 
-  // Season navigation lives in the league subnav (layout-mounted), so no
-  // in-page switcher here — one navigation surface per league page.
+  if (classParam == null) {
+    return (
+      <SeasonOverviewView
+        title={title}
+        periodLabel={periodLabel}
+        classBasePath={classBasePath}
+        summaries={summaries}
+        totalEvents={result.totalEvents}
+        completedEvents={result.completedEvents}
+        qualifyingEvents={result.qualifyingEvents}
+        countedEvents={result.countedEvents}
+      />
+    );
+  }
+
+  const section = findSeasonSection(
+    result.sections,
+    decodeClassParam(classParam),
+  );
+  if (section == null) notFound();
+
   return (
     <SeasonLeaderboardView
-      title={`${season.name} Leaderboard`}
-      periodLabel={season.name}
-      activeClassCode={activeClassCode}
+      title={title}
+      section={section}
+      allSummaries={summaries}
+      overviewHref={classBasePath}
+      classBasePath={classBasePath}
       sortBy={sortBy}
-      standings={result.sections}
       totalEvents={result.totalEvents}
       completedEvents={result.completedEvents}
       qualifyingEvents={result.qualifyingEvents}

@@ -642,3 +642,43 @@ export async function buildSeasonLeaderboard(
   });
   return { totalEvents, completedEvents, qualifyingEvents, countedEvents, sections };
 }
+
+export type SeasonClassSummary = {
+  classCode: string;
+  driverCount: number;
+  leader: { driverId: number; driverName: string; totalPoints: number } | null;
+};
+
+export function summarizeSeasonSections(
+  sections: SeasonStandingsByClass[],
+): SeasonClassSummary[] {
+  return sections
+    .filter((section) => section.drivers.length > 0)
+    .map((section) => {
+      const leader = section.drivers[0];
+      return {
+        classCode: section.classCode,
+        driverCount: section.drivers.length,
+        leader:
+          leader == null
+            ? null
+            : {
+                driverId: leader.driverId,
+                driverName: leader.driverName,
+                totalPoints: leader.totalPoints,
+              },
+      };
+    });
+}
+
+export function findSeasonSection(
+  sections: SeasonStandingsByClass[],
+  classParam: string,
+): SeasonStandingsByClass | null {
+  const wanted = classParam.trim().toLowerCase();
+  if (wanted.length === 0) return null;
+  return (
+    sections.find((section) => section.classCode.toLowerCase() === wanted) ??
+    null
+  );
+}
