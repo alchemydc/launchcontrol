@@ -157,8 +157,8 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
         <DialogHeader>
           <DialogTitle>Create season</DialogTitle>
           <DialogDescription>
-            Snapshots its scoring policy from the selected preset (or the league&apos;s oldest
-            preset, if none is picked) at creation time — later edits to that preset never change
+            Snapshots its scoring policy from the selected ruleset (or the league&apos;s oldest
+            ruleset, if none is picked) at creation time — later edits to that ruleset never change
             this season.
           </DialogDescription>
         </DialogHeader>
@@ -204,7 +204,7 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="season-preset">Scoring preset</Label>
+            <Label htmlFor="season-preset">Scoring ruleset</Label>
             <Select
               value={presetName}
               onValueChange={(v) => setPresetName(v ?? DEFAULT_PRESET)}
@@ -213,7 +213,7 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={DEFAULT_PRESET}>League default (oldest preset)</SelectItem>
+                <SelectItem value={DEFAULT_PRESET}>League default (oldest ruleset)</SelectItem>
                 {presets.map((p) => (
                   <SelectItem key={p.name} value={p.name}>
                     {p.name}

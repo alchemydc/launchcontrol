@@ -85,7 +85,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
           {rows.length === 0 && (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-muted-foreground">
-                No scoring presets yet.
+                No scoring rulesets yet.
               </TableCell>
             </TableRow>
           )}

@@ -24,7 +24,7 @@ import type { MembershipRole } from "@/lib/membership";
 import type { MemberRow } from "./members-table";
 
 const ROLE_OPTIONS: { value: MembershipRole; label: string }[] = [
-  { value: "ADMIN", label: "Admin — manage league settings, seasons, presets, members" },
+  { value: "ADMIN", label: "Admin — manage league settings, seasons, rulesets, members" },
   { value: "MEMBER", label: "Member — counts toward this league's membership gating" },
   { value: "BLOCKED", label: "Blocked — explicitly denied access to this league" },
 ];

@@ -140,10 +140,10 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
         if (!next) reset();
       }}
     >
-      <DialogTrigger render={<Button>Create preset</Button>} />
+      <DialogTrigger render={<Button>Create ruleset</Button>} />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create scoring preset</DialogTitle>
+          <DialogTitle>Create scoring ruleset</DialogTitle>
           <DialogDescription>
             Seasons snapshot this policy at creation time — later edits here never change a
             season that already adopted it.
@@ -305,10 +305,10 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit scoring preset</DialogTitle>
+          <DialogTitle>Edit scoring ruleset</DialogTitle>
           <DialogDescription>
-            Editing a preset never changes existing seasons. A season only ever snapshots a
-            preset&apos;s policy at creation (or explicit adoption) time.
+            Editing a ruleset never changes existing seasons. A season only ever snapshots a
+            ruleset&apos;s policy at creation (or explicit adoption) time.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">

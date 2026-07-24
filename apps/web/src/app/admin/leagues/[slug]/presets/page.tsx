@@ -17,7 +17,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const league = await prisma.league.findUnique({ where: { slug } });
-  return { title: league ? `Scoring presets · ${league.name}` : "Scoring presets" };
+  return { title: league ? `Scoring rulesets · ${league.name}` : "Scoring rulesets" };
 }
 
 export default async function AdminPresetsPage({
@@ -64,7 +64,7 @@ export default async function AdminPresetsPage({
             <ArrowLeft className="h-4 w-4" />
             {league.name}
           </Link>
-          <h1 className="text-xl font-semibold mt-1">Scoring presets</h1>
+          <h1 className="text-xl font-semibold mt-1">Scoring rulesets</h1>
         </div>
 
         <PresetsTable leagueSlug={league.slug} rows={rows} />

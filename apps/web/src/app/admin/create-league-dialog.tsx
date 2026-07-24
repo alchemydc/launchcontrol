@@ -101,7 +101,7 @@ export function CreateLeagueDialog() {
         <DialogHeader>
           <DialogTitle>Create league</DialogTitle>
           <DialogDescription>
-            Sets up a new League row plus a default scoring preset. You&apos;re auto-added as its
+            Sets up a new League row plus a default scoring ruleset. You&apos;re auto-added as its
             admin.
           </DialogDescription>
         </DialogHeader>
