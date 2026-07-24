@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { ScoringPolicy } from "@/lib/scoring-policy";
+import { parseScoringPolicy, type ScoringPolicy } from "@/lib/scoring-policy";
 import type { SeasonRow } from "./seasons-table";
 
 export type PresetOption = { name: string };
@@ -239,7 +239,11 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
   const [plannedEvents, setPlannedEvents] = useState(String(season.plannedEvents));
   const [status, setStatus] = useState<SeasonStatus>(season.status);
   const [paxTable, setPaxTable] = useState(season.paxTable);
-  const initialPolicy = JSON.parse(season.scoringPolicy) as ScoringPolicy;
+  // Every Season row is written through updateSeason/createSeason, which both
+  // validate via parseScoringPolicy before persisting — a malformed policy
+  // here is a data bug, so this throws with a diagnostic message rather than
+  // silently accepting a wrong-shaped value (see scoring-policy.ts).
+  const initialPolicy = parseScoringPolicy(season.scoringPolicy);
   const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
   const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
   const [classMetric, setClassMetric] = useState<ClassMetric>(initialPolicy.classMetric);
