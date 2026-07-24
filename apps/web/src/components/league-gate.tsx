@@ -138,16 +138,13 @@ async function resolveViewerRoles(
   return { roles, access, superUser };
 }
 
-function roleBadge(role: string | undefined): React.ReactNode {
-  if (!role) return null;
+function memberBadge(role: string | undefined): React.ReactNode {
   // M3: BLOCKED is a role but NOT a membership badge — labeling it "Member"
   // would render a "Member" pill beside the "Members only" lock badge on a
-  // league the viewer is explicitly barred from. Only ADMIN/MEMBER earn a badge.
-  if (role === "BLOCKED") return null;
-  const label = role === "ADMIN" ? "Admin" : "Member";
-  return (
-    <Badge variant={role === "ADMIN" ? "default" : "secondary"}>{label}</Badge>
-  );
+  // league the viewer is explicitly barred from. Admin gets its own card
+  // overlay beside the edit control, so only MEMBER belongs in this badge row.
+  if (role !== "MEMBER") return null;
+  return <Badge variant="secondary">Member</Badge>;
 }
 
 /**
@@ -233,16 +230,21 @@ export async function LeagueGate() {
                     )}
                     <Badge variant="outline">{league.eventCount} events</Badge>
                     <Badge variant="outline">{league.driverCount} drivers</Badge>
-                    {roleBadge(roles.get(league.id))}
+                    {memberBadge(roles.get(league.id))}
                     {lockBadge(access.get(league.id))}
                   </div>
                 </div>
               </Link>
+              {roles.get(league.id) === "ADMIN" && (
+                <Badge className="pointer-events-none absolute left-3 top-3 z-10 shadow-sm">
+                  Admin
+                </Badge>
+              )}
               {(superUser || roles.get(league.id) === "ADMIN") && (
                 <Link
                   href={`/admin/leagues/${league.slug}`}
                   aria-label={`Edit ${league.name} settings`}
-                  className="absolute left-3 top-3 z-10 rounded-full bg-background/80 backdrop-blur p-2 text-muted-foreground shadow-sm border border-border/70 hover:text-primary hover:border-primary/40 transition-colors"
+                  className="absolute right-3 top-3 z-10 rounded-full bg-background/80 backdrop-blur p-2 text-muted-foreground shadow-sm border border-border/70 hover:text-primary hover:border-primary/40 transition-colors"
                 >
                   <Pencil className="h-4 w-4" />
                 </Link>
