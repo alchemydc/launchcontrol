@@ -55,6 +55,7 @@ export default async function AdminSeasonsPage({
     plannedEvents: season.plannedEvents,
     status: season.status as "active" | "completed",
     paxTable: season.paxTable,
+    scoringPolicy: season.scoringPolicy,
     events: season._count.events,
   }));
 

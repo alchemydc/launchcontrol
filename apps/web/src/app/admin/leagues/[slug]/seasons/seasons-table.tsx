@@ -31,6 +31,8 @@ export type SeasonRow = {
   status: "active" | "completed";
   /** Raw JSON string (code -> factor) — edited as a textarea, not parsed for display here. */
   paxTable: string;
+  /** Raw JSON string snapshot — parsed by the edit dialog, not displayed here. */
+  scoringPolicy: string;
   events: number;
 };
 

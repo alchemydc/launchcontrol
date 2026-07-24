@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -21,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { ScoringPolicy } from "@/lib/scoring-policy";
 import type { SeasonRow } from "./seasons-table";
 
 export type PresetOption = { name: string };
@@ -30,6 +32,19 @@ type SeasonStatus = "active" | "completed";
 const STATUS_OPTIONS: { value: SeasonStatus; label: string }[] = [
   { value: "active", label: "Active" },
   { value: "completed", label: "Completed" },
+];
+
+type Drops = ScoringPolicy["drops"];
+type ClassMetric = ScoringPolicy["classMetric"];
+
+const DROPS_OPTIONS: { value: Drops; label: string }[] = [
+  { value: "fixed", label: "Fixed — best N scores count, nothing drops mid-season" },
+  { value: "proportional", label: "Proportional — drops scale with completed events" },
+];
+
+const CLASS_METRIC_OPTIONS: { value: ClassMetric; label: string }[] = [
+  { value: "raw", label: "Raw — class sections rank on best corrected time" },
+  { value: "pax", label: "PAX — class sections rank on time × PAX index" },
 ];
 
 /** Sentinel for "use the league's default preset" — not a real preset name. */
@@ -224,6 +239,11 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
   const [plannedEvents, setPlannedEvents] = useState(String(season.plannedEvents));
   const [status, setStatus] = useState<SeasonStatus>(season.status);
   const [paxTable, setPaxTable] = useState(season.paxTable);
+  const initialPolicy = JSON.parse(season.scoringPolicy) as ScoringPolicy;
+  const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
+  const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
+  const [classMetric, setClassMetric] = useState<ClassMetric>(initialPolicy.classMetric);
+  const [conePenaltyMs, setConePenaltyMs] = useState(String(initialPolicy.conePenaltyMs));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -244,6 +264,12 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
       setPending(false);
       return;
     }
+    const coneNum = Number(conePenaltyMs);
+    if (!Number.isFinite(coneNum) || coneNum < 0) {
+      setError("Cone penalty must be a non-negative number");
+      setPending(false);
+      return;
+    }
 
     // Only send fields that actually changed — same convention as the
     // league settings form (the PATCH route treats an absent key as "leave
@@ -256,6 +282,10 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
     if (plannedNum !== season.plannedEvents) patch.plannedEvents = plannedNum;
     if (status !== season.status) patch.status = status;
     if (paxTable !== season.paxTable) patch.paxTable = paxTable;
+    const newPolicy = JSON.stringify({
+      v: 1, drops, paxSection, classMetric, conePenaltyMs: coneNum,
+    });
+    if (newPolicy !== JSON.stringify(initialPolicy)) patch.scoringPolicy = newPolicy;
 
     if (Object.keys(patch).length === 0) {
       setPending(false);
@@ -294,8 +324,8 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
         <DialogHeader>
           <DialogTitle>Edit season</DialogTitle>
           <DialogDescription>
-            Editing here never re-snapshots the scoring policy from a preset — that only happens
-            once, at creation.
+            Scoring changes here apply only to this season — rulesets in the library are never
+            modified.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -352,6 +382,62 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Changing scoring recomputes this season&apos;s standings immediately — including past
+            seasons. Historical results pages will reflect the new rules.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-season-drops">Drops</Label>
+            <Select value={drops} onValueChange={(v) => setDrops(v as Drops)}>
+              <SelectTrigger id="edit-season-drops" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DROPS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-season-class-metric">Class ranking metric</Label>
+            <Select
+              value={classMetric}
+              onValueChange={(v) => setClassMetric(v as ClassMetric)}
+            >
+              <SelectTrigger id="edit-season-class-metric" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CLASS_METRIC_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="edit-season-pax-section">Overall PAX standings section</Label>
+            <Switch
+              id="edit-season-pax-section"
+              checked={paxSection}
+              onCheckedChange={setPaxSection}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-season-cone-penalty">Cone penalty (ms)</Label>
+            <Input
+              id="edit-season-cone-penalty"
+              type="number"
+              min={0}
+              value={conePenaltyMs}
+              onChange={(e) => setConePenaltyMs(e.target.value)}
+              required
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="edit-season-pax">PAX table (JSON: class code → factor)</Label>
