@@ -68,8 +68,10 @@ export function LeagueSubnav({
   // Preserve the active `?season=` selection when the Events tab link itself
   // is clicked (e.g. from the leaderboard tab) — otherwise switching tabs
   // would silently drop back to the league's default/active season.
-  const eventsHref = eventsSeasonParam
-    ? `${basePath}?season=${eventsSeasonParam}`
+  // Use currentSeasonSlug (which reflects the leaderboard path or query param)
+  // but only emit ?season= when it differs from the active season (cleaner URLs).
+  const eventsHref = currentSeasonSlug && currentSeasonSlug !== activeSeasonSlug
+    ? `${basePath}?season=${currentSeasonSlug}`
     : basePath;
 
   const tabClass = (active: boolean) =>
