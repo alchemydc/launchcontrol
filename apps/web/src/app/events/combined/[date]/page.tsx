@@ -2,10 +2,13 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { buildCombinedResults } from "@/lib/combined-event";
 import { findSmugmugEventFolder } from "@/lib/smugmug";
-import { requireRmrMember } from "@/lib/session";
+import { gateResultsPage } from "@/lib/session";
 import { CombinedResultsView } from "./combined-results-view";
 
-export const dynamic = "force-dynamic";
+// ISR: rendered on demand, then cached for 5 minutes. Gated deployments
+// (ACCESS_GATE=required) read cookies inside gateResultsPage and render
+// per-request instead.
+export const revalidate = 300;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -27,7 +30,7 @@ export default async function CombinedEventPage({
 
   // Gate runs before any validation/data fetch so unauth viewers can't probe
   // valid vs. invalid dates (same pattern as /events/[slug]).
-  await requireRmrMember(`/events/combined/${date}`);
+  await gateResultsPage(`/events/combined/${date}`);
 
   if (!DATE_RE.test(date)) notFound();
 

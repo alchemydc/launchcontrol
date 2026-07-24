@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { expireResultsCache } from "@/lib/results-cache";
 import { getSession } from "@/lib/session";
 import { isAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
@@ -79,6 +80,7 @@ export async function PATCH(
       { name: name.trim(), date, location: location?.trim() ? location.trim() : null },
       guarded.actor,
     );
+    expireResultsCache();
     return NextResponse.json({ event }, { status: 200 });
   } catch (err) {
     if (err instanceof EventNotFoundError) {
@@ -112,6 +114,7 @@ export async function DELETE(
 
   try {
     const result = await deleteEventWithSweep(prisma, eventId, guarded.actor);
+    expireResultsCache();
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
     if (err instanceof EventNotFoundError) {
