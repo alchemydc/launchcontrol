@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { slugify } from "@/lib/ingest";
+import { ensureRuleset } from "./helpers/league-fixture";
 import {
   activeSeason,
   listSeasonsForLeague,
@@ -21,7 +22,6 @@ import {
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-season-resolve.db");
 const TEST_DB_URL = "file:./test-season-resolve.db";
-const PCA_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
 
 let prisma: PrismaClient;
 let leagueId: number;
@@ -65,8 +65,7 @@ describe("resolveOrCreateSeason", () => {
         name: "2026 Season",
         slug: "2026-season",
         year: 2099,
-        scoringPolicy:
-          '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+        rulesetId: await ensureRuleset(prisma, leagueId),
       },
     });
 
@@ -86,7 +85,7 @@ describe("resolveSeasonBySlug", () => {
         name: "2092 Custom Season",
         slug: "custom-2092",
         year: 2092,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, leagueId),
       },
     });
     const resolved = await resolveSeasonBySlug(prisma, leagueId, "custom-2092");
@@ -113,7 +112,7 @@ describe("resolveSeasonBySlug", () => {
         name: "Other League Season",
         slug: "custom-2092", // same slug text as the pca-rmr season above
         year: 2092,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, otherLeague.id),
       },
     });
     // Resolving under the ORIGINAL league still finds the original season.
@@ -139,7 +138,7 @@ describe("activeSeason", () => {
         name: "2020 Season",
         slug: "2020-season",
         year: 2020,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "active",
       },
     });
@@ -149,7 +148,7 @@ describe("activeSeason", () => {
         name: "2023 Season",
         slug: "2023-season",
         year: 2023,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "active",
       },
     });
@@ -174,7 +173,7 @@ describe("activeSeason", () => {
         name: "2024 Season",
         slug: "2024-season",
         year: 2024,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "active",
       },
     });
@@ -184,7 +183,7 @@ describe("activeSeason", () => {
         name: "2025 Season",
         slug: "2025-season",
         year: 2025,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "completed",
       },
     });
@@ -209,7 +208,7 @@ describe("activeSeason", () => {
         name: "2030 Season",
         slug: "2030-season",
         year: 2030,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "active",
       },
     });
@@ -220,7 +219,7 @@ describe("activeSeason", () => {
         name: "2030 Winter Series",
         slug: "2030-winter-series",
         year: 2030,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "active",
       },
     });
@@ -246,7 +245,7 @@ describe("activeSeason", () => {
         name: "2019 Season",
         slug: "2019-season",
         year: 2019,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "completed",
       },
     });
@@ -269,13 +268,13 @@ describe("listSeasonsForLeague", () => {
       },
     });
     await prisma.season.create({
-      data: { leagueId: league.id, name: "2024 Season", slug: "2024-season", year: 2024, scoringPolicy: PCA_POLICY },
+      data: { leagueId: league.id, name: "2024 Season", slug: "2024-season", year: 2024, rulesetId: await ensureRuleset(prisma, league.id) },
     });
     await prisma.season.create({
-      data: { leagueId: league.id, name: "2026 Season", slug: "2026-season", year: 2026, scoringPolicy: PCA_POLICY },
+      data: { leagueId: league.id, name: "2026 Season", slug: "2026-season", year: 2026, rulesetId: await ensureRuleset(prisma, league.id) },
     });
     await prisma.season.create({
-      data: { leagueId: league.id, name: "2025 Season", slug: "2025-season", year: 2025, scoringPolicy: PCA_POLICY },
+      data: { leagueId: league.id, name: "2025 Season", slug: "2025-season", year: 2025, rulesetId: await ensureRuleset(prisma, league.id) },
     });
 
     const seasons = await listSeasonsForLeague(prisma, league.id);
@@ -293,10 +292,10 @@ describe("listSeasonsForLeague", () => {
       },
     });
     const main = await prisma.season.create({
-      data: { leagueId: league.id, name: "2026 Season", slug: "2026-season", year: 2026, scoringPolicy: PCA_POLICY },
+      data: { leagueId: league.id, name: "2026 Season", slug: "2026-season", year: 2026, rulesetId: await ensureRuleset(prisma, league.id) },
     });
     const winter = await prisma.season.create({
-      data: { leagueId: league.id, name: "2026 Winter Series", slug: "2026-winter-series", year: 2026, scoringPolicy: PCA_POLICY },
+      data: { leagueId: league.id, name: "2026 Winter Series", slug: "2026-winter-series", year: 2026, rulesetId: await ensureRuleset(prisma, league.id) },
     });
 
     const seasons = await listSeasonsForLeague(prisma, league.id);
@@ -314,7 +313,7 @@ describe("listSeasonsForLeague", () => {
       },
     });
     await prisma.season.create({
-      data: { leagueId: otherLeague.id, name: "2026 Season", slug: "2026-season", year: 2026, scoringPolicy: PCA_POLICY },
+      data: { leagueId: otherLeague.id, name: "2026 Season", slug: "2026-season", year: 2026, rulesetId: await ensureRuleset(prisma, otherLeague.id) },
     });
 
     const league = await prisma.league.create({

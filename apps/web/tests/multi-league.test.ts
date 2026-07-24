@@ -10,6 +10,7 @@ import { findEventBySlug } from "@/lib/event-queries";
 import { ingestAxdb } from "@/lib/ingest";
 import { decideLeagueAccess } from "@/lib/league-access";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
+import { createScoringSystem } from "@/lib/scoring-system";
 import { listLeagueDirectory } from "@/lib/league-directory";
 import { getMembershipRole, setLeagueMembership } from "@/lib/membership";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
@@ -20,7 +21,7 @@ import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
 // CLIs' lib functions (createLeague, ingestAxdb, ingestRmsoloEvent,
 // buildSeasonLeaderboard, buildDriverHistory, listLeagueDirectory,
 // findEventBySlug) rather than raw Prisma writes -- the one deliberate
-// exception is a season paxTable override below, which mirrors
+// exception is a ruleset paxTable override below, which mirrors
 // rmsolo-ingest-league-targeting.test.ts's proven mechanism (neither ingest
 // path itself can express a paxTable override; it's operator/CLI-authored
 // config, not ingest output).
@@ -38,7 +39,7 @@ import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
 //     last) -- same displayed name, different hash, so they must stay two
 //     distinct Driver rows, never a false merge.
 //   - "rmsolo-test" (created via createLeague): a SECOND RMsolo-sourced
-//     league -- class AS again (with a season paxTable override, proving
+//     league -- class AS again (with a ruleset paxTable override, proving
 //     CarClass same-code isolation) plus the SAME "Jamie Runner" (null
 //     memberNum on both sides). RMsolo's identity hash never depends on
 //     league, so this is a genuinely shared human by design -- exercised
@@ -117,14 +118,20 @@ beforeAll(async () => {
   // --- League 3: "rmsolo-test" -- a second RMsolo-sourced league ---
   const rmsoloTest = await createLeague({ slug: "rmsolo-test", name: "RMsolo Test League" }, prisma);
   rmsoloTestLeagueId = rmsoloTest.league.id;
-  // Pre-create the 2026 season with an AS paxTable override -- the only way
-  // to force a same-code CarClass factor difference from pca-rmr's
-  // built-in-table AS value (RMSOLO_PAX_2026.AS = 0.830); this is operator
-  // config (like `season:create --paxTable`), not something either ingest
-  // path produces itself. Reuses createLeague's own freshly-created preset
-  // policy so the season isn't hand-authoring a disconnected policy.
+  // Pre-create the 2026 season pointing at a ruleset whose paxTable
+  // overrides AS -- the only way to force a same-code CarClass factor
+  // difference from pca-rmr's AS value (RMSOLO_PAX_2026.AS = 0.830, seeded
+  // complete on every ruleset); this is operator config (a custom ruleset),
+  // not something either ingest path produces itself. createScoringSystem
+  // stores the supplied complete table as-is (Task R3 semantics).
   const rmsoloTestPreset = await prisma.scoringSystem.findFirstOrThrow({
     where: { leagueId: rmsoloTestLeagueId },
+  });
+  const overrideRuleset = await createScoringSystem(prisma, {
+    leagueSlug: "rmsolo-test",
+    name: "AS Override Rules",
+    policyJson: rmsoloTestPreset.policy,
+    paxTableJson: JSON.stringify({ AS: 0.5 }),
   });
   await prisma.season.create({
     data: {
@@ -132,8 +139,7 @@ beforeAll(async () => {
       name: "2026 Season",
       slug: "2026-season",
       year: 2026,
-      scoringPolicy: rmsoloTestPreset.policy,
-      paxTable: JSON.stringify({ AS: 0.5 }),
+      rulesetId: overrideRuleset.id,
     },
   });
   await ingestRmsoloEvent(

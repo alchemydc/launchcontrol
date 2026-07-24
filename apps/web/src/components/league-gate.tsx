@@ -29,7 +29,7 @@
  */
 
 import Link from "next/link";
-import { Lock } from "lucide-react";
+import { Lock, Pencil } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { listLeagueDirectory, type LeagueDirectoryEntry } from "@/lib/league-directory";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
@@ -92,7 +92,11 @@ function initials(name: string): string {
  */
 async function resolveViewerRoles(
   leagues: LeagueDirectoryEntry[],
-): Promise<{ roles: Map<number, string>; access: Map<number, LeagueAccessDecision> }> {
+): Promise<{
+  roles: Map<number, string>;
+  access: Map<number, LeagueAccessDecision>;
+  superUser: boolean;
+}> {
   const roles = new Map<number, string>();
   const access = new Map<number, LeagueAccessDecision>();
 
@@ -131,7 +135,7 @@ async function resolveViewerRoles(
     }),
   );
 
-  return { roles, access };
+  return { roles, access, superUser };
 }
 
 function roleBadge(role: string | undefined): React.ReactNode {
@@ -165,7 +169,7 @@ function lockBadge(decision: LeagueAccessDecision | undefined): React.ReactNode 
 
 export async function LeagueGate() {
   const leagues = await listLeagueDirectory();
-  const { roles, access } = await resolveViewerRoles(leagues);
+  const { roles, access, superUser } = await resolveViewerRoles(leagues);
 
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
@@ -194,46 +198,56 @@ export async function LeagueGate() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {leagues.map((league) => (
-            <Link
-              key={league.slug}
-              href={`/l/${league.slug}`}
-              className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
-            >
-              <div className="relative aspect-[16/10] w-full bg-muted/40 flex items-center justify-center overflow-hidden">
-                {league.logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- league logos are arbitrary operator-supplied URLs, not part of the app's optimized asset set.
-                  <img
-                    src={league.logoUrl}
-                    alt={`${league.name} logo`}
-                    className="h-full w-full object-contain p-6"
-                  />
-                ) : (
-                  <div
-                    className={`flex h-full w-full items-center justify-center text-4xl font-semibold tracking-tight ${placeholderPalette(league.slug)}`}
-                  >
-                    {initials(league.name)}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-2 p-4">
-                <h2 className="font-heading text-base font-medium leading-snug group-hover:text-primary transition-colors">
-                  {league.name}
-                </h2>
-                <p className="text-sm text-muted-foreground line-clamp-2">
-                  {league.siteDescription}
-                </p>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                  {league.activeSeasonName && (
-                    <Badge variant="secondary">{league.activeSeasonName}</Badge>
+            <div key={league.slug} className="relative flex">
+              <Link
+                href={`/l/${league.slug}`}
+                className="group relative flex w-full flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+              >
+                <div className="relative aspect-[16/10] w-full bg-muted/40 flex items-center justify-center overflow-hidden">
+                  {league.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- league logos are arbitrary operator-supplied URLs, not part of the app's optimized asset set.
+                    <img
+                      src={league.logoUrl}
+                      alt={`${league.name} logo`}
+                      className="h-full w-full object-contain p-6"
+                    />
+                  ) : (
+                    <div
+                      className={`flex h-full w-full items-center justify-center text-4xl font-semibold tracking-tight ${placeholderPalette(league.slug)}`}
+                    >
+                      {initials(league.name)}
+                    </div>
                   )}
-                  <Badge variant="outline">{league.eventCount} events</Badge>
-                  <Badge variant="outline">{league.driverCount} drivers</Badge>
-                  {roleBadge(roles.get(league.id))}
-                  {lockBadge(access.get(league.id))}
                 </div>
-              </div>
-            </Link>
+
+                <div className="flex flex-col gap-2 p-4">
+                  <h2 className="font-heading text-base font-medium leading-snug group-hover:text-primary transition-colors">
+                    {league.name}
+                  </h2>
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {league.siteDescription}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {league.activeSeasonName && (
+                      <Badge variant="secondary">{league.activeSeasonName}</Badge>
+                    )}
+                    <Badge variant="outline">{league.eventCount} events</Badge>
+                    <Badge variant="outline">{league.driverCount} drivers</Badge>
+                    {roleBadge(roles.get(league.id))}
+                    {lockBadge(access.get(league.id))}
+                  </div>
+                </div>
+              </Link>
+              {(superUser || roles.get(league.id) === "ADMIN") && (
+                <Link
+                  href={`/admin/leagues/${league.slug}`}
+                  aria-label={`Edit ${league.name} settings`}
+                  className="absolute left-3 top-3 z-10 rounded-full bg-background/80 backdrop-blur p-2 text-muted-foreground shadow-sm border border-border/70 hover:text-primary hover:border-primary/40 transition-colors"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Link>
+              )}
+            </div>
           ))}
         </div>
       )}

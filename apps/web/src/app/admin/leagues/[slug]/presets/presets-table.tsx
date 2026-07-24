@@ -22,16 +22,17 @@ export type PresetRow = {
    *  written through createScoringSystem/updateScoringSystem, but defended against here
    *  since this reads raw data straight off the table. */
   policy: ScoringPolicy | null;
+  /** Raw COMPLETE code->factor JSON string — edited via PaxTableEditor, not parsed for display here. */
+  paxTable: string;
+  /** Seasons currently pointing at this ruleset (live reference) — drives the
+   *  "Used by N seasons" column and the edit dialog's affected-season warning
+   *  and post-save Re-apply prompt. */
+  seasons: { name: string; slug: string }[];
 };
 
 const DROPS_LABEL: Record<ScoringPolicy["drops"], string> = {
   fixed: "Fixed",
   proportional: "Proportional",
-};
-
-const CLASS_METRIC_LABEL: Record<ScoringPolicy["classMetric"], string> = {
-  raw: "Raw",
-  pax: "PAX",
 };
 
 export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: PresetRow[] }) {
@@ -49,9 +50,9 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Drops</TableHead>
-            <TableHead>Class metric</TableHead>
             <TableHead>PAX section</TableHead>
             <TableHead>Cone penalty</TableHead>
+            <TableHead>Used by</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -62,7 +63,6 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
               {row.policy ? (
                 <>
                   <TableCell>{DROPS_LABEL[row.policy.drops]}</TableCell>
-                  <TableCell>{CLASS_METRIC_LABEL[row.policy.classMetric]}</TableCell>
                   <TableCell>
                     <Badge variant={row.policy.paxSection ? "default" : "outline"}>
                       {row.policy.paxSection ? "On" : "Off"}
@@ -71,10 +71,17 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
                   <TableCell>{row.policy.conePenaltyMs} ms</TableCell>
                 </>
               ) : (
-                <TableCell colSpan={4} className="text-destructive">
+                <TableCell colSpan={3} className="text-destructive">
                   Stored policy could not be parsed — edit to fix.
                 </TableCell>
               )}
+              <TableCell
+                title={row.seasons.length > 0 ? row.seasons.map((s) => s.name).join(", ") : undefined}
+              >
+                {row.seasons.length === 0
+                  ? "No seasons"
+                  : `${row.seasons.length} season${row.seasons.length === 1 ? "" : "s"}`}
+              </TableCell>
               <TableCell>
                 <Button variant="outline" size="sm" onClick={() => setEditingRow(row)}>
                   Edit
@@ -85,7 +92,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
           {rows.length === 0 && (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-muted-foreground">
-                No scoring presets yet.
+                No scoring rulesets yet.
               </TableCell>
             </TableRow>
           )}

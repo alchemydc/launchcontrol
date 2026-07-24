@@ -48,7 +48,7 @@ export async function CombinedEventPageView({
   // All sessions in a combined group share a calendar date within one
   // league, so in practice they share one Season row — the first session's
   // policy is the group's policy (Task 7: conePenaltyMs threading).
-  const conePenaltyMs = parseScoringPolicy(events[0]!.season.scoringPolicy).conePenaltyMs;
+  const conePenaltyMs = parseScoringPolicy(events[0]!.season.ruleset.policy).conePenaltyMs;
   const results = buildCombinedResults(events, conePenaltyMs);
   const photosUrl = await findSmugmugEventFolder(results.label, dayStart, league);
 

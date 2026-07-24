@@ -145,10 +145,12 @@ model ScoringSystem {
   id        Int      @id @default(autoincrement())
   leagueId  Int
   name      String
-  policy    String // JSON ScoringPolicy v1 (SQLite has no JSON type)
+  policy    String // JSON ScoringPolicy v2 (SQLite has no JSON type)
+  paxTable  String   @default("{}") // COMPLETE JSON code->factor table — no built-in fallback at read time
   createdAt DateTime @default(now())
 
-  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  league  League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  seasons Season[]
 
   @@unique([leagueId, name])
 }
@@ -160,12 +162,12 @@ model Season {
   slug          String // URL-safe addressing key — slugify(name) unless overridden via --slug
   year          Int
   plannedEvents Int    @default(0)
-  scoringPolicy String // JSON snapshot — copied from a ScoringSystem, never a live reference
-  paxTable      String @default("{}") // JSON code->factor for this season
   status        String @default("active") // "active" | "completed"
+  rulesetId     Int // live reference — standings read policy/paxTable via season.ruleset at render time
 
-  league League  @relation(fields: [leagueId], references: [id])
-  events Event[]
+  league  League        @relation(fields: [leagueId], references: [id])
+  ruleset ScoringSystem @relation(fields: [rulesetId], references: [id])
+  events  Event[]
 
   @@unique([leagueId, name])
   @@unique([leagueId, slug])

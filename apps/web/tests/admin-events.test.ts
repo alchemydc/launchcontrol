@@ -276,7 +276,7 @@ describe("updateEventMetadata — cross-year season re-resolution", () => {
         slug: slugify("2025 Season"),
         year: 2025,
         plannedEvents: 0,
-        scoringPolicy: season2026.scoringPolicy,
+        rulesetId: season2026.rulesetId,
       },
     });
 
@@ -303,7 +303,7 @@ describe("updateEventMetadata — cross-year season re-resolution", () => {
     expect(detail.after.seasonId).toBe(season2025.id);
   });
 
-  it("auto-creates the target season, snapshotting the league's preset, when moving into a year with no season row yet", async () => {
+  it("auto-creates the target season, pointing at the league's oldest ruleset, when moving into a year with no season row yet", async () => {
     expect(await prisma.season.count({ where: { leagueId, year: 2027 } })).toBe(0);
 
     const before = await prisma.event.findUniqueOrThrow({ where: { id: season2Id } });
@@ -323,7 +323,7 @@ describe("updateEventMetadata — cross-year season re-resolution", () => {
       where: { leagueId },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    expect(season2027.scoringPolicy).toBe(preset.policy);
+    expect(season2027.rulesetId).toBe(preset.id);
   });
 
   it("the moved event scores in the target year's leaderboard", async () => {

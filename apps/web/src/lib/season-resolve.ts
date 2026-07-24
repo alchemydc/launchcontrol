@@ -7,28 +7,37 @@ import { slugify } from "@/lib/ingest";
  * updateEventMetadata's cross-year re-resolution (admin-events.ts), so both
  * follow the same deterministic rule.
  *
- * `orderBy: { id: "asc" }` makes the (league, year) lookup deterministic now
- * that `createSeason` allows multiple seasons per (league, year) — season-
- * aware addressing (`resolveSeasonBySlug`, `activeSeason` below) is how
- * callers pick a specific one; this ingest-time/admin-edit path always keeps
- * picking the oldest, matching pre-PR-2 behavior when only one existed.
+ * Ingest lands results in the year's ACTIVE season (oldest active if
+ * several, by id) — archived ("completed") seasons only receive ingests when
+ * the year has no active season at all, in which case this falls back to
+ * the oldest season overall (`orderBy: { id: "asc" }`), matching pre-PR-2
+ * behavior when only one season existed for the year. Multiple seasons per
+ * (league, year) are a supported feature (e.g. a Winter Series alongside the
+ * main season); season-aware addressing (`resolveSeasonBySlug`,
+ * `activeSeason` below) is how callers pick a specific one directly.
  *
- * The auto-created row snapshots the league's OLDEST ScoringSystem preset
- * (deterministic; seeded leagues carry exactly one) rather than any
- * hardcoded policy, so a league with a non-default preset self-heals
- * correctly too. It carries plannedEvents=0 until an operator edits it (via
- * create-season or a future admin UI) — neither ingest nor an admin date
- * edit has a signal for the season's actual event count.
+ * The auto-created row adopts the league's OLDEST ScoringSystem ruleset
+ * (deterministic; seeded leagues carry exactly one) as a LIVE reference
+ * (`rulesetId` — no policy copy is stored on the Season since Task R2), so a
+ * league with a non-default ruleset self-heals correctly too. It carries
+ * plannedEvents=0 until an operator edits it (via create-season or a future
+ * admin UI) — neither ingest nor an admin date edit has a signal for the
+ * season's actual event count.
  */
 export async function resolveOrCreateSeason(
   client: PrismaClient | Prisma.TransactionClient,
   league: { id: number; slug: string },
   year: number,
 ): Promise<Season> {
-  const existing = await client.season.findFirst({
-    where: { leagueId: league.id, year },
-    orderBy: { id: "asc" },
-  });
+  const existing =
+    (await client.season.findFirst({
+      where: { leagueId: league.id, year, status: "active" },
+      orderBy: { id: "asc" },
+    })) ??
+    (await client.season.findFirst({
+      where: { leagueId: league.id, year },
+      orderBy: { id: "asc" },
+    }));
   if (existing) return existing;
 
   const preset = await client.scoringSystem.findFirst({
@@ -66,7 +75,7 @@ export async function resolveOrCreateSeason(
       slug,
       year,
       plannedEvents: 0,
-      scoringPolicy: preset.policy,
+      rulesetId: preset.id,
     },
   });
 }

@@ -38,12 +38,15 @@ export default async function AdminSeasonsPage({
     prisma.season.findMany({
       where: { leagueId: league.id },
       orderBy: [{ year: "desc" }, { name: "asc" }],
-      include: { _count: { select: { events: true } } },
+      include: {
+        _count: { select: { events: true } },
+        ruleset: { select: { id: true, name: true } },
+      },
     }),
     prisma.scoringSystem.findMany({
       where: { leagueId: league.id },
       orderBy: { name: "asc" },
-      select: { name: true },
+      select: { id: true, name: true },
     }),
   ]);
 
@@ -54,7 +57,8 @@ export default async function AdminSeasonsPage({
     year: season.year,
     plannedEvents: season.plannedEvents,
     status: season.status as "active" | "completed",
-    paxTable: season.paxTable,
+    rulesetId: season.ruleset.id,
+    rulesetName: season.ruleset.name,
     events: season._count.events,
   }));
 
@@ -75,7 +79,7 @@ export default async function AdminSeasonsPage({
         <SeasonsTable
           leagueSlug={league.slug}
           rows={rows}
-          presets={presets.map((p) => ({ name: p.name }))}
+          presets={presets.map((p) => ({ id: p.id, name: p.name }))}
         />
       </div>
     </main>

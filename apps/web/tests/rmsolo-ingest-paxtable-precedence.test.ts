@@ -6,14 +6,16 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
 import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
+import { createScoringSystem } from "@/lib/scoring-system";
 import type { ParsedRmsoloEvent } from "@/lib/rmsolo-parse";
 
-// Task 3: end-to-end proof of the paxTable precedence order (see
-// docs/superpowers/specs/2026-07-23-league-multiclub-design.md "paxTable
-// precedence"): Season.paxTable[code] wins over the built-in RMSOLO_PAX_2026
-// table when both are present. Unit-level precedence/fallback behavior is
-// covered directly in tests/rmsolo-pax.test.ts; this file proves it holds
-// through the actual ingest transaction (CarClass.paxIndex as written).
+// Task 3 (reworked by Task R2): end-to-end proof that ingest factors come
+// from the season's RULESET paxTable — the COMPLETE table seeded from the
+// built-in RMSOLO_PAX_2026 (so a default ruleset still yields built-in
+// values), with ruleset overrides winning and unlisted codes resolving to
+// 1.0. Unit-level behavior is covered directly in tests/rmsolo-pax.test.ts;
+// this file proves it holds through the actual ingest transaction
+// (CarClass.paxIndex as written).
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-rmsolo-paxtable-precedence.db");
 const TEST_DB_URL = "file:./test-rmsolo-paxtable-precedence.db";
@@ -54,25 +56,30 @@ afterAll(async () => {
   rmSync(TEST_DB_PATH, { force: true });
 });
 
-describe("paxTable precedence, end-to-end through ingestRmsoloEvent", () => {
-  it("uses the built-in RMSOLO_PAX_2026 factor when the season's paxTable has no override", async () => {
+describe("ruleset paxTable, end-to-end through ingestRmsoloEvent", () => {
+  it("uses the factor stored in the season's seeded ruleset table", async () => {
     await ingestRmsoloEvent({ parsed: eventFor("1", "AS"), sha256: "no-override", date: "2026-06-01" }, prisma);
     const cls = await prisma.carClass.findFirstOrThrow({ where: { leagueId, code: "AS" } });
     expect(Number(cls.paxIndex)).toBe(RMSOLO_PAX_2026.AS);
   });
 
-  it("prefers the season's paxTable override over the built-in table", async () => {
+  it("uses a custom factor from the season's authoritative ruleset table", async () => {
     // A distinct season (2027) so this doesn't collide with the no-override
     // 2026 season/class above — same class code, deliberately different
-    // override value (0.5, unmistakable from RMSOLO_PAX_2026.AS).
+    // custom value (0.5, unmistakable from RMSOLO_PAX_2026.AS).
+    const ruleset = await createScoringSystem(prisma, {
+      leagueSlug: "pca-rmr",
+      name: "2027 Override Rules",
+      policyJson: '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      paxTableJson: JSON.stringify({ AS: 0.5 }),
+    });
     const season = await prisma.season.create({
       data: {
         leagueId,
         name: "2027 Season",
         slug: "2027-season",
         year: 2027,
-        scoringPolicy: '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
-        paxTable: JSON.stringify({ AS: 0.5 }),
+        rulesetId: ruleset.id,
       },
     });
 
@@ -89,15 +96,20 @@ describe("paxTable precedence, end-to-end through ingestRmsoloEvent", () => {
     expect(Number(entry.class.paxIndex)).not.toBe(RMSOLO_PAX_2026.AS);
   });
 
-  it("falls back to 1.0 for a class code in neither the season table nor the built-in table", async () => {
+  it("resolves 1.0 for a class code missing from the ruleset table", async () => {
+    const ruleset = await createScoringSystem(prisma, {
+      leagueSlug: "pca-rmr",
+      name: "2028 Rules",
+      policyJson: '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      paxTableJson: JSON.stringify({ ZZ: 0.75 }), // covers ZZ, but not the class used below
+    });
     const season = await prisma.season.create({
       data: {
         leagueId,
         name: "2028 Season",
         slug: "2028-season",
         year: 2028,
-        scoringPolicy: '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
-        paxTable: JSON.stringify({ ZZ: 0.75 }), // covers ZZ, but not the class used below
+        rulesetId: ruleset.id,
       },
     });
     await ingestRmsoloEvent({ parsed: eventFor("3", "QQQ"), sha256: "fallback-1.0", date: "2028-06-01" }, prisma);

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
+import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 import type { ParsedRmsoloEvent } from "@/lib/rmsolo-parse";
 
 // Task 3: ingestRmsoloEvent's { leagueSlug } targeting, and the isolation it
@@ -44,10 +45,10 @@ beforeAll(async () => {
   const adapter = new PrismaLibSql({ url: TEST_DB_URL });
   prisma = new PrismaClient({ adapter });
 
-  // A second league whose 2026 season overrides "AS" to a factor (0.5)
-  // nothing like the real RMSOLO_PAX_2026 AS value — unmistakable from the
-  // default league's built-in-table-derived factor, and proof that a
-  // season's paxTable override is itself league-scoped, not global.
+  // A second league whose 2026 season's RULESET overrides "AS" to a factor
+  // (0.5) nothing like the real RMSOLO_PAX_2026 AS value — unmistakable from
+  // the default league's seeded built-in factor, and proof that a ruleset
+  // paxTable override is itself league-scoped, not global.
   const otherLeague = await prisma.league.create({
     data: {
       slug: "rmsolo-test",
@@ -59,11 +60,12 @@ beforeAll(async () => {
     },
   });
   otherLeagueId = otherLeague.id;
-  await prisma.scoringSystem.create({
+  const otherRuleset = await prisma.scoringSystem.create({
     data: {
       leagueId: otherLeague.id,
       name: "RMsolo Default",
-      policy: '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":2000}',
+      policy: '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}',
+      paxTable: JSON.stringify({ ...RMSOLO_PAX_2026, AS: 0.5 }),
     },
   });
   await prisma.season.create({
@@ -72,8 +74,7 @@ beforeAll(async () => {
       name: "2026 Season",
       slug: "2026-season",
       year: 2026,
-      scoringPolicy: '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":2000}',
-      paxTable: JSON.stringify({ AS: 0.5 }),
+      rulesetId: otherRuleset.id,
     },
   });
 });
@@ -110,8 +111,8 @@ describe("ingestRmsoloEvent league targeting", () => {
       where: { code: "AS", league: { slug: "rmsolo-test" } },
     });
     expect(pcaClass.id).not.toBe(otherClass.id);
-    expect(Number(otherClass.paxIndex)).toBe(0.5); // this league's season paxTable override
-    expect(Number(pcaClass.paxIndex)).toBeGreaterThan(0.7); // pca-rmr has no such override — built-in table
+    expect(Number(otherClass.paxIndex)).toBe(0.5); // this league's ruleset paxTable override
+    expect(Number(pcaClass.paxIndex)).toBeGreaterThan(0.7); // pca-rmr has no such override — seeded built-in value
     expect(Number(pcaClass.paxIndex)).not.toBe(0.5);
   });
 

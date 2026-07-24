@@ -17,7 +17,7 @@ export type EntryForBest = {
  * `penaltyMs` (League Foundation PR 2 Task 7): milliseconds added per cone
  * struck, defaulting to the shared `CONE_PENALTY_MS` constant so every
  * pre-existing call site is unchanged (parity). Callers scoring a season pass
- * that season's `scoringPolicy.conePenaltyMs` (see season-leaderboard.ts,
+ * its assigned ruleset's `policy.conePenaltyMs` (see season-leaderboard.ts,
  * leaderboard.ts, combined-event.ts) instead of relying on the constant.
  */
 export function bestCorrectedMsForEntry(

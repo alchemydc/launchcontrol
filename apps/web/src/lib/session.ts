@@ -250,6 +250,20 @@ export async function requireMember(
   redirect(safe ? `${homeHref}?returnTo=${encodeURIComponent(safe)}` : homeHref);
 }
 
+/**
+ * Access gate for results routes that may use ISR. Public leagues return
+ * before any request-scoped API is read; required leagues delegate to the
+ * normal per-league membership gate and therefore remain request-rendered.
+ */
+export async function gateResultsPage(
+  league: LeagueConfig,
+  returnPath: string | undefined,
+  homeHref: string,
+): Promise<void> {
+  if (league.accessGate !== "required") return;
+  await requireMember(league, returnPath, homeHref);
+}
+
 export async function requireRmrMember(returnPath?: string): Promise<void> {
   const league = await getLeagueConfig();
   // ROOT `/` is now always the league gate (no sign-in prompt) — bounce to

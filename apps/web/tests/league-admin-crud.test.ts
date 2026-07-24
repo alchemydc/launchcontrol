@@ -4,6 +4,7 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { createLeague, deleteLeague, updateLeague } from "@/lib/create-league";
 import { createSeason, updateSeason } from "@/lib/create-season";
+import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 import { createScoringSystem, updateScoringSystem } from "@/lib/scoring-system";
 import { dbTarget, migrateDeploy } from "./helpers/db";
 
@@ -14,8 +15,8 @@ import { dbTarget, migrateDeploy } from "./helpers/db";
 // each test builds its own scratch league (via createLeague) so tests stay
 // independent within a single shared DB file.
 
-const PCA_POLICY = '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
-const RMSOLO_POLICY = '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":1000}';
+const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
+const RMSOLO_POLICY = '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1000}';
 
 const { path: TEST_DB_PATH, url: TEST_DB_URL } = dbTarget("league-admin-crud");
 
@@ -172,19 +173,24 @@ describe("deleteLeague", () => {
 });
 
 describe("updateSeason", () => {
-  it("patches plannedEvents/status/paxTable", async () => {
+  it("patches plannedEvents/status/rulesetId", async () => {
     const { league } = await createLeague({ slug: "us-basic", name: "US Basic League" }, prisma);
     const season = await createSeason({ leagueSlug: league.slug, name: "US Season", year: 2092 }, prisma);
+    const other = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "US Other Ruleset",
+      policyJson: RMSOLO_POLICY,
+    });
 
     const updated = await updateSeason(
       prisma,
       { leagueSlug: league.slug, seasonSlug: season.slug },
-      { plannedEvents: 9, status: "completed", paxTable: '{"AS":0.821}' },
+      { plannedEvents: 9, status: "completed", rulesetId: other.id },
     );
 
     expect(updated.plannedEvents).toBe(9);
     expect(updated.status).toBe("completed");
-    expect(updated.paxTable).toBe('{"AS":0.821}');
+    expect(updated.rulesetId).toBe(other.id);
 
     const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
     expect(persisted.plannedEvents).toBe(9);
@@ -206,7 +212,7 @@ describe("updateSeason", () => {
     expect(updated.year).toBe(2094);
   });
 
-  it("rejects invalid status, invalid paxTable, duplicate slug", async () => {
+  it("rejects invalid status, invalid rulesetId, duplicate slug", async () => {
     const { league } = await createLeague({ slug: "us-invalid", name: "US Invalid League" }, prisma);
     const seasonA = await createSeason({ leagueSlug: league.slug, name: "US Season A", year: 2095 }, prisma);
     const seasonB = await createSeason({ leagueSlug: league.slug, name: "US Season B", year: 2096 }, prisma);
@@ -223,9 +229,9 @@ describe("updateSeason", () => {
       updateSeason(
         prisma,
         { leagueSlug: league.slug, seasonSlug: seasonA.slug },
-        { paxTable: "not json" },
+        { rulesetId: 999999 },
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/no ruleset with id/);
 
     await expect(
       updateSeason(
@@ -238,8 +244,33 @@ describe("updateSeason", () => {
     // Nothing landed.
     const persisted = await prisma.season.findUniqueOrThrow({ where: { id: seasonA.id } });
     expect(persisted.status).toBe("active");
-    expect(persisted.paxTable).toBe("{}");
+    expect(persisted.rulesetId).toBe(seasonA.rulesetId);
     expect(persisted.slug).toBe(seasonA.slug);
+  });
+
+  it("rejects a ruleset owned by another league without changing the season", async () => {
+    const { league } = await createLeague({ slug: "us-own-ruleset", name: "US Own Ruleset League" }, prisma);
+    const season = await createSeason({ leagueSlug: league.slug, name: "US Own Ruleset Season", year: 2110 }, prisma);
+    const { league: foreignLeague } = await createLeague(
+      { slug: "us-foreign-ruleset", name: "US Foreign Ruleset League" },
+      prisma,
+    );
+    const foreignRuleset = await createScoringSystem(prisma, {
+      leagueSlug: foreignLeague.slug,
+      name: "US Foreign Ruleset",
+      policyJson: RMSOLO_POLICY,
+    });
+
+    await expect(
+      updateSeason(
+        prisma,
+        { leagueSlug: league.slug, seasonSlug: season.slug },
+        { rulesetId: foreignRuleset.id },
+      ),
+    ).rejects.toThrow(/a season can only adopt a ruleset of its own league/);
+
+    const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
+    expect(persisted.rulesetId).toBe(season.rulesetId);
   });
 
   it("rejects a duplicate name", async () => {
@@ -265,20 +296,20 @@ describe("updateSeason", () => {
     ).rejects.toThrow(/no season with slug 'does-not-exist'/);
   });
 
-  it("never changes scoringPolicy", async () => {
+  it("leaves rulesetId untouched when the patch omits it", async () => {
     const { league } = await createLeague({ slug: "us-policy-snapshot", name: "US Policy Snapshot League" }, prisma);
     const season = await createSeason({ leagueSlug: league.slug, name: "US Policy Season", year: 2100 }, prisma);
-    const before = season.scoringPolicy;
+    const before = season.rulesetId;
 
     const updated = await updateSeason(
       prisma,
       { leagueSlug: league.slug, seasonSlug: season.slug },
-      { name: "US Policy Season Renamed", plannedEvents: 5, status: "completed", paxTable: '{"AS":0.9}' },
+      { name: "US Policy Season Renamed", plannedEvents: 5, status: "completed" },
     );
 
-    expect(updated.scoringPolicy).toBe(before);
+    expect(updated.rulesetId).toBe(before);
     const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
-    expect(persisted.scoringPolicy).toBe(before);
+    expect(persisted.rulesetId).toBe(before);
   });
 });
 
@@ -306,9 +337,47 @@ describe("scoring systems", () => {
       createScoringSystem(prisma, {
         leagueSlug: league.slug,
         name: "Bad Policy Preset",
-        policyJson: '{"v":1,"drops":"sideways","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+        policyJson: '{"v":2,"drops":"sideways","paxSection":false,"conePenaltyMs":2000}',
       }),
     ).rejects.toThrow(/scoringPolicy\.drops/);
+  });
+
+  it("create seeds the complete built-in PAX table when paxTableJson is absent", async () => {
+    const { league } = await createLeague({ slug: "ss-seed-default", name: "SS Seed Default League" }, prisma);
+
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "Default Seed",
+      policyJson: PCA_POLICY,
+    });
+
+    expect(JSON.parse(preset.paxTable)).toEqual(RMSOLO_PAX_2026);
+  });
+
+  it("create stores an explicitly empty PAX table as empty", async () => {
+    const { league } = await createLeague({ slug: "ss-seed-empty", name: "SS Seed Empty League" }, prisma);
+
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "Empty Seed",
+      policyJson: PCA_POLICY,
+      paxTableJson: "{}",
+    });
+
+    expect(preset.paxTable).toBe("{}");
+  });
+
+  it("create stores a provided PAX table without merging built-in factors", async () => {
+    const { league } = await createLeague({ slug: "ss-seed-custom", name: "SS Seed Custom League" }, prisma);
+
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "Custom Seed",
+      policyJson: PCA_POLICY,
+      paxTableJson: '{"ZZ":0.75}',
+    });
+
+    expect(preset.paxTable).toBe('{"ZZ":0.75}');
   });
 
   it("update validates policy; duplicate name rejected; unknown preset rejected", async () => {
@@ -335,7 +404,7 @@ describe("scoring systems", () => {
       updateScoringSystem(
         prisma,
         { leagueSlug: league.slug, name: "Preset A" },
-        { policyJson: '{"v":1,"drops":"sideways"}' },
+        { policyJson: '{"v":2,"drops":"sideways"}' },
       ),
     ).rejects.toThrow(/scoringPolicy\.drops/);
 
@@ -344,7 +413,27 @@ describe("scoring systems", () => {
     ).rejects.toThrow(/no scoring system preset named 'Nonexistent'/);
   });
 
-  it("editing a preset does not touch an adopted season", async () => {
+  it("update replaces the complete PAX table and removes omitted built-in codes", async () => {
+    const { league } = await createLeague({ slug: "ss-update-pax", name: "SS Update PAX League" }, prisma);
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "Replace PAX",
+      policyJson: PCA_POLICY,
+    });
+    expect(JSON.parse(preset.paxTable)).toHaveProperty("AS");
+
+    const updated = await updateScoringSystem(
+      prisma,
+      { leagueSlug: league.slug, name: preset.name },
+      { paxTableJson: '{"ZZ":0.75}' },
+    );
+
+    expect(JSON.parse(updated.paxTable)).toEqual({ ZZ: 0.75 });
+    const persisted = await prisma.scoringSystem.findUniqueOrThrow({ where: { id: preset.id } });
+    expect(JSON.parse(persisted.paxTable)).toEqual({ ZZ: 0.75 });
+  });
+
+  it("editing a ruleset flows through to an adopted season (live reference)", async () => {
     const { league } = await createLeague({ slug: "ss-adopted", name: "SS Adopted League" }, prisma);
     const preset = await createScoringSystem(prisma, {
       leagueSlug: league.slug,
@@ -355,18 +444,21 @@ describe("scoring systems", () => {
       { leagueSlug: league.slug, name: "SS Adopted Season", year: 2101, presetName: preset.name },
       prisma,
     );
-    expect(season.scoringPolicy).toBe(PCA_POLICY);
+    expect(season.rulesetId).toBe(preset.id);
 
-    // Now edit the preset to a different, still-valid policy.
+    // Now edit the ruleset to a different, still-valid policy.
     await updateScoringSystem(
       prisma,
       { leagueSlug: league.slug, name: preset.name },
       { policyJson: RMSOLO_POLICY },
     );
 
-    // THE invariant: the season's snapshot is untouched.
-    const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
-    expect(persisted.scoringPolicy).toBe(PCA_POLICY);
-    expect(persisted.scoringPolicy).not.toBe(RMSOLO_POLICY);
+    // THE invariant (Task R2): the season reads the edit live.
+    const persisted = await prisma.season.findUniqueOrThrow({
+      where: { id: season.id },
+      include: { ruleset: true },
+    });
+    expect(persisted.rulesetId).toBe(preset.id);
+    expect(persisted.ruleset.policy).toBe(RMSOLO_POLICY);
   });
 });

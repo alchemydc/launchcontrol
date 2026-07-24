@@ -47,7 +47,7 @@ export type LeaderboardRow = {
 /**
  * `penaltyMs` (League Foundation PR 2 Task 7): defaults to the shared
  * `CONE_PENALTY_MS` constant, so existing call sites are unchanged (parity).
- * Event pages pass their event's season `scoringPolicy.conePenaltyMs`.
+ * Event pages pass their event's assigned ruleset `policy.conePenaltyMs`.
  */
 export function buildLeaderboard(
   entries: EntryWithRelations[],
@@ -91,6 +91,81 @@ export function buildLeaderboard(
     if (b.bestPaxMs == null) return -1;
     return a.bestPaxMs - b.bestPaxMs;
   });
+}
+
+export function classUsesPaxMetric(
+  rows: LeaderboardRow[],
+  paxStandings: boolean,
+): boolean {
+  if (!paxStandings) return false;
+  return new Set(rows.map((row) => row.paxIndex)).size > 1;
+}
+
+export type EventClassSummary = {
+  classCode: string;
+  entryCount: number;
+  winner: { driverId: number; driverName: string; bestRawMs: number | null } | null;
+};
+
+/**
+ * Build one summary per class in alphabetical order. A heterogeneous
+ * run-group class is ranked by its official PAX metric when PAX standings
+ * are enabled; ordinary classes use raw corrected time.
+ */
+export function summarizeEventClasses(
+  rows: LeaderboardRow[],
+  paxStandings: boolean,
+): EventClassSummary[] {
+  const rowsByClass = new Map<string, LeaderboardRow[]>();
+  for (const row of rows) {
+    const classRows = rowsByClass.get(row.classCode);
+    if (classRows == null) rowsByClass.set(row.classCode, [row]);
+    else classRows.push(row);
+  }
+
+  return Array.from(rowsByClass.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([classCode, classRows]) => {
+      const usesPax = classUsesPaxMetric(classRows, paxStandings);
+      const metric = (row: LeaderboardRow) =>
+        usesPax ? row.bestPaxMs : row.bestRawMs;
+      let winner: LeaderboardRow | null = null;
+
+      for (const row of classRows) {
+        const result = metric(row);
+        if (result == null) continue;
+        if (winner == null || result < metric(winner)!) winner = row;
+      }
+
+      return {
+        classCode,
+        entryCount: classRows.length,
+        winner:
+          winner == null
+            ? null
+            : {
+                driverId: winner.driverId,
+                driverName: winner.driverName,
+                bestRawMs: winner.bestRawMs,
+              },
+      };
+    });
+}
+
+export function filterRowsForClass(
+  rows: LeaderboardRow[],
+  classParam: string,
+): { classCode: string; rows: LeaderboardRow[] } | null {
+  const wanted = classParam.trim().toLowerCase();
+  if (wanted.length === 0) return null;
+
+  const matchingRows = rows.filter(
+    (row) => row.classCode.toLowerCase() === wanted,
+  );
+  const first = matchingRows[0];
+  return first == null
+    ? null
+    : { classCode: first.classCode, rows: matchingRows };
 }
 
 export function formatMs(ms: number | null): string {

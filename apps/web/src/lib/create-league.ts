@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { League, Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
+import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -30,11 +31,11 @@ function validateLogoUrl(logoUrl: string): void {
 
 // A new league needs a default policy to snapshot when neither --preset-name
 // (there IS no preset yet — this call creates the first one) nor
-// --policy-file is given. PCA-shaped: fixed drops, no PAX section, raw class
-// metric, 2000ms cone penalty — the same defaults `league-foundation`
-// seeded for pca-rmr, a reasonable starting point for any new league.
+// --policy-file is given. PCA-shaped: fixed drops, no PAX section, 2000ms
+// cone penalty — the same defaults `league-foundation` seeded for pca-rmr
+// (now canonicalized to v2), a reasonable starting point for any new league.
 const DEFAULT_POLICY_JSON =
-  '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
+  '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 export type CreateLeagueOptions = {
   slug: string;
@@ -139,6 +140,10 @@ export async function createLeague(
         leagueId: created.id,
         name: presetName,
         policy: JSON.stringify(policy),
+        // Rulesets carry a COMPLETE paxTable (Task R2 — no built-in fallback
+        // at read time), so the default ruleset seeds the full built-in
+        // table. Inert for AxWare-sourced leagues, which never read it.
+        paxTable: JSON.stringify(RMSOLO_PAX_2026),
       },
     });
     return created;
@@ -217,7 +222,10 @@ export async function updateLeague(
  *      so zero events under this league implies zero Entries referencing
  *      any of its CarClass rows, even ones left behind by a prior
  *      deleteEventWithSweep on a now-deleted event).
- *   2. Season rows scoped to the league.
+ *   2. Season rows scoped to the league — BEFORE the League row, which
+ *      matters since Task R2: deleting the League cascades its ScoringSystem
+ *      rulesets, and `Season.rulesetId` is ON DELETE RESTRICT, so any
+ *      surviving Season row would abort that cascade.
  *   3. The League row itself.
  * Refuses (throwing, without deleting anything) if any Event exists under
  * any of the league's seasons — the existence check and the delete happen

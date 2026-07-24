@@ -315,7 +315,7 @@ export function LeagueSettingsForm({
           <CardHeader>
             <CardTitle className="text-destructive">Danger zone</CardTitle>
             <CardDescription>
-              Deleting a league removes its seasons and scoring presets. Refuses if the league
+              Deleting a league removes its seasons and scoring rulesets. Refuses if the league
               still has events — delete those first.
             </CardDescription>
           </CardHeader>
@@ -339,7 +339,7 @@ export function LeagueSettingsForm({
           <DialogHeader>
             <DialogTitle>Delete {league.name}?</DialogTitle>
             <DialogDescription>
-              This permanently deletes the league&apos;s seasons and scoring presets. This cannot
+              This permanently deletes the league&apos;s seasons and scoring rulesets. This cannot
               be undone.
             </DialogDescription>
           </DialogHeader>

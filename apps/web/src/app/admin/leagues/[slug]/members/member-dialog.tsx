@@ -24,7 +24,7 @@ import type { MembershipRole } from "@/lib/membership";
 import type { MemberRow } from "./members-table";
 
 const ROLE_OPTIONS: { value: MembershipRole; label: string }[] = [
-  { value: "ADMIN", label: "Admin — manage league settings, seasons, presets, members" },
+  { value: "ADMIN", label: "Admin — manage league settings, seasons, rulesets, members" },
   { value: "MEMBER", label: "Member — counts toward this league's membership gating" },
   { value: "BLOCKED", label: "Blocked — explicitly denied access to this league" },
 ];
@@ -54,13 +54,13 @@ export function MemberDialog(props: CreateProps | EditProps) {
 function CreateMemberDialog({ leagueSlug, onCreated }: CreateProps) {
   const [open, setOpen] = useState(false);
   const [msrUid, setMsrUid] = useState("");
-  const [role, setRole] = useState<MembershipRole>("MEMBER");
+  const [role, setRole] = useState<MembershipRole>("ADMIN");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function reset() {
     setMsrUid("");
-    setRole("MEMBER");
+    setRole("ADMIN");
     setError(null);
   }
 

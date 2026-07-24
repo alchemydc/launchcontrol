@@ -74,7 +74,8 @@ export function MembersTable({ leagueSlug, rows }: { leagueSlug: string; rows: M
           {rows.length === 0 && (
             <TableRow>
               <TableCell colSpan={3} className="text-center text-muted-foreground">
-                No members yet.
+                No admins or manual overrides yet. League members are admitted by MSR org match
+                automatically.
               </TableCell>
             </TableRow>
           )}

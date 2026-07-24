@@ -4,7 +4,7 @@ import {
   getRmsoloPaxIndex,
   nearestPaxClass,
   parseSeasonPaxTable,
-  resolveSeasonPaxIndex,
+  resolveRulesetPaxIndex,
 } from "@/lib/rmsolo-pax";
 
 describe("RMsolo PAX table", () => {
@@ -83,7 +83,7 @@ describe("parseSeasonPaxTable", () => {
     warnSpy.mockRestore();
   });
 
-  it("drops a non-finite-number entry with a warning, falling back to the built-in table for that class", () => {
+  it("drops a non-finite-number entry with a warning, so the class resolves to 1.0 like an unlisted one", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(parseSeasonPaxTable('{"AS":"abc"}')).toEqual({});
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("'AS' is not a finite number"));
@@ -97,20 +97,22 @@ describe("parseSeasonPaxTable", () => {
   });
 });
 
-describe("resolveSeasonPaxIndex — precedence", () => {
-  it("a season paxTable entry overrides the built-in RMSOLO_PAX_2026 table", () => {
-    expect(RMSOLO_PAX_2026.AS).not.toBe(0.5); // sanity: the override differs from the built-in value
-    expect(resolveSeasonPaxIndex("AS", { AS: 0.5 })).toBe(0.5);
+describe("resolveRulesetPaxIndex — ruleset table is the only read-time source", () => {
+  it("returns the ruleset table's factor for a listed class", () => {
+    expect(RMSOLO_PAX_2026.AS).not.toBe(0.5); // sanity: differs from the built-in value
+    expect(resolveRulesetPaxIndex("AS", { AS: 0.5 })).toBe(0.5);
   });
 
-  it("falls back to the built-in table when the season paxTable has no entry for the class", () => {
-    expect(resolveSeasonPaxIndex("AS", {})).toBe(RMSOLO_PAX_2026.AS);
-    expect(resolveSeasonPaxIndex("AS", { BS: 0.9 })).toBe(RMSOLO_PAX_2026.AS);
-  });
-
-  it("falls back to 1.0 (with a warning) when neither the season table nor the built-in table has the class", () => {
+  it("does NOT fall back to the built-in table — an unlisted class resolves to 1.0 (with a one-shot warning)", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(resolveSeasonPaxIndex("ZZZ-UNKNOWN", {})).toBe(1.0);
+    expect(resolveRulesetPaxIndex("AS", { BS: 0.9 })).toBe(1.0);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no factor for class 'AS'"));
+    warnSpy.mockRestore();
+  });
+
+  it("resolves 1.0 (with a warning) for a class listed nowhere", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolveRulesetPaxIndex("ZZZ-UNKNOWN", {})).toBe(1.0);
     warnSpy.mockRestore();
   });
 });

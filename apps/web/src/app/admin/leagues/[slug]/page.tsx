@@ -96,13 +96,14 @@ export default async function AdminLeaguePage({
               <Card className="cursor-pointer hover:border-primary/40 transition-colors h-full">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
-                    Presets
+                    Rulesets
                     <ChevronRight className="h-5 w-5 text-muted-foreground" />
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">
-                    Scoring-policy presets seasons snapshot from.
+                    Seasons read scoring rulesets live; PAX changes require
+                    explicit re-apply.
                   </p>
                 </CardContent>
               </Card>
@@ -111,13 +112,13 @@ export default async function AdminLeaguePage({
               <Card className="cursor-pointer hover:border-primary/40 transition-colors h-full">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
-                    Members
+                    Admins &amp; access
                     <ChevronRight className="h-5 w-5 text-muted-foreground" />
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">
-                    Admins and members for this league.
+                    Grant league admins; manual access overrides.
                   </p>
                 </CardContent>
               </Card>

@@ -8,7 +8,7 @@ import {
   type IngestSummary,
 } from "@/lib/ingest";
 import { resolveOrCreateSeason } from "@/lib/season-resolve";
-import { nearestPaxClass, parseSeasonPaxTable, resolveSeasonPaxIndex } from "@/lib/rmsolo-pax";
+import { nearestPaxClass, parseSeasonPaxTable, resolveRulesetPaxIndex } from "@/lib/rmsolo-pax";
 import { reconcileTimes, type ParsedEntry, type ParsedRmsoloEvent, type ParsedRun } from "@/lib/rmsolo-parse";
 
 const CONE_SECONDS = 2.0;
@@ -112,8 +112,8 @@ export async function ingestRmsoloEvent(
   // entered class remains the run group (mirroring the .axdb class/paxmult
   // split this schema was built for). Entries whose factor matches nothing
   // in the table keep paxClass = entered class (factor 1.0 fallback). This
-  // matching is against the built-in RMSOLO_PAX_2026 table only — a season's
-  // paxTable override doesn't affect WHICH class a derived factor maps to,
+  // matching is against the built-in RMSOLO_PAX_2026 table only — the
+  // ruleset's paxTable doesn't affect WHICH class a derived factor maps to,
   // only the numeric paxIndex ultimately stored for that class (below).
   const derivedPaxCodeByEntry = new Map<ParsedEntry, string>();
   for (const e of unreconciled) {
@@ -142,7 +142,12 @@ export async function ingestRmsoloEvent(
     const eventYear = eventDate.getUTCFullYear();
     const season = await resolveOrCreateSeason(tx, league, eventYear);
     const seasonId = season.id;
-    const seasonPaxTable = parseSeasonPaxTable(season.paxTable);
+    // Factors come from the season's ruleset paxTable (Task R2 — a COMPLETE
+    // table, no built-in fallback; unlisted codes resolve to 1.0 with a
+    // one-shot warning in resolveRulesetPaxIndex). Lenient parse: a
+    // malformed stored table must not crash an ingest.
+    const ruleset = await tx.scoringSystem.findUniqueOrThrow({ where: { id: season.rulesetId } });
+    const rulesetPaxTable = parseSeasonPaxTable(ruleset.paxTable);
 
     const existing = await tx.event.findUnique({ where: { seasonId_slug: { seasonId, slug } } });
 
@@ -193,13 +198,13 @@ export async function ingestRmsoloEvent(
 
     const newClassData = classCodes
       .filter((code) => !existingClassByCode.has(code))
-      .map((code) => ({ leagueId: league.id, code, paxIndex: resolveSeasonPaxIndex(code, seasonPaxTable) }));
+      .map((code) => ({ leagueId: league.id, code, paxIndex: resolveRulesetPaxIndex(code, rulesetPaxTable) }));
     if (newClassData.length > 0) {
       await tx.carClass.createMany({ data: newClassData });
     }
     for (const code of classCodes) {
       const cur = existingClassByCode.get(code);
-      const pax = resolveSeasonPaxIndex(code, seasonPaxTable);
+      const pax = resolveRulesetPaxIndex(code, rulesetPaxTable);
       if (cur && Number(cur.paxIndex) !== pax) {
         await tx.carClass.update({ where: { id: cur.id }, data: { paxIndex: pax } });
       }
@@ -294,14 +299,14 @@ export async function ingestRmsoloEvent(
       const paxCode = derivedPaxCodeByEntry.get(e) ?? e.classCode;
       const paxClassId = classIdByCode.get(paxCode);
       if (paxClassId == null) throw new Error(`Entry references unknown pax class code '${paxCode}'`);
-      // Snapshot the factor in force at ingest. resolveSeasonPaxIndex(paxCode)
+      // Snapshot the factor in force at ingest. resolveRulesetPaxIndex(paxCode)
       // is exactly what set CarClass.paxIndex for paxCode's class above, so
       // Entry.paxClass.paxIndex === Entry.paxIndexApplied now — they diverge
       // only if the CarClass is later edited. Covers both paths: the derived
       // run-group class (paxCode from nearestPaxClass) and the fallback where
       // paxCode = entered class (no match → the class's own factor, 1.0 for a
       // bare run-group heading).
-      const paxIndexApplied = resolveSeasonPaxIndex(paxCode, seasonPaxTable);
+      const paxIndexApplied = resolveRulesetPaxIndex(paxCode, rulesetPaxTable);
       const identityHash = identityByEntry.get(e)!;
       const driverId = driverIdByIdentity.get(identityHash);
       if (driverId == null) throw new Error(`Missing driver mapping for identity hash '${identityHash.slice(0, 12)}…'`);

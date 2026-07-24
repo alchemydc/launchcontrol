@@ -4,7 +4,7 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { parseSeasonPaxTableStrict } from "@/lib/rmsolo-pax";
 import { reapplySeasonPaxFactors } from "@/lib/pax-reapply";
-import { ensureLeagueAndSeasons } from "./helpers/league-fixture";
+import { DEFAULT_SCORING_POLICY, ensureLeagueAndSeasons } from "./helpers/league-fixture";
 import { dbTarget, migrateDeploy } from "./helpers/db";
 
 describe("parseSeasonPaxTableStrict", () => {
@@ -39,11 +39,18 @@ describe("reapplySeasonPaxFactors", () => {
     seasonAId = seasonIdByYear.get(2050)!;
     seasonBId = seasonIdByYear.get(2051)!;
 
-    await client.season.update({
-      where: { id: seasonAId },
-      data: { paxTable: '{"AS":0.850}' },
+    // Task R2: the re-apply table lives on the season's RULESET. Each season
+    // gets a dedicated ruleset whose paxTable is exactly what the test needs
+    // (raw create keeps this fixture explicit; season A must cover ONLY "AS"
+    // so the CS entry stays untouched below).
+    const rulesetA = await client.scoringSystem.create({
+      data: { leagueId, name: "Reapply A Rules", policy: DEFAULT_SCORING_POLICY, paxTable: '{"AS":0.850}' },
     });
-    // Season B keeps the default "{}" paxTable — used by the empty-table test.
+    await client.season.update({ where: { id: seasonAId }, data: { rulesetId: rulesetA.id } });
+    const rulesetB = await client.scoringSystem.create({
+      data: { leagueId, name: "Reapply B Rules", policy: DEFAULT_SCORING_POLICY, paxTable: "{}" },
+    });
+    await client.season.update({ where: { id: seasonBId }, data: { rulesetId: rulesetB.id } });
 
     const [asClass, csClass] = await Promise.all([
       client.carClass.create({ data: { leagueId, code: "AS", paxIndex: 0.9 } }),

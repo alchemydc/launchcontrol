@@ -1,9 +1,6 @@
-import { readFileSync } from "node:fs";
 import type { Prisma, PrismaClient, Season } from "@/generated/prisma/client";
 import { slugify } from "@/lib/ingest";
 import { prisma as defaultClient } from "@/lib/prisma";
-import { parseSeasonPaxTableStrict } from "@/lib/rmsolo-pax";
-import { parseScoringPolicy } from "@/lib/scoring-policy";
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -20,25 +17,23 @@ export type CreateSeasonOptions = {
    *  Defaults to slugify(name). Must already be a valid slug shape (lowercase alphanumeric,
    *  hyphen-separated) — an explicit override is not re-slugified. */
   slug?: string;
-  /** Name of an existing ScoringSystem preset on this league. Mutually exclusive with policyFilePath.
-   *  If neither is given, the league's OLDEST ScoringSystem row is used (same deterministic
+  /** Name of an existing ScoringSystem ruleset on this league (kept as `presetName` to avoid
+   *  CLI churn). If not given, the league's OLDEST ScoringSystem row is used (same deterministic
    *  choice `ingestAxdb` makes when auto-creating a Season). */
   presetName?: string;
-  /** Path to a JSON file holding a ScoringPolicy v1 object. Mutually exclusive with presetName. */
+  /** REMOVED (Task R2): policies live on rulesets now. Any non-undefined value throws. */
   policyFilePath?: string;
 };
 
 /**
- * Creates a Season row, snapshotting its scoringPolicy from either a named
- * ScoringSystem preset, a policy JSON file, or (default) the league's oldest
- * ScoringSystem preset — never a live reference to the ScoringSystem table
- * (see schema.prisma `Season.scoringPolicy`). The policy is always validated
- * via `parseScoringPolicy` and re-serialized in its canonical shape before
- * writing, so a hand-edited policy file with stray whitespace or key order
- * still lands byte-identical to any other season built from the same values.
+ * Creates a Season row pointing at a ScoringSystem ruleset — a LIVE
+ * reference (`Season.rulesetId`), not a snapshot: since Task R2 the Season
+ * row stores no policy or paxTable of its own, and standings read the
+ * ruleset's current values at render time. The ruleset is either the named
+ * one (`presetName`) or (default) the league's oldest ScoringSystem row.
  *
- * Thrown errors are operator-facing (unknown league/preset, duplicate season
- * name or slug, invalid policy) — `scripts/create-season.ts` prints them as-is.
+ * Thrown errors are operator-facing (unknown league/ruleset, duplicate
+ * season name or slug) — `scripts/create-season.ts` prints them as-is.
  *
  * Multiple seasons per (league, year) are allowed — season-aware addressing
  * (`slug`, resolved via season-resolve.ts's `resolveSeasonBySlug`/`activeSeason`)
@@ -51,9 +46,10 @@ export async function createSeason(
 ): Promise<Season> {
   const { leagueSlug, name, year, plannedEvents = 0, presetName, policyFilePath } = opts;
 
-  if (presetName && policyFilePath) {
+  if (policyFilePath !== undefined) {
     throw new Error(
-      "[create-season] specify at most one of --preset or --policy-file, not both.",
+      "[create-season] --policy-file is gone: scoring policies live on rulesets now. " +
+        "Create or edit a ruleset (scoring system) and pass its name via --preset instead.",
     );
   }
 
@@ -88,35 +84,19 @@ export async function createSeason(
     );
   }
 
-  let rawPolicy: string;
-  if (policyFilePath) {
-    try {
-      rawPolicy = readFileSync(policyFilePath, "utf8");
-    } catch (err) {
-      throw new Error(
-        `[create-season] failed to read policy file '${policyFilePath}': ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  } else {
-    const preset = presetName
-      ? await client.scoringSystem.findFirst({ where: { leagueId: league.id, name: presetName } })
-      : await client.scoringSystem.findFirst({
-          where: { leagueId: league.id },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        });
-    if (!preset) {
-      throw new Error(
-        presetName
-          ? `[create-season] league '${leagueSlug}' has no scoring system preset named '${presetName}'.`
-          : `[create-season] league '${leagueSlug}' has no scoring system presets — create one first.`,
-      );
-    }
-    rawPolicy = preset.policy;
+  const preset = presetName
+    ? await client.scoringSystem.findFirst({ where: { leagueId: league.id, name: presetName } })
+    : await client.scoringSystem.findFirst({
+        where: { leagueId: league.id },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+  if (!preset) {
+    throw new Error(
+      presetName
+        ? `[create-season] league '${leagueSlug}' has no scoring system preset named '${presetName}'.`
+        : `[create-season] league '${leagueSlug}' has no scoring system presets — create one first.`,
+    );
   }
-
-  // Throws a field-level error on invalid JSON or an incomplete/malformed
-  // policy shape — never write a Season row with a policy scoring code can't parse.
-  const policy = parseScoringPolicy(rawPolicy);
 
   return client.season.create({
     data: {
@@ -125,7 +105,7 @@ export async function createSeason(
       slug,
       year,
       plannedEvents,
-      scoringPolicy: JSON.stringify(policy),
+      rulesetId: preset.id,
     },
   });
 }
@@ -138,8 +118,8 @@ export type UpdateSeasonPatch = Partial<{
   year: number;
   plannedEvents: number;
   status: SeasonStatus;
-  /** Raw JSON string, strict-parsed via `parseSeasonPaxTableStrict` and re-serialized in canonical form before writing. */
-  paxTable: string;
+  /** Id of a ScoringSystem ruleset belonging to the SAME league — validated before writing. */
+  rulesetId: number;
 }>;
 
 /**
@@ -148,11 +128,12 @@ export type UpdateSeasonPatch = Partial<{
  * `createSeason` uses — NOT re-slugified) and, like `name`, is checked for
  * a duplicate within the league before writing.
  *
- * Deliberately never touches `scoringPolicy` — a Season's policy is a
- * snapshot taken once at creation/adoption time (see `createSeason`'s
- * doc comment); there is no "re-adopt the preset" operation. Editing a
- * ScoringSystem preset (`scoring-system.ts`) never reaches back to update
- * seasons that previously snapshotted it.
+ * Scoring is edited by re-pointing `rulesetId` at a different ruleset of the
+ * same league (Task R2) — per-season policy/paxTable snapshots are gone.
+ * Standings recompute at read time through the live ruleset reference, so
+ * re-pointing a season (including a past season) changes its standings
+ * immediately; editing the ruleset itself (`scoring-system.ts`) likewise
+ * flows through to every season referencing it.
  */
 export async function updateSeason(
   client: PrismaClient,
@@ -202,10 +183,18 @@ export async function updateSeason(
     newSlug = slug;
   }
 
-  // Throws a field-level error on invalid JSON or a malformed table shape —
-  // never write a Season row with a paxTable scoring code can't parse.
-  const newPaxTable =
-    patch.paxTable !== undefined ? JSON.stringify(parseSeasonPaxTableStrict(patch.paxTable)) : undefined;
+  if (patch.rulesetId !== undefined) {
+    if (typeof patch.rulesetId !== "number" || !Number.isInteger(patch.rulesetId)) {
+      throw new Error(`[update-season] rulesetId must be an integer (got ${JSON.stringify(patch.rulesetId)}).`);
+    }
+    const ruleset = await client.scoringSystem.findUnique({ where: { id: patch.rulesetId } });
+    if (!ruleset || ruleset.leagueId !== league.id) {
+      throw new Error(
+        `[update-season] league '${leagueSlug}' has no ruleset with id ${patch.rulesetId} — ` +
+          `a season can only adopt a ruleset of its own league.`,
+      );
+    }
+  }
 
   const data: Prisma.SeasonUpdateInput = {};
   if (patch.name !== undefined) data.name = patch.name;
@@ -213,7 +202,7 @@ export async function updateSeason(
   if (patch.year !== undefined) data.year = patch.year;
   if (patch.plannedEvents !== undefined) data.plannedEvents = patch.plannedEvents;
   if (patch.status !== undefined) data.status = patch.status;
-  if (newPaxTable !== undefined) data.paxTable = newPaxTable;
+  if (patch.rulesetId !== undefined) data.ruleset = { connect: { id: patch.rulesetId } };
 
   return client.season.update({ where: { id: season.id }, data });
 }

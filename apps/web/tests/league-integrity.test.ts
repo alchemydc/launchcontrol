@@ -18,13 +18,15 @@ import { dbTarget, migrateDeploy } from "./helpers/db";
 const FIXTURES_DIR = resolve(__dirname, "fixtures");
 
 // ---------------------------------------------------------------------------
-// 1. Snapshot semantics at the SEASON level, via the createSeason lib.
+// 1. Live-reference semantics at the SEASON level, via the createSeason lib
+// (Task R2 inverted the old snapshot contract: seasons hold a rulesetId FK
+// and read the ruleset's CURRENT policy at render time).
 //
-// Task 7 already proved this at the ingest boundary (auto-created Seasons).
-// This proves the same "snapshot, not a live reference" contract through the
-// other Season-creation path: an operator explicitly calling createSeason().
+// ingest-season-policy.test.ts proves this at the ingest boundary
+// (auto-created Seasons). This proves the same contract through the other
+// Season-creation path: an operator explicitly calling createSeason().
 // ---------------------------------------------------------------------------
-describe("Season.scoringPolicy snapshot semantics (createSeason)", () => {
+describe("Season.rulesetId live-reference semantics (createSeason)", () => {
   const { path, url } = dbTarget("integrity-season-snapshot");
   let client: PrismaClient;
 
@@ -39,33 +41,37 @@ describe("Season.scoringPolicy snapshot semantics (createSeason)", () => {
     rmSync(path, { force: true });
   });
 
-  it("editing the ScoringSystem preset after createSeason() leaves the earlier Season's policy untouched", async () => {
-    const seasonA = await createSeason(
-      { leagueSlug: "pca-rmr", name: "Snapshot Test A", year: 2040 },
-      client,
-    );
-    expect(seasonA.scoringPolicy).toBe(DEFAULT_SCORING_POLICY);
-
+  it("editing the ScoringSystem ruleset after createSeason() flows through to every season referencing it", async () => {
     const league = await client.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
     const preset = await client.scoringSystem.findFirstOrThrow({
       where: { leagueId: league.id },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
+    expect(preset.policy).toBe(DEFAULT_SCORING_POLICY);
+
+    const seasonA = await createSeason(
+      { leagueSlug: "pca-rmr", name: "Live Ref Test A", year: 2040 },
+      client,
+    );
+    expect(seasonA.rulesetId).toBe(preset.id);
+
     const editedPolicy =
-      '{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":1500}';
+      '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1500}';
     await client.scoringSystem.update({ where: { id: preset.id }, data: { policy: editedPolicy } });
 
     const seasonB = await createSeason(
-      { leagueSlug: "pca-rmr", name: "Snapshot Test B", year: 2041 },
+      { leagueSlug: "pca-rmr", name: "Live Ref Test B", year: 2041 },
       client,
     );
-    expect(seasonB.scoringPolicy).toBe(editedPolicy);
+    expect(seasonB.rulesetId).toBe(preset.id);
 
-    // The earlier season, created before the edit, must still read the
-    // original value — proves scoringPolicy is copied at creation, never a
-    // live reference to the ScoringSystem row it was sourced from.
-    const reloadedA = await client.season.findUniqueOrThrow({ where: { id: seasonA.id } });
-    expect(reloadedA.scoringPolicy).toBe(DEFAULT_SCORING_POLICY);
+    // BOTH seasons read the edited policy through the shared live reference —
+    // the old copy-at-creation snapshot semantics are gone by design.
+    const reloadedA = await client.season.findUniqueOrThrow({
+      where: { id: seasonA.id },
+      include: { ruleset: true },
+    });
+    expect(reloadedA.ruleset.policy).toBe(editedPolicy);
   });
 });
 
@@ -140,20 +146,19 @@ describe("seed parity: buildSeasonLeaderboard(2026) matches main's fixture expec
   // later rules-committee correction to a class's PAX factor would silently
   // reach back and re-score every past event that used it. paxSection is
   // switched on here (last test in this describe block, so it doesn't
-  // disturb the raw-metric assertions above): the synthetic PAX section
-  // pools entries ACROSS classes by their paxIndex-adjusted time, so
-  // rescaling one class's factor actually shifts cross-class ranking/points
-  // — unlike per-class classMetric="pax", which rescales every entry sharing
-  // a uniform class factor by the same constant and so is order-invariant
-  // (see the comment on classMetric in season-leaderboard.ts), a vacuous
-  // check that would pass even against a live join.
+  // disturb the assertions above): the synthetic PAX section pools entries
+  // ACROSS classes by their paxIndex-adjusted time, so rescaling one class's
+  // factor actually shifts cross-class ranking/points — unlike the ordinary
+  // per-class ranking metric, which rescales every entry sharing a uniform
+  // class factor by the same constant and so is order-invariant (see the
+  // comment on the class ranking metric in season-leaderboard.ts), a
+  // vacuous check that would pass even against a live join.
   it("editing CarClass.paxIndex after ingest no longer changes buildSeasonLeaderboard output", async () => {
     const season = await client.season.findFirstOrThrow({ where: { year: 2026 } });
-    await client.season.update({
-      where: { id: season.id },
+    await client.scoringSystem.update({
+      where: { id: season.rulesetId },
       data: {
-        scoringPolicy:
-          '{"v":1,"drops":"fixed","paxSection":true,"classMetric":"raw","conePenaltyMs":2000}',
+        policy: '{"v":2,"drops":"fixed","paxSection":true,"conePenaltyMs":2000}',
       },
     });
 

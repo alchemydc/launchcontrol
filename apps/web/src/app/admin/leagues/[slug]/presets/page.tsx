@@ -17,7 +17,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const league = await prisma.league.findUnique({ where: { slug } });
-  return { title: league ? `Scoring presets · ${league.name}` : "Scoring presets" };
+  return { title: league ? `Scoring rulesets · ${league.name}` : "Scoring rulesets" };
 }
 
 export default async function AdminPresetsPage({
@@ -38,6 +38,7 @@ export default async function AdminPresetsPage({
   const presets = await prisma.scoringSystem.findMany({
     where: { leagueId: league.id },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    include: { seasons: { select: { name: true, slug: true }, orderBy: { name: "asc" } } },
   });
 
   const rows: PresetRow[] = presets.map((preset) => {
@@ -50,7 +51,13 @@ export default async function AdminPresetsPage({
     } catch {
       policy = null;
     }
-    return { id: preset.id, name: preset.name, policy };
+    return {
+      id: preset.id,
+      name: preset.name,
+      policy,
+      paxTable: preset.paxTable,
+      seasons: preset.seasons,
+    };
   });
 
   return (
@@ -64,7 +71,7 @@ export default async function AdminPresetsPage({
             <ArrowLeft className="h-4 w-4" />
             {league.name}
           </Link>
-          <h1 className="text-xl font-semibold mt-1">Scoring presets</h1>
+          <h1 className="text-xl font-semibold mt-1">Scoring rulesets</h1>
         </div>
 
         <PresetsTable leagueSlug={league.slug} rows={rows} />

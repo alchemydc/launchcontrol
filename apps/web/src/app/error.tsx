@@ -3,7 +3,7 @@
 // and every nested layout below the root layout in a React error boundary
 // (Next.js file convention — see node_modules/next/dist/docs/01-app/03-api-
 // reference/03-file-conventions/error.md) — this is what catches, e.g., a
-// malformed Season.scoringPolicy throwing out of parseScoringPolicy() inside
+// malformed ruleset policy throwing out of parseScoringPolicy() inside
 // a page-level Server Component (event/season/combined pages all resolve
 // their season's policy server-side).
 //

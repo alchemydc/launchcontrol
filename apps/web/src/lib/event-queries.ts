@@ -11,7 +11,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 const eventDetailInclude = {
-  season: { select: { scoringPolicy: true } },
+  season: { select: { ruleset: { select: { policy: true } } } },
   entries: {
     include: {
       driver: true,
@@ -59,7 +59,7 @@ export async function countSiblingEventsByDate(
 }
 
 const combinedSessionInclude = {
-  season: { select: { scoringPolicy: true } },
+  season: { select: { ruleset: { select: { policy: true } } } },
   entries: {
     include: {
       driver: true,

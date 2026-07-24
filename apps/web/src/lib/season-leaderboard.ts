@@ -7,7 +7,7 @@ import { prisma as defaultClient } from "@/lib/prisma";
 
 /**
  * Synthetic class code for the overall PAX standings section
- * (Season.scoringPolicy `paxSection: true`). Rendered pinned first; never
+ * (ruleset policy `paxSection: true`). Rendered pinned first; never
  * stored in the DB.
  */
 export const PAX_SECTION_CODE = "PAX";
@@ -39,7 +39,8 @@ function qualifyingEventCount(totalEventsInSeason: number): number {
 }
 
 /**
- * How many scores count toward totalPoints right now (`scoringPolicy.drops`).
+ * How many scores count toward totalPoints right now (the ruleset policy's
+ * `drops` mode).
  *
  * fixed (default, PCA): always the qualifying threshold — mid-season nothing
  * drops because nobody has more than `qualifyingEvents` scores yet.
@@ -138,7 +139,7 @@ export type SeasonLeaderboardResult = {
   totalEvents: number; // season size used for the threshold: max(planned, completedEvents) (M1.16)
   completedEvents: number; // actual scoring groups ingested so far
   qualifyingEvents: number;
-  countedEvents: number; // scores counted toward totals right now (== qualifyingEvents in fixed mode; scales with progress in proportional mode — scoringPolicy.drops)
+  countedEvents: number; // scores counted toward totals right now (== qualifyingEvents in fixed mode; scales with progress in proportional mode — ruleset policy drops)
   sections: SeasonStandingsByClass[];
 };
 
@@ -222,6 +223,7 @@ export async function listSeasonYears(
 }
 
 const seasonLeaderboardInclude = {
+  ruleset: { select: { policy: true } },
   events: {
     orderBy: { date: "asc" as const },
     include: {
@@ -300,14 +302,15 @@ async function resolveLeaderboardSeason(
  *
  * League Foundation: events are scoped to a Season row rather than a raw
  * date range, and every scoring knob — drop mode, synthetic PAX section,
- * class metric, planned event count — comes from that row's `scoringPolicy`
- * JSON (`parseScoringPolicy`), not env vars. A year/target with no matching
+ * planned event count — comes from the season's RULESET policy JSON
+ * (`season.ruleset.policy`, a live reference since Task R2 — parsed via
+ * `parseScoringPolicy`), not env vars. A year/target with no matching
  * Season row returns the original empty-year shape (all zero, no sections)
  * — same as a season with a Season row but zero ingested events, except
  * `totalEvents` there reflects the Season's planned count instead of 0.
  *
  * Cone-penalty threading (League Foundation PR 2 Task 7):
- * `scoringPolicy.conePenaltyMs` is passed to `bestCorrectedMsForEntry` below,
+ * The ruleset policy's `conePenaltyMs` is passed to `bestCorrectedMsForEntry` below,
  * so a season configured with a non-default value (e.g. an RMsolo season
  * using a different per-cone penalty) actually scores with it — the same
  * value flows from `parseScoringPolicy` end-to-end. Event and combined pages
@@ -344,7 +347,7 @@ export async function buildSeasonLeaderboard(
   }
 
   const year = season.year;
-  const policy = parseScoringPolicy(season.scoringPolicy);
+  const policy = parseScoringPolicy(season.ruleset.policy);
 
   // 1. Events for the season, already loaded in chronological order.
   const events: LoadedEvent[] = season.events;
@@ -365,7 +368,7 @@ export async function buildSeasonLeaderboard(
   const paxSectionEnabled = policy.paxSection && !realPaxClassExists;
   if (policy.paxSection && realPaxClassExists) {
     console.warn(
-      `[season-leaderboard] season ${year}: a real class named '${PAX_SECTION_CODE}' exists — skipping the synthetic overall-PAX section (scoringPolicy.paxSection=true)`,
+      `[season-leaderboard] season ${year}: a real class named '${PAX_SECTION_CODE}' exists — skipping the synthetic overall-PAX section (ruleset policy paxSection=true)`,
     );
   }
 
@@ -395,21 +398,23 @@ export async function buildSeasonLeaderboard(
         byDriver = new Map();
         byClass.set(code, byDriver);
       }
-      // Class metric (scoringPolicy.classMetric): raw best by default. Under
-      // "pax", classes score on the PAX-indexed best instead — a pure
-      // rescale (identical order and points) for classes whose entries share
-      // one factor, and the official ordering for run-group classes whose
-      // entries carry per-driver derived factors (the printed group results
-      // are indexed).
-      const classMetric = policy.classMetric === "pax"
-        ? Math.round(best * appliedPaxIndex(entry))
-        : best;
+      // Class ranking metric: every class ranks on the PAX-indexed best time
+      // — a pure rescale (identical order and points) for classes whose
+      // entries share one factor, and the official ordering for run-group
+      // classes whose entries carry per-driver derived factors (the printed
+      // group results are indexed). (scoring-policy.ts v2 dropped the old
+      // per-policy raw/pax ranking toggle — this is unconditional now.)
+      // Keep the indexed metric at full precision until the final points
+      // calculation. Rounding here can change points at a half-point boundary
+      // even when every entry in the class has the same PAX factor, violating
+      // the pure-rescale property described above.
+      const rankMetric = best * appliedPaxIndex(entry);
       const existing = byDriver.get(d.id);
-      if (existing == null || classMetric < existing) {
-        byDriver.set(d.id, classMetric);
+      if (existing == null || rankMetric < existing) {
+        byDriver.set(d.id, rankMetric);
       }
 
-      // Synthetic overall-PAX section (scoringPolicy.paxSection=true): index
+      // Synthetic overall-PAX section (ruleset policy paxSection=true): index
       // the same best-corrected time by the entry's paxClass factor and rank
       // across every class. Everything downstream (points formula, combined
       // groups, qualifying threshold, drops) treats it as one more class.
@@ -570,7 +575,7 @@ export async function buildSeasonLeaderboard(
     if (info == null) continue;
 
     // Sort desc by points to decide which scores are counted vs. dropped.
-    // scoringPolicy.drops="proportional" scales the counted target with
+    // Ruleset policy drops="proportional" scales the counted target with
     // season progress (see countedEventTarget); "fixed" keeps the historical
     // best-qualifyingEvents behavior.
     const sorted = [...rawScores].sort((a, b) => b.points - a.points);
@@ -636,4 +641,44 @@ export async function buildSeasonLeaderboard(
     return a.classCode.localeCompare(b.classCode);
   });
   return { totalEvents, completedEvents, qualifyingEvents, countedEvents, sections };
+}
+
+export type SeasonClassSummary = {
+  classCode: string;
+  driverCount: number;
+  leader: { driverId: number; driverName: string; totalPoints: number } | null;
+};
+
+export function summarizeSeasonSections(
+  sections: SeasonStandingsByClass[],
+): SeasonClassSummary[] {
+  return sections
+    .filter((section) => section.drivers.length > 0)
+    .map((section) => {
+      const leader = section.drivers[0];
+      return {
+        classCode: section.classCode,
+        driverCount: section.drivers.length,
+        leader:
+          leader == null
+            ? null
+            : {
+                driverId: leader.driverId,
+                driverName: leader.driverName,
+                totalPoints: leader.totalPoints,
+              },
+      };
+    });
+}
+
+export function findSeasonSection(
+  sections: SeasonStandingsByClass[],
+  classParam: string,
+): SeasonStandingsByClass | null {
+  const wanted = classParam.trim().toLowerCase();
+  if (wanted.length === 0) return null;
+  return (
+    sections.find((section) => section.classCode.toLowerCase() === wanted) ??
+    null
+  );
 }

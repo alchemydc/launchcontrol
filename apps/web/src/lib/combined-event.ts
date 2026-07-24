@@ -239,7 +239,8 @@ function buildOverallSection(events: CombinedSessionEvent[], penaltyMs: number):
  *
  * `penaltyMs` (League Foundation PR 2 Task 7) defaults to the shared
  * `CONE_PENALTY_MS` constant, so existing call sites are unchanged (parity).
- * The combined-event page passes the events' season `scoringPolicy.conePenaltyMs`.
+ * The combined-event page passes the events' assigned ruleset
+ * `policy.conePenaltyMs`.
  */
 export function buildCombinedResults(
   events: CombinedSessionEvent[],

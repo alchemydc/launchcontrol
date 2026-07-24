@@ -197,26 +197,32 @@ function DriverCard({
 
 export function LeaderboardTable({
   rows,
-  classCodes,
+  classCodes = [],
   showPaxView = false,
+  paxView,
   driverBasePath,
 }: {
   rows: LeaderboardRow[];
-  classCodes: string[];
+  classCodes?: string[];
   showPaxView?: boolean;
+  /** Set on a route-filtered class/PAX page. Omitting it retains the legacy
+   *  in-component class filter for callers that still need that mode. */
+  paxView?: boolean;
   /** "" for the legacy route (byte-identical to pre-Task-20 driver hrefs),
    *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` below. */
   driverBasePath?: string;
 }) {
   const [sorting, setSorting] = useState<SortingState>([
-    { id: "bestRawMs", desc: false },
+    { id: paxView ? "bestPaxMs" : "bestRawMs", desc: false },
   ]);
   const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
+  const fixedView = paxView != null;
   const paxActive = classFilter === PAX_VIEW;
   // Run-group class filters (M/N/S/P/X — heterogeneous per-entry factors)
   // rank by indexed time in PAX-standings mode, matching the official printed
   // group results. Uniform classes keep raw (identical order either way).
   const usesPaxMetric = (filterValue: string): boolean => {
+    if (fixedView) return paxView;
     if (!showPaxView) return false;
     if (filterValue === PAX_VIEW) return true;
     if (filterValue === ALL_CLASSES) return false;
@@ -241,10 +247,10 @@ export function LeaderboardTable({
   };
   const filteredRows = useMemo(
     () =>
-      classFilter === ALL_CLASSES || classFilter === PAX_VIEW
+      fixedView || classFilter === ALL_CLASSES || classFilter === PAX_VIEW
         ? rows
         : rows.filter((r) => r.classCode === classFilter),
-    [rows, classFilter],
+    [rows, classFilter, fixedView],
   );
 
   const { deltaByRow, rankByRow } = useMemo(() => {
@@ -424,8 +430,8 @@ export function LeaderboardTable({
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
-      {/* Filter header strip */}
-      <div className="flex flex-col gap-3 bg-muted/40 px-4 py-3 border-b border-border/60 md:flex-row md:items-center">
+      {!fixedView && (
+        <div className="flex flex-col gap-3 bg-muted/40 px-4 py-3 border-b border-border/60 md:flex-row md:items-center">
         <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground shrink-0">
           Filter class
         </span>
@@ -464,13 +470,14 @@ export function LeaderboardTable({
         <span className="rounded-full bg-background px-3 py-1 text-xs tabular-nums text-muted-foreground shrink-0 self-start md:self-auto md:ml-auto">
           {filteredRows.length} of {rows.length}
         </span>
-      </div>
+        </div>
+      )}
 
       {/* Mobile: card list */}
       <ul className="md:hidden divide-y divide-border/60">
         {sortedRows.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-muted-foreground">
-            No entries match the current filter.
+            {fixedView ? "No entries in this class." : "No entries match the current filter."}
           </li>
         ) : (
           sortedRows.map((row) => (
@@ -515,7 +522,7 @@ export function LeaderboardTable({
                   colSpan={columns.length}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
-                  No entries match the current filter.
+                  {fixedView ? "No entries in this class." : "No entries match the current filter."}
                 </TableCell>
               </TableRow>
             ) : (

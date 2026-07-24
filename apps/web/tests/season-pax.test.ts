@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
 import { buildSeasonLeaderboard, countedEventTarget } from "@/lib/season-leaderboard";
-import { ensureLeagueAndSeasons } from "./helpers/league-fixture";
+import { ensureLeagueAndSeasons, ensureRuleset } from "./helpers/league-fixture";
 
 // Unique per-file DB path — see ingest.test.ts for the rationale.
 const TEST_DB_PATH = resolve(__dirname, "..", "test-season-pax.db");
@@ -13,12 +13,8 @@ const TEST_DB_URL = "file:./test-season-pax.db";
 
 const YEAR = 2026;
 
-const FIXED_RAW_POLICY =
-  '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}';
-const FIXED_PAX_SECTION_POLICY =
-  '{"v":1,"drops":"fixed","paxSection":true,"classMetric":"raw","conePenaltyMs":2000}';
-const FIXED_PAX_CLASSMETRIC_POLICY =
-  '{"v":1,"drops":"fixed","paxSection":true,"classMetric":"pax","conePenaltyMs":2000}';
+const FIXED_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
+const FIXED_PAX_SECTION_POLICY = '{"v":2,"drops":"fixed","paxSection":true,"conePenaltyMs":2000}';
 
 let prisma: PrismaClient;
 let seasonId: number;
@@ -47,6 +43,13 @@ beforeAll(async () => {
 
   const { leagueId, seasonIdByYear } = await ensureLeagueAndSeasons(prisma, [YEAR]);
   seasonId = seasonIdByYear.get(YEAR)!;
+  // Dedicated ruleset per test season (Task R2: policy lives on the ruleset,
+  // read live) — so the setPolicy helpers below can't leak edits into the
+  // other season through a shared ruleset row.
+  await prisma.season.update({
+    where: { id: seasonId },
+    data: { rulesetId: await ensureRuleset(prisma, leagueId, { name: "Season Pax Rules", policy: FIXED_POLICY }) },
+  });
 
   const [as, bst, x, ds, ast] = await Promise.all([
     prisma.carClass.create({ data: { leagueId, code: "AS", paxIndex: 0.83 } }),
@@ -115,6 +118,10 @@ beforeAll(async () => {
     { year: 2027 },
   ]);
   conePenaltySeasonId = seasonIdByYear2027.get(2027)!;
+  await prisma.season.update({
+    where: { id: conePenaltySeasonId },
+    data: { rulesetId: await ensureRuleset(prisma, leagueId, { name: "Cone Penalty Rules", policy: FIXED_POLICY }) },
+  });
 
   const cs = await prisma.carClass.create({ data: { leagueId, code: "CS", paxIndex: 0.9 } });
   const conePenaltyEvent = await prisma.event.create({
@@ -161,19 +168,103 @@ afterAll(async () => {
 });
 
 async function setPolicy(policy: string) {
-  await prisma.season.update({ where: { id: seasonId }, data: { scoringPolicy: policy } });
+  const season = await prisma.season.findUniqueOrThrow({ where: { id: seasonId } });
+  await prisma.scoringSystem.update({ where: { id: season.rulesetId }, data: { policy } });
 }
 
-describe("season PAX section (Season.scoringPolicy.paxSection)", () => {
-  it("is absent by default — leaderboard unchanged, run-group ranked by raw", async () => {
-    await setPolicy(FIXED_RAW_POLICY);
+describe("season PAX section (ruleset policy paxSection)", () => {
+  // Task R1: class ranking is unconditionally on the applied-PAX-indexed
+  // best time now — there's no more per-policy raw/pax toggle. A uniform-
+  // factor class (AS: every entry's paxClass is AS itself) is a pure
+  // rescale of the raw best, so it reproduces the exact pre-R1 "raw" points.
+  // A mixed-factor run group (X: Xena's paxClass is DS, Yuri's is AST) now
+  // always uses the official indexed order — this is the R1 behavior change
+  // (previously only the "pax" ranking setting produced this; "raw"
+  // incorrectly ranked X by unindexed raw time, with Yuri's faster raw
+  // time winning).
+  it("class sections rank on applied PAX unconditionally — uniform-factor classes reproduce the pre-R1 points; mixed-factor run groups use the official indexed order", async () => {
+    await setPolicy(FIXED_POLICY);
     const result = await buildSeasonLeaderboard(YEAR, prisma);
     expect(result.sections.map((s) => s.classCode)).toEqual(["AS", "BST", "X"]);
-    // Default (raw) metric: Yuri's faster RAW time wins X.
+
+    const as = result.sections.find((s) => s.classCode === "AS")!;
+    // Same factor ⇒ pax metric is a pure rescale ⇒ identical points to raw.
+    expect(as.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Alice A.", 1000],
+      ["Carol C.", 952], // round(1000 × 40000 / 42000) — unchanged from raw
+    ]);
+
+    // Heterogeneous run group ⇒ official (indexed) order: Xena beats Yuri,
+    // reversing the raw-time order (Yuri's raw 40500 < Xena's raw 41000).
     const x = result.sections.find((s) => s.classCode === "X")!;
-    expect(x.drivers.map((d) => d.driverName)).toEqual(["Yuri Y.", "Xena X."]);
-    expect(x.drivers[0]!.totalPoints).toBe(1000);
-    expect(x.drivers[1]!.totalPoints).toBe(988); // round(1000 × 40500 / 41000)
+    expect(x.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Xena X.", 1000],
+      ["Yuri Y.", 982], // round(1000 × 33251 / 33858)
+    ]);
+  });
+
+  it("preserves exact raw-time points for a uniform factor at an indexed-rounding boundary", async () => {
+    const parityYear = 2028;
+    const { leagueId, seasonIdByYear } = await ensureLeagueAndSeasons(prisma, [parityYear]);
+    const paritySeasonId = seasonIdByYear.get(parityYear)!;
+    await prisma.season.update({
+      where: { id: paritySeasonId },
+      data: {
+        rulesetId: await ensureRuleset(prisma, leagueId, {
+          name: "Uniform Factor Parity Rules",
+          policy: FIXED_POLICY,
+        }),
+      },
+    });
+
+    const parityClass = await prisma.carClass.create({
+      data: { leagueId, code: "PAR", paxIndex: 0.814 },
+    });
+    const parityEvent = await prisma.event.create({
+      data: {
+        seasonId: paritySeasonId,
+        slug: "2028-uniform-factor-parity",
+        name: "Uniform Factor Parity",
+        date: new Date("2028-04-16T00:00:00.000Z"),
+      },
+    });
+    const parityDrivers = await Promise.all([
+      prisma.driver.create({
+        data: { firstName: "Fast", lastInitial: "F.", identityHash: "uniform-parity-fast" },
+      }),
+      prisma.driver.create({
+        data: { firstName: "Near", lastInitial: "N.", identityHash: "uniform-parity-near" },
+      }),
+    ]);
+
+    for (const [index, rawTimeMs] of [30000, 30045].entries()) {
+      const driver = parityDrivers[index]!;
+      const entry = await prisma.entry.create({
+        data: {
+          eventId: parityEvent.id,
+          driverId: driver.id,
+          classId: parityClass.id,
+          paxClassId: parityClass.id,
+          carNumber: String(index + 1),
+        },
+      });
+      await prisma.run.create({
+        data: {
+          entryId: entry.id,
+          runNumber: 1,
+          rawTimeMs,
+          cones: 0,
+          disposition: RunDisposition.CLEAN,
+        },
+      });
+    }
+
+    const result = await buildSeasonLeaderboard(parityYear, prisma);
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0]!.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Fast F.", 1000],
+      ["Near N.", 999], // round(1000 × 30000 / 30045)
+    ]);
   });
 
   it("adds an overall PAX section pinned first when enabled", async () => {
@@ -191,26 +282,9 @@ describe("season PAX section (Season.scoringPolicy.paxSection)", () => {
       ["Carol C.", 952], // round(1000 × 33200 / 34860)
     ]);
   });
-
-  it("classMetric=pax: uniform-factor class sections keep identical points; run groups rank by pax", async () => {
-    await setPolicy(FIXED_PAX_CLASSMETRIC_POLICY);
-    const result = await buildSeasonLeaderboard(YEAR, prisma);
-    const as = result.sections.find((s) => s.classCode === "AS")!;
-    // Same factor ⇒ pax metric is a pure rescale ⇒ identical points to raw.
-    expect(as.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
-      ["Alice A.", 1000],
-      ["Carol C.", 952], // round(1000 × 40000 / 42000) — unchanged from raw
-    ]);
-    // Heterogeneous run group ⇒ official (indexed) order: Xena beats Yuri.
-    const x = result.sections.find((s) => s.classCode === "X")!;
-    expect(x.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
-      ["Xena X.", 1000],
-      ["Yuri Y.", 982], // round(1000 × 33251 / 33858)
-    ]);
-  });
 });
 
-describe("countedEventTarget (scoringPolicy.drops)", () => {
+describe("countedEventTarget (ruleset policy drops)", () => {
   it("fixed mode counts the qualifying threshold regardless of progress", () => {
     expect(countedEventTarget(10, 6, 5, "fixed")).toBe(6);
     expect(countedEventTarget(6, 4, 3, "fixed")).toBe(4);
@@ -231,12 +305,13 @@ describe("countedEventTarget (scoringPolicy.drops)", () => {
 
 describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
   async function setConePenaltyPolicy(policy: string) {
-    await prisma.season.update({ where: { id: conePenaltySeasonId }, data: { scoringPolicy: policy } });
+    const season = await prisma.season.findUniqueOrThrow({ where: { id: conePenaltySeasonId } });
+    await prisma.scoringSystem.update({ where: { id: season.rulesetId }, data: { policy } });
   }
 
   it("a season's default 2000ms policy (matching CONE_PENALTY_MS) is the parity baseline", async () => {
     await setConePenaltyPolicy(
-      '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+      '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
@@ -248,7 +323,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("a 1000ms-penalty season scores this same matchup differently end-to-end — the win flips", async () => {
     await setConePenaltyPolicy(
-      '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":1000}',
+      '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":1000}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
@@ -258,9 +333,9 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
     expect(cs.drivers[1]!.totalPoints).toBe(981); // round(1000 × 52000 / 53000)
   });
 
-  it("the same 1000ms penalty also flips the synthetic overall-PAX section (scoringPolicy.paxSection)", async () => {
+  it("the same 1000ms penalty also flips the ruleset's synthetic overall-PAX section", async () => {
     await setConePenaltyPolicy(
-      '{"v":1,"drops":"fixed","paxSection":true,"classMetric":"raw","conePenaltyMs":1000}',
+      '{"v":2,"drops":"fixed","paxSection":true,"conePenaltyMs":1000}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const pax = result.sections.find((s) => s.classCode === "PAX")!;
@@ -270,7 +345,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("restoring the 2000ms policy restores the original (parity) order — the threading is not one-directional", async () => {
     await setConePenaltyPolicy(
-      '{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}',
+      '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
@@ -278,13 +353,15 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
   });
 
   it("the unrelated 2026 season fixture is unaffected by any of the above (default seasons unchanged)", async () => {
-    // Reset to this file's baseline policy — a prior describe block
-    // (classMetric=pax) left the 2026 season's policy mutated, same as
-    // every other test in that block does at its own start via setPolicy().
-    await setPolicy(FIXED_RAW_POLICY);
+    // Reset to this file's baseline policy — a prior describe block left the
+    // 2026 season's policy mutated, same as every other test in that block
+    // does at its own start via setPolicy().
+    await setPolicy(FIXED_POLICY);
     const result = await buildSeasonLeaderboard(YEAR, prisma);
     expect(result.sections.map((s) => s.classCode)).toEqual(["AS", "BST", "X"]);
+    // X ranks by applied PAX unconditionally (Task R1) — Xena's indexed time
+    // beats Yuri's, same official order as the earlier describe block.
     const x = result.sections.find((s) => s.classCode === "X")!;
-    expect(x.drivers.map((d) => d.driverName)).toEqual(["Yuri Y.", "Xena X."]);
+    expect(x.drivers.map((d) => d.driverName)).toEqual(["Xena X.", "Yuri Y."]);
   });
 });
