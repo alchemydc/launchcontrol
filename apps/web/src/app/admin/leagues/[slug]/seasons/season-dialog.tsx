@@ -47,6 +47,15 @@ const CLASS_METRIC_OPTIONS: { value: ClassMetric; label: string }[] = [
   { value: "pax", label: "PAX — class sections rank on time × PAX index" },
 ];
 
+/** Fallback when a stored Season.scoringPolicy can't be parsed — mirrors preset-dialog's DEFAULT_POLICY. */
+const DEFAULT_POLICY: ScoringPolicy = {
+  v: 1,
+  drops: "fixed",
+  paxSection: false,
+  classMetric: "raw",
+  conePenaltyMs: 2000,
+};
+
 /** Sentinel for "use the league's default preset" — not a real preset name. */
 const DEFAULT_PRESET = "__league_default__";
 
@@ -240,10 +249,19 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
   const [status, setStatus] = useState<SeasonStatus>(season.status);
   const [paxTable, setPaxTable] = useState(season.paxTable);
   // Every Season row is written through updateSeason/createSeason, which both
-  // validate via parseScoringPolicy before persisting — a malformed policy
-  // here is a data bug, so this throws with a diagnostic message rather than
-  // silently accepting a wrong-shaped value (see scoring-policy.ts).
-  const initialPolicy = parseScoringPolicy(season.scoringPolicy);
+  // validate via parseScoringPolicy before persisting, so a malformed stored
+  // policy should never happen — but if a legacy/hand-edited row is bad, fall
+  // back to a default instead of throwing during render (that would crash
+  // this dialog, the one admin surface that could repair the row). Mirrors
+  // EditPresetDialog's `preset.policy ?? DEFAULT_POLICY` idiom.
+  let initialPolicy: ScoringPolicy;
+  let policyWasInvalid = false;
+  try {
+    initialPolicy = parseScoringPolicy(season.scoringPolicy);
+  } catch {
+    initialPolicy = DEFAULT_POLICY;
+    policyWasInvalid = true;
+  }
   const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
   const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
   const [classMetric, setClassMetric] = useState<ClassMetric>(initialPolicy.classMetric);
@@ -289,7 +307,12 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
     const newPolicy = JSON.stringify({
       v: 1, drops, paxSection, classMetric, conePenaltyMs: coneNum,
     });
-    if (newPolicy !== JSON.stringify(initialPolicy)) patch.scoringPolicy = newPolicy;
+    // Force a canonical rewrite when the stored policy couldn't be parsed,
+    // even if the form's fields still match the fallback defaults — same as
+    // EditPresetDialog's `preset.policy === null` branch.
+    if (policyWasInvalid || newPolicy !== JSON.stringify(initialPolicy)) {
+      patch.scoringPolicy = newPolicy;
+    }
 
     if (Object.keys(patch).length === 0) {
       setPending(false);
