@@ -242,7 +242,7 @@ export async function LeagueGate() {
                 <Link
                   href={`/admin/leagues/${league.slug}`}
                   aria-label={`Edit ${league.name} settings`}
-                  className="absolute right-3 top-3 z-10 rounded-full bg-background/80 backdrop-blur p-2 text-muted-foreground shadow-sm border border-border/70 hover:text-primary hover:border-primary/40 transition-colors"
+                  className="absolute left-3 top-3 z-10 rounded-full bg-background/80 backdrop-blur p-2 text-muted-foreground shadow-sm border border-border/70 hover:text-primary hover:border-primary/40 transition-colors"
                 >
                   <Pencil className="h-4 w-4" />
                 </Link>
