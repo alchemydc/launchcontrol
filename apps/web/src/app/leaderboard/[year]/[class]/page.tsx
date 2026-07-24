@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import {
   buildSeasonLeaderboard,
+  findSeasonSection,
   listSeasonYears,
   summarizeSeasonSections,
 } from "@/lib/season-leaderboard";
-import { SeasonOverviewView } from "../season-overview-view";
+import { SeasonLeaderboardView } from "../../season-leaderboard-view";
 import { gateResultsPage } from "@/lib/session";
 
 // ISR: rendered on demand, then cached for 5 minutes. Gated deployments
@@ -12,15 +13,25 @@ import { gateResultsPage } from "@/lib/session";
 // per-request instead.
 export const revalidate = 300;
 
-export default async function LeaderboardYearPage({
+/** Class URL segments may arrive percent-encoded; a stray `%` must 404, not 500. */
+function decodeClassParam(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+export default async function LeaderboardClassPage({
   params,
 }: {
-  params: Promise<{ year: string }>;
+  params: Promise<{ year: string; class: string }>;
 }) {
-  const { year: yearStr } = await params;
+  const { year: yearStr, class: rawClass } = await params;
 
-  // Gate runs before the year range check so unauth viewers can't probe valid vs invalid years.
-  await gateResultsPage(`/leaderboard/${yearStr}`);
+  // Gate runs before the year/class checks so unauth viewers can't probe
+  // valid vs invalid params.
+  await gateResultsPage(`/leaderboard/${yearStr}/${rawClass}`);
 
   const year = Number(yearStr);
 
@@ -31,12 +42,15 @@ export default async function LeaderboardYearPage({
 
   const years = await listSeasonYears();
   const result = await buildSeasonLeaderboard(year);
+  const section = findSeasonSection(result.sections, decodeClassParam(rawClass));
+  if (section == null) notFound();
 
   return (
-    <SeasonOverviewView
+    <SeasonLeaderboardView
       year={year}
       years={years}
-      summaries={summarizeSeasonSections(result.sections)}
+      section={section}
+      allSummaries={summarizeSeasonSections(result.sections)}
       totalEvents={result.totalEvents}
       completedEvents={result.completedEvents}
       qualifyingEvents={result.qualifyingEvents}
