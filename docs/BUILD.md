@@ -784,6 +784,48 @@ PR 2 of the multi-club initiative, stacked on League Foundation (PR 1). Ships a 
 
 **Docker (`Dockerfile`/`compose.yaml`/`deploy/launchcontrol.env.example`, ported from the archive, already club-agnostic):** the optional `ingest` sidecar profile passes `--league "$${INGEST_LEAGUE:-}"` to `ingest:rmsolo`; an empty/unset `INGEST_LEAGUE` falls through to `DEFAULT_LEAGUE_SLUG` (the ingest CLI's own default, not a shell conditional). `deploy/launchcontrol.env.example` documents both `DEFAULT_LEAGUE_SLUG` and `INGEST_LEAGUE`, plus the first-boot step for adding a second league/season via `docker compose exec web pnpm --filter web league:create/season:create`. See the Appendix note below — containerization is no longer a deferred item.
 
+### League Admin (PR 3) — two-tier roles, membership gating, PAX snapshots ✓ (done 2026-07-23)
+
+PR 3 of 3 in the multi-club initiative. Closes PR 2's two deferred gaps — `LeagueMembership` had no write path and only the default league could gate on MSR org membership — with a real role model, and separately freezes PAX scoring against a snapshot so a later factor correction can't reach back and reshape an already-scored event.
+
+**Role model — two tiers:**
+
+- **Superuser** (`src/lib/super-user.ts`) — global, deployment-wide. Bootstrapped irrevocably from the `ADMIN_MSR_UIDS` env allowlist (checked first, no DB read) or granted via a `SuperUser` row (`{ msrUid }`, unique). `setSuperUser()` refuses to revoke a uid that's still in the env allowlist — the env bootstrap can only be undone by editing the env var. A superuser administers every league and bypasses every per-league gate.
+- **Per-league membership** (`src/lib/membership.ts`, `LeagueMembership` table, `(leagueId, msrUid)` unique) — `role` is one of `ADMIN` / `MEMBER` / `BLOCKED`. `ADMIN` grants that one league's admin surface (`isLeagueAdmin()`); `MEMBER` and `ADMIN` both satisfy a `"required"` access gate for that league; `BLOCKED` denies it outright, overriding an org match. Written today only via the admin UI (`/admin/leagues/[slug]/members`) and its REST route (`POST/DELETE /api/admin/leagues/[slug]/members`) — no more manual `prisma studio` edits needed.
+- **Gate helpers** (`src/lib/admin.ts`): `isLeagueAdmin(msrUid, leagueId)` (superuser OR ADMIN row on that league), `isAnyLeagueAdmin(msrUid)` (superuser OR ADMIN row on any league — gates the coarse `/admin` entry point), `administeredLeagues(msrUid)` (every league for a superuser, else just the leagues where the uid holds an ADMIN row — feeds the `/admin` index and the events/audit league filters).
+
+**Access decision chain (`decideLeagueAccess`, `src/lib/league-access.ts`) — exact order:**
+
+1. Superuser → **allow** (unconditional).
+2. `membershipRole === "BLOCKED"` → **deny**.
+3. `membershipRole` is `"ADMIN"` or `"MEMBER"` → **allow**.
+4. `accessGate !== "required"` (i.e. `"optional"`/`"none"`) → **allow**.
+5. `msrOrgId` set on the league AND the session's `msrOrgIds` includes it → **allow**.
+6. Otherwise → **redirect** (bounce to sign-in, `returnTo` preserved).
+
+Public gates (`"optional"`/`"none"`) short-circuit at step 4 without any session or DB read, so a `BLOCKED` row only ever bites on a `"required"` gate — "BLOCKED is gated-access-only" is by design, not an oversight. `checkLeagueAccess()`/`requireMember()` in `src/lib/session.ts` resolve this chain per-league (superuser + membership-role lookups run in parallel via `Promise.all`), replacing the old default-league-only `isRmrMember` flag as the sole per-league gate; both call sites turn `"deny"` into a no-`returnTo` redirect (no point looping a blocked user back to sign-in) and `"redirect"` into a `returnTo`-carrying one. **Both temporary PR 2 guards that refused a `"required"` gate on any non-default league are deleted now that real per-league gating exists:** `league-config.ts`'s `toLeagueConfig` throw, and `createLeague`'s refusal of `--gate required` (see README update below).
+**Disclosure:** org matching reads `session.msrOrgIds`, captured at MSR login (Task 5) — sessions minted before this field shipped lack it and fall through to step 6 (redirect); affected users simply re-login. `/admin/audit`'s league filter is an approximation (best-effort match against audit detail, not a hard FK) — see the route's own comment for the exact heuristic.
+
+**PAX snapshot semantics (`Entry.paxIndexApplied`, `src/lib/pax-applied.ts`/`pax-reapply.ts`):**
+
+- **Stamped at ingest, not read live.** Both pipelines (`src/lib/ingest.ts` for AxWare, `src/lib/rmsolo-ingest.ts` for RMsolo) resolve the PAX factor once at ingest time and write it onto `Entry.paxIndexApplied`. Scoring (`appliedPaxIndex()`) reads that frozen column, falling back to the live `entry.paxClass.paxIndex` join only when the snapshot is `null` (a data anomaly post-backfill, not the normal path). Net effect: editing a `CarClass.paxIndex` later (a rules-committee correction, a new season's table) never reaches back and reshapes an already-scored entry.
+- **Backfilled frozen-at-migration-time.** Migration `20260724020000_entry_pax_applied` adds the nullable `Decimal` column and backfills every pre-existing `Entry` from its **current** `CarClass.paxIndex` — the real at-ingest factor for old rows is unrecoverable (same caveat as `Driver.nameOnlyHash`), so historical entries freeze at whatever the live table said on migration day, not at whatever it said when they actually raced.
+- **Re-apply blast radius (`reapplySeasonPaxFactors()`):** an admin action, scoped to **one `Season`** at a time (`POST /api/admin/leagues/[slug]/seasons/[seasonSlug]/pax-reapply`, surfaced from the season editor). It reads that season's own `Season.paxTable` JSON (`{ code: factor }`, validated by `parseSeasonPaxTableStrict()` — positive finite numbers only, throws otherwise) and stamps `paxIndexApplied` onto every `Entry` under that season whose `paxClass.code` is a key of the table — scoped additionally to the season's own league, since `CarClass.code` is only unique per-league. Codes **absent** from the table are left untouched (an entry ingested under a class the season's override table doesn't cover keeps whatever was stamped at ingest). This is a deliberate, bounded history rewrite: one season's worth of entries, one admin click, auditable (`writeAudit` records the `{ updated, codes }` result under `action: "season.update"`).
+
+**Ingest-now capability gating (`src/lib/rmsolo-run.ts`, `POST /api/admin/leagues/[slug]/ingest-now`):** the on-demand "Ingest now" admin-dashboard button (shipped in Task 18, doc'd here for completeness) is gated by `ingestNowCapability()` — `INGEST_NOW_ENABLED=1` env AND a memoized `pdftotext -v` probe — so the button/route is invisible/disabled unless both the operator opted in and poppler is actually on `PATH`. The route's full chain: `guardLeagueAdmin(slug)` (404 fail-closed, not 403 — a non-admin can't distinguish "no such league" from "not allowed") → capability gate (501 + reason) → a per-league in-process mutex (409 if a scrape is already running for that league) → run the shared scrape (`runRmsoloIngest`, the same code path as the CLI and the sidecar) → best-effort audit write (`action: "ingest.now"`, failure logged but doesn't fail the request) → JSON counts.
+
+**Other surfaces shipped in this PR** (see task history for detail): league/season/scoring-preset admin CRUD (lib functions + REST routes + dialogs under `/admin/leagues/[slug]/...`); a members-only lock badge on `/leagues` directory cards for `"required"`-gate leagues; league-scoped driver routes; a per-season Events tab on league pages.
+
+**Deferred / known limitations:** audit's league filter is a best-effort approximation, not a hard join (see above). Sessions minted before `msrOrgIds` shipped need a re-login to get per-league org gating. `BLOCKED` has no effect on public (`"optional"`/`"none"`) leagues by design.
+
+**Deploy runbook (two new migrations, both additive — much lower-risk than League Foundation's table rebuilds above):**
+
+- **`20260724010000_super_user`** — `CREATE TABLE "SuperUser"` + a unique index on `msrUid`. New table only; nothing existing is touched. Deliberately **not** backfilled from `ADMIN_MSR_UIDS` — the env allowlist stays the irrevocable bootstrap (same posture as `LeagueMembership`: env is config, rows are data).
+- **`20260724020000_entry_pax_applied`** — `ALTER TABLE "Entry" ADD COLUMN "paxIndexApplied" DECIMAL` (nullable), then one `UPDATE` backfilling every existing row from its **current** `CarClass.paxIndex` via a correlated subquery. The backfill is idempotent — re-running it just re-sets each row to today's live factor again, a no-op if no `CarClass.paxIndex` changed in between.
+- **Back up first** (same as League Foundation's runbook: a Turso platform snapshot, or `turso db shell <db> .dump` piped to a file) — the `Entry` backfill is a bulk `UPDATE` across every row in the table.
+- **One `pnpm --filter web migrate:turso` run applies both** (`prisma migrate deploy` runs pending migrations in filename order — `..._super_user` then `..._entry_pax_applied` — in a single invocation). No seed step, no pre-flight collision query (unlike League Foundation) — both migrations are unconditionally safe to run against any prior schema state.
+- Promote the build in the same window as the migration, per the existing rule above: old code against the new schema, or new code against the old schema, is unsupported.
+
 ### M3 — Public calendar (target: 0.5 session, after M2)
 
 - `/calendar` server-fetches `/rest/calendars/organization/{RMR_ORG_ID}`.
