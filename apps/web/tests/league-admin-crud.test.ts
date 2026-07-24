@@ -265,7 +265,7 @@ describe("updateSeason", () => {
     ).rejects.toThrow(/no season with slug 'does-not-exist'/);
   });
 
-  it("never changes scoringPolicy", async () => {
+  it("leaves scoringPolicy untouched when the patch omits it", async () => {
     const { league } = await createLeague({ slug: "us-policy-snapshot", name: "US Policy Snapshot League" }, prisma);
     const season = await createSeason({ leagueSlug: league.slug, name: "US Policy Season", year: 2100 }, prisma);
     const before = season.scoringPolicy;

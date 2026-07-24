@@ -9,7 +9,7 @@ export function buildPaxRows(overridesJson: string): PaxRow[] {
   return codes.map((code) => {
     const builtin = RMSOLO_PAX_2026[code] ?? null;
     const value = overrides[code] ?? builtin ?? 1.0;
-    return { code, builtin, value, overridden: overrides[code] != null };
+    return { code, builtin, value, overridden: builtin === null || value !== builtin };
   });
 }
 

@@ -47,6 +47,10 @@ export function PaxTableEditor({
     );
   }
 
+  function handleRemove(code: string) {
+    commit(rows.filter((r) => r.code !== code));
+  }
+
   function handleAdd() {
     const code = newCode.trim().toUpperCase();
     if (!code) {
@@ -58,8 +62,8 @@ export function PaxTableEditor({
       return;
     }
     const parsed = Number(newValue);
-    if (!Number.isFinite(parsed)) {
-      setAddError("Factor must be a number");
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setAddError("Factor must be a positive number");
       return;
     }
     setAddError(null);
@@ -116,6 +120,16 @@ export function PaxTableEditor({
                       Reset
                     </Button>
                   )}
+                  {row.builtin === null && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemove(row.code)}
+                    >
+                      Remove
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -127,6 +141,12 @@ export function PaxTableEditor({
           <Input
             value={newCode}
             onChange={(e) => setNewCode(e.target.value.toUpperCase())}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAdd();
+              }
+            }}
             placeholder="Code (e.g. ZZZ)"
             className="w-32 font-mono"
           />
@@ -137,6 +157,12 @@ export function PaxTableEditor({
             max="1.5"
             value={newValue}
             onChange={(e) => setNewValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAdd();
+              }
+            }}
             className="w-24"
           />
           <Button type="button" variant="outline" size="sm" onClick={handleAdd}>

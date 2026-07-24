@@ -468,7 +468,7 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-season-pax">PAX factors</Label>
+            <Label>PAX factors</Label>
             <PaxTableEditor value={paxTable} onChange={setPaxTable} />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}

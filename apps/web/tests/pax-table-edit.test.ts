@@ -32,6 +32,15 @@ describe("buildPaxRows", () => {
     expect(serializePaxOverrides(rows)).toBe(JSON.stringify({ ZZZ: 0.5 }));
   });
 
+  it("a stored override equal to the builtin value is not reported as overridden", () => {
+    const builtinCs = RMSOLO_PAX_2026["CS"];
+    expect(builtinCs).toBeDefined();
+    const rows = buildPaxRows(JSON.stringify({ CS: builtinCs }));
+    const cs = rows.find((r) => r.code === "CS");
+    expect(cs).toBeDefined();
+    expect(cs!.overridden).toBe(false);
+  });
+
   it("editing a row's value back to its builtin drops it from serialization", () => {
     const rows = buildPaxRows(JSON.stringify({ CS: 0.9 }));
     const reverted = rows.map((r) =>
