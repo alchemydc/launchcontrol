@@ -16,7 +16,13 @@ export type ParsedEntry = {
 };
 export type ParsedRmsoloEvent = { title: string; classCodes: string[]; entries: ParsedEntry[] };
 
-/** Shells out to poppler's pdftotext. CLI-only — never imported by app routes. */
+/**
+ * Shells out to poppler's pdftotext. Importable by the shared scrape lib
+ * (rmsolo-run.ts), but only ever executed behind the INGEST_NOW_ENABLED
+ * capability gate: the admin route imports that lib DYNAMICALLY inside its
+ * handler so a serverless build never statically bundles this child-process
+ * path into a hot module.
+ */
 export function extractPdfText(pdfPath: string): string {
   try {
     return execFileSync("pdftotext", ["-layout", pdfPath, "-"], { encoding: "utf8" });

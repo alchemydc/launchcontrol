@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
 export type AuditAction =
   | "ingest"
+  | "ingest.now"
   | "event.update"
   | "event.delete"
   | "league.create"

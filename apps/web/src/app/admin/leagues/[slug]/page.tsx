@@ -8,6 +8,7 @@ import { isLeagueAdmin } from "@/lib/admin";
 import { isSuperUser } from "@/lib/super-user";
 import { prisma } from "@/lib/prisma";
 import { LeagueSettingsForm } from "./league-settings-form";
+import { IngestNowButton } from "./ingest-now-button";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,14 @@ export default async function AdminLeaguePage({
   if (!(await isLeagueAdmin(session.msrUid, league.id))) notFound();
 
   const canDelete = await isSuperUser(session.msrUid);
+
+  // Dynamic import so the page's static graph never pulls in the scrape lib's
+  // child-process (pdftotext) path. Capability-only gating for now: a league
+  // without an RMsolo source (e.g. a PCA .axdb league) would still see the
+  // button on an INGEST_NOW_ENABLED deployment — acceptable for the MVP, since
+  // the flag is only set on RMsolo Docker deployments.
+  const { ingestNowCapability } = await import("@/lib/rmsolo-run");
+  const canIngestNow = ingestNowCapability().enabled;
 
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-16">
@@ -116,22 +125,20 @@ export default async function AdminLeaguePage({
           </div>
         </div>
 
-        {/*
-          Ingest-now placeholder — Task 18 fills this in with a
-          capability-gated "run the daily rmsolo scrape now" action scoped
-          to this league. Left as a clearly-marked, disabled slot so this
-          task doesn't have to guess at that task's UI.
-        */}
-        <Card className="opacity-60">
-          <CardHeader>
-            <CardTitle>Ingest now</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Manual on-demand ingest is coming in a later task.
-            </p>
-          </CardContent>
-        </Card>
+        {canIngestNow && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Ingest now</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <p className="text-sm text-muted-foreground">
+                Fetch the latest RMsolo results for this league on demand. Already-ingested events
+                are skipped by content hash, so re-running is safe.
+              </p>
+              <IngestNowButton slug={league.slug} />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </main>
   );
