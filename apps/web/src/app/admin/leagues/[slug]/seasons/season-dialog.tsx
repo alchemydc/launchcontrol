@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -23,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { parseScoringPolicy, type ScoringPolicy } from "@/lib/scoring-policy";
+import { canonicalPaxJson } from "@/lib/pax-table-edit";
+import { PaxTableEditor } from "./pax-table-editor";
 import type { SeasonRow } from "./seasons-table";
 
 export type PresetOption = { name: string };
@@ -303,7 +304,7 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
     if (yearNum !== season.year) patch.year = yearNum;
     if (plannedNum !== season.plannedEvents) patch.plannedEvents = plannedNum;
     if (status !== season.status) patch.status = status;
-    if (paxTable !== season.paxTable) patch.paxTable = paxTable;
+    if (canonicalPaxJson(paxTable) !== canonicalPaxJson(season.paxTable)) patch.paxTable = paxTable;
     const newPolicy = JSON.stringify({
       v: 1, drops, paxSection, classMetric, conePenaltyMs: coneNum,
     });
@@ -467,15 +468,8 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-season-pax">PAX table (JSON: class code → factor)</Label>
-            <Textarea
-              id="edit-season-pax"
-              value={paxTable}
-              onChange={(e) => setPaxTable(e.target.value)}
-              className="font-mono text-xs"
-              rows={6}
-              required
-            />
+            <Label htmlFor="edit-season-pax">PAX factors</Label>
+            <PaxTableEditor value={paxTable} onChange={setPaxTable} />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
