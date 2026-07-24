@@ -17,69 +17,49 @@ export const PAX_SECTION_CODE = "PAX";
 // ---------------------------------------------------------------------------
 
 /**
- * Dynamic qualifying threshold: "clear 51% of the season".
- * floor(N/2) + 1 where N = `max(plannedForYear, actualGroups)` — actual
- * scoring groups ingested so far, raised to the planned season size when the
- * Season row configures one (M1.16), so a mid-season count doesn't shrink
- * the threshold below what the full season will require (M1.15: events
- * sharing a calendar date are auto-grouped into one combined scoring event,
- * so N counts *groups*, not raw `Event` rows).
- * N=6→4, N=7→4, N=8→5.
- *
- * Combined with the per-event invariant codified in PRD §2 ("Data invariants:
- * one class per driver per event"), 2 × threshold > N means a driver who
- * reaches the threshold in any one class cannot also reach it in another
- * class within the same season. The "a driver can only win in one class"
- * rule (M1.14, AX chair 2026-06-08) is therefore enforced by arithmetic,
- * conditioned on that invariant — no per-driver capping code is needed. This
- * still holds under M1.16 since actual ≤ N.
- */
-function qualifyingEventCount(totalEventsInSeason: number): number {
-  return Math.floor(totalEventsInSeason / 2) + 1;
-}
-
-/**
  * How many scores count toward totalPoints right now (the ruleset policy's
- * `drops` mode).
+ * `dropCount` + `dropTiming`).
  *
- * fixed (default, PCA): always the qualifying threshold — mid-season nothing
- * drops because nobody has more than `qualifyingEvents` scores yet.
+ * fixed (default, PCA): always use the season-end target N - dropCount —
+ * mid-season nothing drops until a driver has more scores than that target.
  * proportional (RMsolo): drops accrue with season progress — at completed C
- * of N events, floor(C × (N−K)/N) scores drop (K = qualifying threshold), so
- * a half-run 10-event best-6 season counts best 3 of 5 ("half the season,
- * half the drops"), converging on exactly best-K-of-N at season end.
+ * of N events, floor(C × dropCount/N) scores drop, so a half-run 10-event,
+ * four-drop season counts best 3 of 5 ("half the season, half the drops"),
+ * converging on exactly best-6-of-10 at season end.
  */
 export function countedEventTarget(
   totalEvents: number,
-  qualifyingEvents: number,
+  dropCount: number,
   completedEvents: number,
-  mode: "fixed" | "proportional",
+  timing: "fixed" | "proportional",
 ): number {
-  if (mode === "fixed" || totalEvents === 0) return qualifyingEvents;
-  const totalDrops = totalEvents - qualifyingEvents;
-  const dropsNow = Math.floor((completedEvents * totalDrops) / totalEvents);
+  const seasonEndTarget = finalCountedEventTarget(totalEvents, dropCount);
+  if (timing === "fixed" || totalEvents === 0) return seasonEndTarget;
+  const dropsNow = Math.floor((completedEvents * dropCount) / totalEvents);
   return Math.max(completedEvents === 0 ? 0 : 1, completedEvents - dropsNow);
 }
 
+export function finalCountedEventTarget(totalEvents: number, dropCount: number): number {
+  return totalEvents === 0 ? 0 : Math.max(1, totalEvents - dropCount);
+}
+
 /**
- * M1.16: derive the season's scoring basis — total (planned-vs-actual max),
- * completed (actual groups ingested so far), and the resulting qualifying
- * threshold. `planned` is the per-year planned-event-count map (the Season
- * row's `plannedEvents` wrapped as `{ [year]: n }` by the caller; tests pass
- * their own map directly). `totalEvents === 0` short-circuits to a 0
- * threshold rather than `qualifyingEventCount(0) === 1`, preserving the
- * pre-M1.16 empty-year contract.
+ * Derive the season's scoring basis: total is the greater of planned and
+ * completed scoring groups, while championship eligibility comes directly
+ * from Season.minimumEvents. A completely empty/unplanned season reports a
+ * zero threshold until it has a meaningful season size.
  */
 export function seasonScoringBasis(
   year: number,
   actualGroupCount: number,
   planned: Record<number, number>,
+  minimumEvents: number,
 ): { totalEvents: number; completedEvents: number; qualifyingEvents: number } {
   const totalEvents = Math.max(planned[year] ?? 0, actualGroupCount);
   return {
     totalEvents,
     completedEvents: actualGroupCount,
-    qualifyingEvents: totalEvents === 0 ? 0 : qualifyingEventCount(totalEvents),
+    qualifyingEvents: totalEvents === 0 ? 0 : minimumEvents,
   };
 }
 
@@ -139,7 +119,8 @@ export type SeasonLeaderboardResult = {
   totalEvents: number; // season size used for the threshold: max(planned, completedEvents) (M1.16)
   completedEvents: number; // actual scoring groups ingested so far
   qualifyingEvents: number;
-  countedEvents: number; // scores counted toward totals right now (== qualifyingEvents in fixed mode; scales with progress in proportional mode — ruleset policy drops)
+  finalCountedEvents: number; // season-end best-N target: totalEvents - ruleset dropCount, clamped to at least one
+  countedEvents: number; // scores counted right now; equals finalCountedEvents in fixed timing, scales with progress in proportional timing
   sections: SeasonStandingsByClass[];
 };
 
@@ -301,10 +282,10 @@ async function resolveLeaderboardSeason(
  * it shouldn't; see `seasonScoringBasis`.
  *
  * League Foundation: events are scoped to a Season row rather than a raw
- * date range, and every scoring knob — drop mode, synthetic PAX section,
- * planned event count — comes from the season's RULESET policy JSON
- * (`season.ruleset.policy`, a live reference since Task R2 — parsed via
- * `parseScoringPolicy`), not env vars. A year/target with no matching
+ * date range. Planned and minimum qualifying event counts come from Season;
+ * drop count/timing, synthetic PAX, and cone penalties come from its live
+ * RULESET reference (`season.ruleset.policy`, parsed via
+ * `parseScoringPolicy`). A year/target with no matching
  * Season row returns the original empty-year shape (all zero, no sections)
  * — same as a season with a Season row but zero ingested events, except
  * `totalEvents` there reflects the Season's planned count instead of 0.
@@ -343,7 +324,14 @@ export async function buildSeasonLeaderboard(
   const season = await resolveLeaderboardSeason(target, client);
 
   if (season == null) {
-    return { totalEvents: 0, completedEvents: 0, qualifyingEvents: 0, countedEvents: 0, sections: [] };
+    return {
+      totalEvents: 0,
+      completedEvents: 0,
+      qualifyingEvents: 0,
+      finalCountedEvents: 0,
+      countedEvents: 0,
+      sections: [],
+    };
   }
 
   const year = season.year;
@@ -354,8 +342,15 @@ export async function buildSeasonLeaderboard(
   const plannedEvents: Record<number, number> = { [year]: season.plannedEvents };
 
   if (events.length === 0) {
-    const basis = seasonScoringBasis(year, 0, plannedEvents);
-    return { ...basis, countedEvents: basis.qualifyingEvents, sections: [] };
+    const basis = seasonScoringBasis(year, 0, plannedEvents, season.minimumEvents);
+    const finalCountedEvents = finalCountedEventTarget(basis.totalEvents, policy.dropCount);
+    const countedEvents = countedEventTarget(
+      basis.totalEvents,
+      policy.dropCount,
+      0,
+      policy.dropTiming,
+    );
+    return { ...basis, finalCountedEvents, countedEvents, sections: [] };
   }
 
   const driverInfo = new Map<number, { firstName: string; lastInitial: string }>();
@@ -452,12 +447,14 @@ export async function buildSeasonLeaderboard(
     year,
     scoringGroups.length,
     plannedEvents,
+    season.minimumEvents,
   );
+  const finalCountedEvents = finalCountedEventTarget(totalEvents, policy.dropCount);
   const countedEvents = countedEventTarget(
     totalEvents,
-    qualifyingEvents,
+    policy.dropCount,
     completedEvents,
-    policy.drops,
+    policy.dropTiming,
   );
 
   // 4. Score each scoring group, per class. Multi-event groups score on
@@ -575,9 +572,9 @@ export async function buildSeasonLeaderboard(
     if (info == null) continue;
 
     // Sort desc by points to decide which scores are counted vs. dropped.
-    // Ruleset policy drops="proportional" scales the counted target with
-    // season progress (see countedEventTarget); "fixed" keeps the historical
-    // best-qualifyingEvents behavior.
+    // Ruleset dropTiming="proportional" scales the counted target with season
+    // progress (see countedEventTarget); "fixed" uses the final N-dropCount
+    // target throughout.
     const sorted = [...rawScores].sort((a, b) => b.points - a.points);
     const counted = sorted.slice(0, countedEvents);
     const totalPoints = counted.reduce((sum, s) => sum + s.points, 0);
@@ -640,7 +637,14 @@ export async function buildSeasonLeaderboard(
     if (b.classCode === PAX_SECTION_CODE) return 1;
     return a.classCode.localeCompare(b.classCode);
   });
-  return { totalEvents, completedEvents, qualifyingEvents, countedEvents, sections };
+  return {
+    totalEvents,
+    completedEvents,
+    qualifyingEvents,
+    finalCountedEvents,
+    countedEvents,
+    sections,
+  };
 }
 
 export type SeasonClassSummary = {

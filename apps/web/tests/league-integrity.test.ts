@@ -47,7 +47,7 @@ describe("Season.rulesetId live-reference semantics (createSeason)", () => {
       where: { leagueId: league.id },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    expect(preset.policy).toBe(DEFAULT_SCORING_POLICY);
+    expect(JSON.parse(preset.policy)).toEqual(JSON.parse(DEFAULT_SCORING_POLICY));
 
     const seasonA = await createSeason(
       { leagueSlug: "pca-rmr", name: "Live Ref Test A", year: 2040 },
@@ -56,7 +56,7 @@ describe("Season.rulesetId live-reference semantics (createSeason)", () => {
     expect(seasonA.rulesetId).toBe(preset.id);
 
     const editedPolicy =
-      '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1500}';
+      '{"v":3,"dropCount":2,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1500}';
     await client.scoringSystem.update({ where: { id: preset.id }, data: { policy: editedPolicy } });
 
     const seasonB = await createSeason(
@@ -158,7 +158,8 @@ describe("seed parity: buildSeasonLeaderboard(2026) matches main's fixture expec
     await client.scoringSystem.update({
       where: { id: season.rulesetId },
       data: {
-        policy: '{"v":2,"drops":"fixed","paxSection":true,"conePenaltyMs":2000}',
+        policy:
+          '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000}',
       },
     });
 

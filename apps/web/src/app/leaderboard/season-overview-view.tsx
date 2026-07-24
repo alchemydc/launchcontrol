@@ -13,6 +13,7 @@ interface SeasonOverviewViewProps {
   totalEvents: number;
   completedEvents: number;
   qualifyingEvents: number;
+  finalCountedEvents: number;
   countedEvents: number;
 }
 
@@ -30,6 +31,7 @@ export function SeasonOverviewView({
   totalEvents,
   completedEvents,
   qualifyingEvents,
+  finalCountedEvents,
   countedEvents,
 }: SeasonOverviewViewProps) {
   return (
@@ -40,6 +42,7 @@ export function SeasonOverviewView({
         totalEvents={totalEvents}
         completedEvents={completedEvents}
         qualifyingEvents={qualifyingEvents}
+        finalCountedEvents={finalCountedEvents}
         countedEvents={countedEvents}
         hasStandings={summaries.length > 0}
       />

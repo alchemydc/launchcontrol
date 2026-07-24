@@ -16,11 +16,10 @@ import { ingestAxdb } from "@/lib/ingest";
 // anything.
 
 const FIXTURES_DIR = resolve(__dirname, "fixtures");
-// Task R1: the scoring-policy-v2 migration canonicalizes the league-foundation
-// seed's v1 policy to this v2 shape (the old class-ranking-metric field
-// dropped, v bumped) — see
-// prisma/migrations/20260724030000_scoring_policy_v2/migration.sql.
-const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
+// The migration chain canonicalizes the league-foundation seed's v1 policy
+// through v2 and into this v3 shape.
+const PCA_POLICY =
+  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 function migrateDeploy(dbUrl: string) {
   execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
@@ -47,11 +46,11 @@ describe("ingest points auto-created seasons at the league's oldest ruleset", ()
     rmSync(TEST_DB_PATH, { force: true });
   });
 
-  it("a fresh migrate+deploy carries the PCA Classic ruleset, canonicalized to v2 with a complete built-in paxTable", async () => {
+  it("a fresh migrate+deploy carries the PCA Classic ruleset, canonicalized to v3 with a complete built-in paxTable", async () => {
     const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: league.id } });
     expect(preset.name).toBe("PCA Classic");
-    expect(preset.policy).toBe(PCA_POLICY);
+    expect(JSON.parse(preset.policy)).toEqual(JSON.parse(PCA_POLICY));
     const table = JSON.parse(preset.paxTable) as Record<string, number>;
     expect(table.CS).toBe(0.814); // ruleset-centric migration seeds the full built-in table
     expect(table.AM).toBe(1);
@@ -69,7 +68,7 @@ describe("ingest points auto-created seasons at the league's oldest ruleset", ()
     const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: league.id } });
     const editedPolicy =
-      '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1500}';
+      '{"v":3,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1500}';
     await prisma.scoringSystem.update({ where: { id: preset.id }, data: { policy: editedPolicy } });
 
     // A new year (2027), no Season row yet — auto-create lands on the same ruleset.
@@ -115,7 +114,7 @@ describe("ingest throws when the league has no ScoringSystem preset", () => {
     rmSync(TEST_DB_PATH, { force: true });
   });
 
-  it("rejects ingest into a year with no Season and no preset to snapshot", async () => {
+  it("rejects ingest into a year with no Season and no ruleset to reference", async () => {
     await expect(
       ingestAxdb(resolve(FIXTURES_DIR, "synthetic.axdb"), prisma),
     ).rejects.toThrow(/has no ScoringSystem presets — create a scoring system for league 'pca-rmr' first/);

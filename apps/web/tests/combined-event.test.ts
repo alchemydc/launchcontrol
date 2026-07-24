@@ -37,6 +37,15 @@ beforeAll(async () => {
     const path = resolve(FIXTURES_DIR, filename);
     await ingestAxdb(path, prisma);
   }
+  const season = await prisma.season.findFirstOrThrow({ where: { year: 2027 } });
+  await prisma.season.update({ where: { id: season.id }, data: { minimumEvents: 2 } });
+  await prisma.scoringSystem.update({
+    where: { id: season.rulesetId },
+    data: {
+      policy:
+        '{"v":3,"dropCount":1,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
+    },
+  });
 });
 
 afterAll(async () => {
@@ -182,7 +191,10 @@ describe("buildSeasonLeaderboard(2027) — combined-event scoring groups", () =>
 
 describe("buildSeasonLeaderboard(2027) — planned-season override via Season row", () => {
   it("planned=6 > actual=3: totalEvents=6, qualifyingEvents=4, every driver Provisional, nothing dropped", async () => {
-    await prisma.season.updateMany({ where: { year: 2027 }, data: { plannedEvents: 6 } });
+    await prisma.season.updateMany({
+      where: { year: 2027 },
+      data: { plannedEvents: 6, minimumEvents: 4 },
+    });
     const result = await buildSeasonLeaderboard(2027, prisma);
     expect(result.totalEvents).toBe(6);
     expect(result.completedEvents).toBe(3);
@@ -198,9 +210,8 @@ describe("buildSeasonLeaderboard(2027) — planned-season override via Season ro
       }
     }
 
-    // Quinn's combined score (943 pts) was dropped under the derived
-    // threshold of 2 (best-2-of-3); with threshold 4 all 3 of her scores
-    // count, raising her total from 2000 to 2943.
+    // Quinn's combined score (943 pts) was dropped by the one-drop ruleset.
+    // With a six-event plan, best 5 count, so all 3 current scores count.
     const c1 = result.sections.find((s) => s.classCode === "C1")!;
     const quinn = c1.drivers.find((d) => d.driverName === "Quinn Q.")!;
     const combinedScore = quinn.scores.find((s) => s.combined)!;
@@ -209,7 +220,10 @@ describe("buildSeasonLeaderboard(2027) — planned-season override via Season ro
   });
 
   it("planned=2 < actual=3: max(2,3)=3, identical to the actual-only (plannedEvents=0) run", async () => {
-    await prisma.season.updateMany({ where: { year: 2027 }, data: { plannedEvents: 2 } });
+    await prisma.season.updateMany({
+      where: { year: 2027 },
+      data: { plannedEvents: 2, minimumEvents: 2 },
+    });
     const withPlanned2 = await buildSeasonLeaderboard(2027, prisma);
 
     await prisma.season.updateMany({ where: { year: 2027 }, data: { plannedEvents: 0 } });

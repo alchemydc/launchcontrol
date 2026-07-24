@@ -50,6 +50,7 @@ describe("createSeason", () => {
     expect(season.name).toBe("2030 Default Preset Season");
     expect(season.year).toBe(2030);
     expect(season.plannedEvents).toBe(0);
+    expect(season.minimumEvents).toBe(4);
     expect(season.rulesetId).toBe(pcaClassicId);
     expect(season.status).toBe("active");
   });
@@ -61,11 +62,13 @@ describe("createSeason", () => {
         name: "2041 Named Preset Season",
         year: 2041,
         plannedEvents: 8,
+        minimumEvents: 5,
         presetName: "PCA Classic",
       },
       prisma,
     );
     expect(season.plannedEvents).toBe(8);
+    expect(season.minimumEvents).toBe(5);
     expect(season.rulesetId).toBe(pcaClassicId);
   });
 
@@ -143,6 +146,21 @@ describe("createSeason", () => {
         prisma,
       ),
     ).rejects.toThrow(/--slug must be lowercase alphanumeric, hyphen-separated/);
+  });
+
+  it("rejects negative or non-integer season event parameters", async () => {
+    await expect(
+      createSeason(
+        { leagueSlug: "pca-rmr", name: "2047 Bad Minimum", year: 2047, minimumEvents: -1 },
+        prisma,
+      ),
+    ).rejects.toThrow(/minimumEvents must be a non-negative integer/);
+    await expect(
+      createSeason(
+        { leagueSlug: "pca-rmr", name: "2048 Bad Planned", year: 2048, plannedEvents: 2.5 },
+        prisma,
+      ),
+    ).rejects.toThrow(/plannedEvents must be a non-negative integer/);
   });
 
   it("rejects an unknown league", async () => {

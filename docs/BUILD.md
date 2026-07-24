@@ -826,6 +826,55 @@ Public gates (`"optional"`/`"none"`) short-circuit at step 4 without any session
 - **One `pnpm --filter web migrate:turso` run applies both** (`prisma migrate deploy` runs pending migrations in filename order — `..._super_user` then `..._entry_pax_applied` — in a single invocation). No seed step, no pre-flight collision query (unlike League Foundation) — both migrations are unconditionally safe to run against any prior schema state.
 - Promote the build in the same window as the migration, per the existing rule above: old code against the new schema, or new code against the old schema, is unsupported.
 
+### Ruleset scoring parameters — qualification/drop ownership ✓ (done 2026-07-24)
+
+The ruleset-centric admin rework exposed that the old `floor(N/2)+1` formula was doing two unrelated jobs: it determined both how many events a driver needed for an Official standing and how many scores were dropped. Those values now have explicit, independent owners:
+
+- `Season.plannedEvents` is the expected scoring-event count and `Season.minimumEvents` is the attendance threshold for Official vs. Provisional.
+- `ScoringPolicy` v3 on the live `ScoringSystem` ruleset owns `dropCount` and `dropTiming` (`fixed` or `proportional`), along with PAX-section and cone-penalty settings.
+- The season editor exposes planned and minimum events. The ruleset editor exposes numeric drops and timing. Controlled selects receive value-to-label item maps, so a stored numeric ruleset id renders its name instead of the raw id.
+
+Migration `20260725020000_ruleset_scoring_parameters` adds `Season.minimumEvents`, converts every v2 policy to v3, and preserves existing standings. It computes each season's prior effective size from `max(plannedEvents, distinct event dates)`, backfills the old threshold/minimum and implied drop count, and clones a shared ruleset only when its assigned seasons previously implied different drop counts. The active/latest season keeps the original ruleset id; historical variants are reassigned to deterministic clones. No Event, Entry, Run, Driver, or PAX data is rewritten. Empty unplanned seasons use the new-season defaults (`minimumEvents=4`, `dropCount=2`) because no prior size exists to infer from.
+
+**Deploy runbook:**
+
+1. Take a Turso snapshot before deployment and save baseline row counts for `Season`, `Event`, `Driver`, `CarClass`, `Entry`, `Run`, `Video`, and `AdminAuditLog`.
+2. Run `pnpm --filter web migrate:turso`, then deploy the matching application build in the same window.
+3. Confirm `PRAGMA foreign_key_check;` returns no rows and `PRAGMA quick_check;` returns `ok`. Re-run the baseline counts; only `ScoringSystem` is expected to grow, by the number of historical drop-count variants that had shared a ruleset.
+4. Run this preservation check. It must return `0` before promotion:
+
+```sql
+WITH season_totals AS (
+  SELECT
+    s.id,
+    MAX(s.plannedEvents, COUNT(DISTINCT date(e.date))) AS totalEvents
+  FROM Season s
+  LEFT JOIN Event e ON e.seasonId = s.id
+  GROUP BY s.id
+)
+SELECT COUNT(*) AS preservation_mismatches
+FROM Season s
+JOIN season_totals totals ON totals.id = s.id
+JOIN ScoringSystem ruleset ON ruleset.id = s.rulesetId
+WHERE (
+    totals.totalEvents > 0
+    AND (
+      s.minimumEvents != CAST(totals.totalEvents / 2 AS INTEGER) + 1
+      OR json_extract(ruleset.policy, '$.dropCount')
+         != totals.totalEvents - (CAST(totals.totalEvents / 2 AS INTEGER) + 1)
+    )
+  )
+  OR (
+    totals.totalEvents = 0
+    AND (
+      s.minimumEvents != 4
+      OR json_extract(ruleset.policy, '$.dropCount') != 2
+    )
+  );
+```
+
+If any integrity check or baseline comparison fails, stop promotion and restore the snapshot; this migration changes policy JSON and season-to-ruleset assignments, so reverting only the application build is not a complete rollback.
+
 ### M3 — Public calendar (target: 0.5 session, after M2)
 
 - `/calendar` server-fetches `/rest/calendars/organization/{RMR_ORG_ID}`.

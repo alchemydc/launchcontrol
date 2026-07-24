@@ -2,7 +2,8 @@
 //
 // Usage:
 //   pnpm --filter web season:create --league <slug> --name <name> --year <n>
-//     [--slug <slug>] [--planned <n>] [--preset <ruleset name>]
+//     [--slug <slug>] [--planned <n>] [--minimum-events <n>]
+//     [--preset <ruleset name>]
 //
 // --slug defaults to slugify(name); multiple seasons per (league, year) are
 // allowed (see src/lib/create-season.ts), each addressable by its own slug.
@@ -17,7 +18,7 @@ import { prisma } from "@/lib/prisma";
 function usage(): never {
   console.error(
     "Usage: pnpm --filter web season:create --league <slug> --name <name> --year <n> " +
-      "[--slug <slug>] [--planned <n>] [--preset <ruleset name>]",
+      "[--slug <slug>] [--planned <n>] [--minimum-events <n>] [--preset <ruleset name>]",
   );
   process.exit(2);
 }
@@ -28,6 +29,7 @@ type Args = {
   year?: number;
   slug?: string;
   planned?: number;
+  minimumEvents?: number;
   preset?: string;
 };
 
@@ -56,6 +58,9 @@ function parseArgs(argv: string[]): Args {
       case "--planned":
         args.planned = Number(next());
         break;
+      case "--minimum-events":
+        args.minimumEvents = Number(next());
+        break;
       case "--preset":
         args.preset = next();
         break;
@@ -74,6 +79,10 @@ async function main() {
     console.error("--planned must be a number.");
     usage();
   }
+  if (args.minimumEvents != null && Number.isNaN(args.minimumEvents)) {
+    console.error("--minimum-events must be a number.");
+    usage();
+  }
 
   const season = await createSeason({
     leagueSlug: args.league,
@@ -81,6 +90,7 @@ async function main() {
     year: args.year,
     slug: args.slug,
     plannedEvents: args.planned,
+    minimumEvents: args.minimumEvents,
     presetName: args.preset,
   });
 

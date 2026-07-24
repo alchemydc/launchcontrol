@@ -64,7 +64,8 @@ beforeAll(async () => {
     data: {
       leagueId: otherLeague.id,
       name: "RMsolo Default",
-      policy: '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}',
+      policy:
+        '{"v":3,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":2000}',
       paxTable: JSON.stringify({ ...RMSOLO_PAX_2026, AS: 0.5 }),
     },
   });

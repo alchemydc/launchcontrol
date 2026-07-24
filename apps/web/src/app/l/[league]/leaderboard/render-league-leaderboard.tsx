@@ -50,6 +50,7 @@ export async function renderLeagueSeasonLeaderboard({
         totalEvents={0}
         completedEvents={0}
         qualifyingEvents={0}
+        finalCountedEvents={0}
         countedEvents={0}
       />
     );
@@ -68,6 +69,7 @@ export async function renderLeagueSeasonLeaderboard({
         totalEvents={result.totalEvents}
         completedEvents={result.completedEvents}
         qualifyingEvents={result.qualifyingEvents}
+        finalCountedEvents={result.finalCountedEvents}
         countedEvents={result.countedEvents}
       />
     );
@@ -90,6 +92,7 @@ export async function renderLeagueSeasonLeaderboard({
       totalEvents={result.totalEvents}
       completedEvents={result.completedEvents}
       qualifyingEvents={result.qualifyingEvents}
+      finalCountedEvents={result.finalCountedEvents}
       countedEvents={result.countedEvents}
       driverBasePath={driverBasePath}
     />

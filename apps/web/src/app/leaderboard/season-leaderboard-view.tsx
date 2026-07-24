@@ -16,6 +16,7 @@ import type {
   SeasonStandingsByClass,
   SeasonStandingsRow,
 } from "@/lib/season-leaderboard";
+import { scoringNote, SeasonHeader } from "./season-header";
 
 interface SeasonLeaderboardViewProps {
   /** Heading text, e.g. "2026 Season Leaderboard" (legacy, by year) or
@@ -32,6 +33,7 @@ interface SeasonLeaderboardViewProps {
   totalEvents: number;
   completedEvents: number;
   qualifyingEvents: number;
+  finalCountedEvents: number;
   countedEvents: number;
   /** `?sort=` query value — row order within the class. Rank pills always
    *  show the CHAMPIONSHIP position (by points) regardless of sort. */
@@ -186,21 +188,6 @@ function DriverTableRow({
   );
 }
 
-// Scoring-rule copy that stays truthful in both SEASON_DROPS modes: in fixed
-// mode countedEvents === qualifyingEvents, reproducing the original sentence
-// byte-for-byte; in proportional mode mid-season it states the current
-// counted target and the season-end rule.
-function scoringNote(
-  countedEvents: number,
-  qualifyingEvents: number,
-  totalEvents: number,
-): string {
-  if (countedEvents === qualifyingEvents) {
-    return `Best ${qualifyingEvents} of ${totalEvents} scores count toward the season total.`;
-  }
-  return `Best ${countedEvents} scores currently count toward the season total (best ${qualifyingEvents} of ${totalEvents} at season end).`;
-}
-
 // Always one decimal place — "998.0" / "993.3" — so the column stays
 // visually aligned.
 function formatAvg(avg: number): string {
@@ -249,7 +236,7 @@ function SortHeaderLink({
 function ClassSection({
   section,
   totalEvents,
-  qualifyingEvents,
+  finalCountedEvents,
   countedEvents,
   sort,
   classHref,
@@ -257,7 +244,7 @@ function ClassSection({
 }: {
   section: SeasonStandingsByClass;
   totalEvents: number;
-  qualifyingEvents: number;
+  finalCountedEvents: number;
   countedEvents: number;
   sort: SortKey;
   classHref: string;
@@ -345,7 +332,7 @@ function ClassSection({
               </TableHead>
               <TableHead
                 className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
-                title={`${scoringNote(countedEvents, qualifyingEvents, totalEvents)} Dashed border = dropped score.`}
+                title={`${scoringNote(countedEvents, finalCountedEvents, totalEvents)} Dashed border = dropped score.`}
               >
                 Event scores
               </TableHead>
@@ -423,6 +410,7 @@ export function SeasonLeaderboardView({
   totalEvents,
   completedEvents,
   qualifyingEvents,
+  finalCountedEvents,
   countedEvents,
   sortBy,
   driverBasePath,
@@ -431,40 +419,16 @@ export function SeasonLeaderboardView({
   const classHref = `${classBasePath}/${encodeURIComponent(section.classCode)}`;
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
-      <header className="mb-6 sm:mb-8">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary mb-3">
-          Season standings
-        </p>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-4 min-w-0">
-            <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
-            <div className="min-w-0">
-              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-                {title}
-              </h1>
-              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Points are awarded per event: 1000 to the class winner, others
-                proportional. Combined (same-date, multi-session) events score
-                once, on summed session times.{" "}
-                {scoringNote(countedEvents, qualifyingEvents, totalEvents)}{" "}
-                Drivers with fewer than {qualifyingEvents} scoring events are
-                marked Provisional.
-              </p>
-            </div>
-          </div>
-          {switcher}
-        </div>
-      </header>
-
-      {completedEvents < qualifyingEvents && (
-        <div className="mb-6 flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-4">
-          <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
-          <p className="text-sm text-muted-foreground">
-            Standings are provisional until {qualifyingEvents} of{" "}
-            {totalEvents} events are complete ({completedEvents} run so far).
-          </p>
-        </div>
-      )}
+      <SeasonHeader
+        title={title}
+        switcher={switcher}
+        totalEvents={totalEvents}
+        completedEvents={completedEvents}
+        qualifyingEvents={qualifyingEvents}
+        finalCountedEvents={finalCountedEvents}
+        countedEvents={countedEvents}
+        hasStandings
+      />
 
       <ClassLinkBar
         summaries={allSummaries}
@@ -476,7 +440,7 @@ export function SeasonLeaderboardView({
       <ClassSection
         section={section}
         totalEvents={totalEvents}
-        qualifyingEvents={qualifyingEvents}
+        finalCountedEvents={finalCountedEvents}
         countedEvents={countedEvents}
         sort={sort}
         classHref={classHref}

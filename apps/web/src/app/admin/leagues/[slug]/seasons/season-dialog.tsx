@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,10 @@ import {
 import type { SeasonRow } from "./seasons-table";
 
 export type PresetOption = { id: number; name: string };
+
+export function rulesetSelectItems(presets: PresetOption[]) {
+  return presets.map((preset) => ({ value: String(preset.id), label: preset.name }));
+}
 
 type SeasonStatus = "active" | "completed";
 
@@ -58,17 +62,23 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [slug, setSlug] = useState("");
   const [plannedEvents, setPlannedEvents] = useState("0");
+  const [minimumEvents, setMinimumEvents] = useState("4");
   // Required — no "league default" sentinel: the season must name a ruleset
   // explicitly (Task R3). Defaults to the first available ruleset.
   const [presetName, setPresetName] = useState<string>(presets[0]?.name ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const presetNameItems = useMemo(
+    () => presets.map((preset) => ({ value: preset.name, label: preset.name })),
+    [presets],
+  );
 
   function reset() {
     setName("");
     setYear(String(new Date().getFullYear()));
     setSlug("");
     setPlannedEvents("0");
+    setMinimumEvents("4");
     setPresetName(presets[0]?.name ?? "");
     setError(null);
   }
@@ -80,6 +90,7 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
 
     const yearNum = Number(year);
     const plannedNum = Number(plannedEvents);
+    const minimumNum = Number(minimumEvents);
     if (!Number.isInteger(yearNum)) {
       setError("Year must be an integer");
       setPending(false);
@@ -87,6 +98,11 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
     }
     if (!Number.isInteger(plannedNum) || plannedNum < 0) {
       setError("Planned events must be a non-negative integer");
+      setPending(false);
+      return;
+    }
+    if (!Number.isInteger(minimumNum) || minimumNum < 0) {
+      setError("Minimum events must be a non-negative integer");
       setPending(false);
       return;
     }
@@ -100,6 +116,7 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
       name,
       year: yearNum,
       plannedEvents: plannedNum,
+      minimumEvents: minimumNum,
       presetName,
     };
     if (slug.trim()) body.slug = slug.trim();
@@ -186,8 +203,20 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
+            <Label htmlFor="season-minimum">Minimum events to qualify</Label>
+            <Input
+              id="season-minimum"
+              type="number"
+              min={0}
+              value={minimumEvents}
+              onChange={(e) => setMinimumEvents(e.target.value)}
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="season-preset">Ruleset</Label>
             <Select
+              items={presetNameItems}
               value={presetName}
               onValueChange={(v) => setPresetName(v ?? presetName)}
             >
@@ -228,10 +257,12 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
   const [slug, setSlug] = useState(season.slug);
   const [year, setYear] = useState(String(season.year));
   const [plannedEvents, setPlannedEvents] = useState(String(season.plannedEvents));
+  const [minimumEvents, setMinimumEvents] = useState(String(season.minimumEvents));
   const [status, setStatus] = useState<SeasonStatus>(season.status);
   const [rulesetId, setRulesetId] = useState(String(season.rulesetId));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const presetIdItems = useMemo(() => rulesetSelectItems(presets), [presets]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -240,6 +271,7 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
 
     const yearNum = Number(year);
     const plannedNum = Number(plannedEvents);
+    const minimumNum = Number(minimumEvents);
     if (!Number.isInteger(yearNum)) {
       setError("Year must be an integer");
       setPending(false);
@@ -247,6 +279,11 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
     }
     if (!Number.isInteger(plannedNum) || plannedNum < 0) {
       setError("Planned events must be a non-negative integer");
+      setPending(false);
+      return;
+    }
+    if (!Number.isInteger(minimumNum) || minimumNum < 0) {
+      setError("Minimum events must be a non-negative integer");
       setPending(false);
       return;
     }
@@ -266,6 +303,7 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
     if (slug !== season.slug) patch.slug = slug;
     if (yearNum !== season.year) patch.year = yearNum;
     if (plannedNum !== season.plannedEvents) patch.plannedEvents = plannedNum;
+    if (minimumNum !== season.minimumEvents) patch.minimumEvents = minimumNum;
     if (status !== season.status) patch.status = status;
     if (rulesetNum !== season.rulesetId) patch.rulesetId = rulesetNum;
 
@@ -351,8 +389,23 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
             />
           </div>
           <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-season-minimum">Minimum events to qualify</Label>
+            <Input
+              id="edit-season-minimum"
+              type="number"
+              min={0}
+              value={minimumEvents}
+              onChange={(e) => setMinimumEvents(e.target.value)}
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="edit-season-status">Status</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as SeasonStatus)}>
+            <Select
+              items={STATUS_OPTIONS}
+              value={status}
+              onValueChange={(v) => setStatus(v as SeasonStatus)}
+            >
               <SelectTrigger id="edit-season-status" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -367,7 +420,11 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="edit-season-ruleset">Ruleset</Label>
-            <Select value={rulesetId} onValueChange={(v) => setRulesetId(v ?? rulesetId)}>
+            <Select
+              items={presetIdItems}
+              value={rulesetId}
+              onValueChange={(v) => setRulesetId(v ?? rulesetId)}
+            >
               <SelectTrigger id="edit-season-ruleset" className="w-full">
                 <SelectValue />
               </SelectTrigger>
