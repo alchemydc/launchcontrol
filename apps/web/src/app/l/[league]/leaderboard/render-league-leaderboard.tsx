@@ -12,16 +12,23 @@ import { SeasonLeaderboardView } from "@/app/leaderboard/season-leaderboard-view
  * is not).
  */
 export async function renderLeagueSeasonLeaderboard({
+  leagueSlug,
   leagueName,
   season,
   activeClassCode,
   sortBy,
 }: {
+  /** Drives `driverBasePath` (`/l/[slug]`) so driver links from this
+   *  leaderboard stay inside the league instead of exiting to the legacy
+   *  global `/drivers/[id]` route (Task 20). */
+  leagueSlug: string;
   leagueName: string;
   season: { id: number; slug: string; name: string } | null;
   activeClassCode?: string | null;
   sortBy?: string | null;
 }) {
+  const driverBasePath = `/l/${leagueSlug}`;
+
   if (!season) {
     return (
       <SeasonLeaderboardView
@@ -32,6 +39,7 @@ export async function renderLeagueSeasonLeaderboard({
         completedEvents={0}
         qualifyingEvents={0}
         countedEvents={0}
+        driverBasePath={driverBasePath}
       />
     );
   }
@@ -51,6 +59,7 @@ export async function renderLeagueSeasonLeaderboard({
       completedEvents={result.completedEvents}
       qualifyingEvents={result.qualifyingEvents}
       countedEvents={result.countedEvents}
+      driverBasePath={driverBasePath}
     />
   );
 }

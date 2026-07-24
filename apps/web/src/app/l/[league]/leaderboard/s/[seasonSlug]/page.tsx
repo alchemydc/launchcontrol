@@ -33,6 +33,7 @@ export default async function LeagueLeaderboardSeasonPage({
   if (!season) notFound();
 
   return renderLeagueSeasonLeaderboard({
+    leagueSlug: slug,
     leagueName: league.name,
     season,
     activeClassCode,

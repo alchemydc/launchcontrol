@@ -141,18 +141,25 @@ function DriverCard({
   rank,
   delta,
   paxView = false,
+  driverBasePath,
 }: {
   row: LeaderboardRow;
   rank: number | undefined;
   delta: { fromPrior: number | null; fromP1: number | null } | undefined;
   paxView?: boolean;
+  driverBasePath?: string;
 }) {
   return (
     <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
       <div className="flex items-start gap-3">
         <RankPill rank={rank} />
         <div className="min-w-0 flex-1">
-          <DriverLink driverId={row.driverId} name={row.driverName} className="block truncate" />
+          <DriverLink
+            driverId={row.driverId}
+            name={row.driverName}
+            className="block truncate"
+            basePath={driverBasePath}
+          />
           {row.carDescription && (
             <p className="text-xs text-muted-foreground truncate">
               {row.carDescription}
@@ -192,10 +199,14 @@ export function LeaderboardTable({
   rows,
   classCodes,
   showPaxView = false,
+  driverBasePath,
 }: {
   rows: LeaderboardRow[];
   classCodes: string[];
   showPaxView?: boolean;
+  /** "" for the legacy route (byte-identical to pre-Task-20 driver hrefs),
+   *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` below. */
+  driverBasePath?: string;
 }) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "bestRawMs", desc: false },
@@ -298,7 +309,11 @@ export function LeaderboardTable({
         ),
         cell: ({ row }) => (
           <div>
-            <DriverLink driverId={row.original.driverId} name={row.original.driverName} />
+            <DriverLink
+              driverId={row.original.driverId}
+              name={row.original.driverName}
+              basePath={driverBasePath}
+            />
             {row.original.carDescription && (
               <div className="text-muted-foreground text-xs">
                 {row.original.carDescription}
@@ -388,7 +403,7 @@ export function LeaderboardTable({
         cell: ({ row }) => <RunChips runs={row.original.runs} />,
       },
     ],
-    [deltaByRow, rankByRow, paxMetric],
+    [deltaByRow, rankByRow, paxMetric, driverBasePath],
   );
 
   // React Compiler can't safely memoize TanStack Table's returned functions;
@@ -459,7 +474,14 @@ export function LeaderboardTable({
           </li>
         ) : (
           sortedRows.map((row) => (
-            <DriverCard key={row.id} row={row.original} rank={rankByRow.get(row.original)} delta={deltaByRow.get(row.original)} paxView={paxMetric} />
+            <DriverCard
+              key={row.id}
+              row={row.original}
+              rank={rankByRow.get(row.original)}
+              delta={deltaByRow.get(row.original)}
+              paxView={paxMetric}
+              driverBasePath={driverBasePath}
+            />
           ))
         )}
       </ul>

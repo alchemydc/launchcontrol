@@ -38,9 +38,14 @@ export function LeagueSubnav({
 }) {
   const pathname = usePathname() ?? "";
   const basePath = `/l/${slug}`;
+  // Task 20: /l/[league]/drivers/[id] doesn't belong to either tab -- without
+  // this, `onLeaderboard` falls out false there (its own path matches
+  // neither branch below) and the Events tab lit up as a false-active match.
+  const onDriverPage = pathname.startsWith(`${basePath}/drivers`);
   const onLeaderboard =
-    pathname.startsWith(`${basePath}/leaderboard`) ||
-    pathname.startsWith("/leaderboard");
+    !onDriverPage &&
+    (pathname.startsWith(`${basePath}/leaderboard`) ||
+      pathname.startsWith("/leaderboard"));
   // On a season-addressed page, the selector reflects THAT season rather
   // than the league's active one.
   const seasonMatch = pathname.match(
@@ -81,7 +86,7 @@ export function LeagueSubnav({
         <span aria-hidden className="text-border">
           |
         </span>
-        <Link href={basePath} className={tabClass(!onLeaderboard)}>
+        <Link href={basePath} className={tabClass(!onLeaderboard && !onDriverPage)}>
           Events
         </Link>
         <Link href={leaderboardHref} className={tabClass(onLeaderboard)}>

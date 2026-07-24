@@ -115,18 +115,25 @@ function DriverCard({
   rank,
   sessionLabels,
   delta,
+  driverBasePath,
 }: {
   row: CombinedResultRow;
   rank: number | undefined;
   sessionLabels: string[];
   delta: { fromPrior: number | null; fromP1: number | null } | undefined;
+  driverBasePath?: string;
 }) {
   return (
     <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
       <div className="flex items-start gap-3">
         <RankPill rank={rank} />
         <div className="min-w-0 flex-1">
-          <DriverLink driverId={row.driverId} name={row.driverName} className="block truncate" />
+          <DriverLink
+            driverId={row.driverId}
+            name={row.driverName}
+            className="block truncate"
+            basePath={driverBasePath}
+          />
           {row.carDescription && (
             <p className="text-xs text-muted-foreground truncate">{row.carDescription}</p>
           )}
@@ -160,7 +167,7 @@ function DriverCard({
   );
 }
 
-function UnrankedList({ rows }: { rows: CombinedResultRow[] }) {
+function UnrankedList({ rows, driverBasePath }: { rows: CombinedResultRow[]; driverBasePath?: string }) {
   if (rows.length === 0) return null;
   return (
     <div className="border-t border-border/60 px-4 py-4">
@@ -173,7 +180,12 @@ function UnrankedList({ rows }: { rows: CombinedResultRow[] }) {
             key={row.driverId}
             className="flex flex-wrap items-center gap-2 rounded-md bg-muted/20 px-3 py-2 text-sm"
           >
-            <DriverLink driverId={row.driverId} name={row.driverName} className="shrink-0" />
+            <DriverLink
+              driverId={row.driverId}
+              name={row.driverName}
+              className="shrink-0"
+              basePath={driverBasePath}
+            />
             {row.classCode && (
               <Badge variant="outline" className="text-[10px]">
                 {row.classCode}
@@ -196,7 +208,15 @@ function UnrankedList({ rows }: { rows: CombinedResultRow[] }) {
   );
 }
 
-export function CombinedTable({ results }: { results: CombinedResults }) {
+export function CombinedTable({
+  results,
+  driverBasePath,
+}: {
+  results: CombinedResults;
+  /** "" for the legacy route (byte-identical to pre-Task-20 driver hrefs),
+   *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` below. */
+  driverBasePath?: string;
+}) {
   const [sorting, setSorting] = useState<SortingState>([{ id: "sumMs", desc: false }]);
   const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
 
@@ -295,7 +315,11 @@ export function CombinedTable({ results }: { results: CombinedResults }) {
         ),
         cell: ({ row }) => (
           <div>
-            <DriverLink driverId={row.original.driverId} name={row.original.driverName} />
+            <DriverLink
+              driverId={row.original.driverId}
+              name={row.original.driverName}
+              basePath={driverBasePath}
+            />
             {row.original.carDescription && (
               <div className="text-muted-foreground text-xs">{row.original.carDescription}</div>
             )}
@@ -351,7 +375,7 @@ export function CombinedTable({ results }: { results: CombinedResults }) {
         ),
       },
     ];
-  }, [results.sessions, sessionLabels, deltaByRow, rankByRow]);
+  }, [results.sessions, sessionLabels, deltaByRow, rankByRow, driverBasePath]);
 
   // React Compiler can't safely memoize TanStack Table's returned functions;
   // we accept that limitation here because the table state lives in this
@@ -416,6 +440,7 @@ export function CombinedTable({ results }: { results: CombinedResults }) {
               rank={rankByRow.get(row.original)}
               sessionLabels={sessionLabels}
               delta={deltaByRow.get(row.original)}
+              driverBasePath={driverBasePath}
             />
           ))
         )}
@@ -475,7 +500,7 @@ export function CombinedTable({ results }: { results: CombinedResults }) {
         </Table>
       </div>
 
-      <UnrankedList rows={section.unranked} />
+      <UnrankedList rows={section.unranked} driverBasePath={driverBasePath} />
     </section>
   );
 }

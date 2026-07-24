@@ -24,7 +24,8 @@ type TimeScope = "all" | "season" | "range";
 export interface DriverFilterBarProps {
   driverId: number;
   /** Every league this driver has entries in. Chips only render when there's
-   *  more than one — a single-league driver has nothing to choose between. */
+   *  more than one — a single-league driver has nothing to choose between.
+   *  Never rendered at all when `lockedLeagueSlug` is set. */
   leagues: DriverFilterLeagueOption[];
   /** Every season the driver has entries in, across every league. */
   seasons: DriverFilterSeasonOption[];
@@ -37,6 +38,14 @@ export interface DriverFilterBarProps {
     from?: string; // yyyy-mm-dd
     to?: string; // yyyy-mm-dd
   };
+  /** "" for the legacy route (byte-identical to pre-Task-20 hrefs), "/l/[slug]"
+   *  for the league-scoped driver page — every filter navigation stays under
+   *  this prefix. */
+  basePath?: string;
+  /** Set on the league-scoped driver page (Task 20): the league filter is
+   *  fixed to this slug and its chip row never renders (season/time filters
+   *  still work, scoped to that league). */
+  lockedLeagueSlug?: string;
 }
 
 // Same pill styling as `ClassChip` in events/[slug]/leaderboard-table.tsx --
@@ -85,9 +94,16 @@ function Chip({
  * navigate until Apply, so opening the panel never round-trips the server
  * with an incomplete range.
  */
-export function DriverFilterBar({ driverId, leagues, seasons, current }: DriverFilterBarProps) {
+export function DriverFilterBar({
+  driverId,
+  leagues,
+  seasons,
+  current,
+  basePath: routeBasePath = "",
+  lockedLeagueSlug,
+}: DriverFilterBarProps) {
   const router = useRouter();
-  const basePath = `/drivers/${driverId}`;
+  const basePath = `${routeBasePath}/drivers/${driverId}`;
 
   const [showCustom, setShowCustom] = useState(current.timeScope === "range");
   const [pendingFrom, setPendingFrom] = useState(current.from ?? "");
@@ -127,7 +143,7 @@ export function DriverFilterBar({ driverId, leagues, seasons, current }: DriverF
 
   return (
     <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
-      {leagues.length > 1 && (
+      {!lockedLeagueSlug && leagues.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground shrink-0">
             League
