@@ -80,11 +80,10 @@ export function PaxTableEditor({
                   <Input
                     type="number"
                     step="0.001"
-                    min="0.1"
-                    max="1.5"
                     value={row.value}
                     onChange={(e) => handleValueChange(row.code, e.target.valueAsNumber)}
                     className="w-24"
+                    required
                   />
                 </TableCell>
                 <TableCell>
@@ -126,8 +125,6 @@ export function PaxTableEditor({
           <Input
             type="number"
             step="0.001"
-            min="0.1"
-            max="1.5"
             value={newValue}
             onChange={(e) => setNewValue(e.target.value)}
             onKeyDown={(e) => {

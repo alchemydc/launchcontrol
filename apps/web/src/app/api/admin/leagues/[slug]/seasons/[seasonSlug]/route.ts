@@ -14,6 +14,8 @@ const PATCH_KEYS = [
   "rulesetId",
 ] as const satisfies readonly (keyof UpdateSeasonPatch)[];
 
+const REMOVED_SCORING_KEYS = ["paxTable", "scoringPolicy"] as const;
+
 function toPatch(body: Record<string, unknown>): UpdateSeasonPatch {
   const patch: UpdateSeasonPatch = {};
   for (const key of PATCH_KEYS) {
@@ -42,7 +44,17 @@ export async function PATCH(
   if (typeof body !== "object" || body === null) {
     return Response.json({ error: "invalid request body" }, { status: 400 });
   }
-  const patch = toPatch(body as Record<string, unknown>);
+  const requestBody = body as Record<string, unknown>;
+  if (REMOVED_SCORING_KEYS.some((key) => key in requestBody)) {
+    return Response.json(
+      {
+        error:
+          "Season scoring fields can no longer be updated directly; edit the season's ruleset instead",
+      },
+      { status: 400 },
+    );
+  }
+  const patch = toPatch(requestBody);
 
   try {
     const season = await updateSeason(prisma, { leagueSlug: slug, seasonSlug }, patch);

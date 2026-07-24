@@ -203,6 +203,70 @@ describe("season PAX section (ruleset policy paxSection)", () => {
     ]);
   });
 
+  it("preserves exact raw-time points for a uniform factor at an indexed-rounding boundary", async () => {
+    const parityYear = 2028;
+    const { leagueId, seasonIdByYear } = await ensureLeagueAndSeasons(prisma, [parityYear]);
+    const paritySeasonId = seasonIdByYear.get(parityYear)!;
+    await prisma.season.update({
+      where: { id: paritySeasonId },
+      data: {
+        rulesetId: await ensureRuleset(prisma, leagueId, {
+          name: "Uniform Factor Parity Rules",
+          policy: FIXED_POLICY,
+        }),
+      },
+    });
+
+    const parityClass = await prisma.carClass.create({
+      data: { leagueId, code: "PAR", paxIndex: 0.814 },
+    });
+    const parityEvent = await prisma.event.create({
+      data: {
+        seasonId: paritySeasonId,
+        slug: "2028-uniform-factor-parity",
+        name: "Uniform Factor Parity",
+        date: new Date("2028-04-16T00:00:00.000Z"),
+      },
+    });
+    const parityDrivers = await Promise.all([
+      prisma.driver.create({
+        data: { firstName: "Fast", lastInitial: "F.", identityHash: "uniform-parity-fast" },
+      }),
+      prisma.driver.create({
+        data: { firstName: "Near", lastInitial: "N.", identityHash: "uniform-parity-near" },
+      }),
+    ]);
+
+    for (const [index, rawTimeMs] of [30000, 30045].entries()) {
+      const driver = parityDrivers[index]!;
+      const entry = await prisma.entry.create({
+        data: {
+          eventId: parityEvent.id,
+          driverId: driver.id,
+          classId: parityClass.id,
+          paxClassId: parityClass.id,
+          carNumber: String(index + 1),
+        },
+      });
+      await prisma.run.create({
+        data: {
+          entryId: entry.id,
+          runNumber: 1,
+          rawTimeMs,
+          cones: 0,
+          disposition: RunDisposition.CLEAN,
+        },
+      });
+    }
+
+    const result = await buildSeasonLeaderboard(parityYear, prisma);
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0]!.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Fast F.", 1000],
+      ["Near N.", 999], // round(1000 × 30000 / 30045)
+    ]);
+  });
+
   it("adds an overall PAX section pinned first when enabled", async () => {
     await setPolicy(FIXED_PAX_SECTION_POLICY);
     const result = await buildSeasonLeaderboard(YEAR, prisma);

@@ -88,6 +88,23 @@ beforeAll(() => {
     CREATE INDEX "Season_leagueId_year_idx" ON "Season"("leagueId", "year");
     CREATE UNIQUE INDEX "Season_leagueId_name_key" ON "Season"("leagueId", "name");
     CREATE UNIQUE INDEX "Season_leagueId_slug_key" ON "Season"("leagueId", "slug");
+
+    CREATE TABLE "Event" (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        "seasonId" INTEGER NOT NULL,
+        "msrEventId" TEXT,
+        "slug" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "date" DATETIME NOT NULL,
+        "location" TEXT,
+        "sourceSha256" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Event_seasonId_fkey" FOREIGN KEY ("seasonId") REFERENCES "Season" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    );
+    CREATE INDEX "Event_seasonId_idx" ON "Event"("seasonId");
+    CREATE UNIQUE INDEX "Event_seasonId_msrEventId_key" ON "Event"("seasonId", "msrEventId");
+    CREATE UNIQUE INDEX "Event_seasonId_slug_key" ON "Event"("seasonId", "slug");
+    CREATE UNIQUE INDEX "Event_seasonId_sourceSha256_key" ON "Event"("seasonId", "sourceSha256");
   `);
 
   const insertLeague = db.prepare(
@@ -123,6 +140,15 @@ beforeAll(() => {
   // ruleset, not mint a duplicate.
   insertSeason.run(6, 1, "2027 Season", "2027-season", 2027, 0, P_PCA, '{"AS":0.5,"ZZZ":0.9}', "active");
 
+  const insertEvent = db.prepare(
+    `INSERT INTO "Event" ("id","seasonId","msrEventId","slug","name","date","location","sourceSha256") VALUES (?,?,?,?,?,?,?,?)`,
+  );
+  insertEvent.run(11, 1, "msr-11", "event-11", "Event 11", "2025-05-01T00:00:00.000Z", "North", "sha-11");
+  insertEvent.run(12, 2, "msr-12", "event-12", "Event 12", "2026-05-01T00:00:00.000Z", "North", "sha-12");
+  insertEvent.run(13, 2, "msr-13", "event-13", "Event 13", "2026-06-01T00:00:00.000Z", "South", "sha-13");
+  insertEvent.run(14, 4, "msr-14", "event-14", "Event 14", "2026-07-01T00:00:00.000Z", "East", "sha-14");
+  insertEvent.run(15, 6, "msr-15", "event-15", "Event 15", "2027-05-01T00:00:00.000Z", "West", "sha-15");
+
   db.exec(readFileSync(MIGRATION_SQL_PATH, "utf8"));
 });
 
@@ -134,6 +160,7 @@ afterAll(() => {
 type SeasonRow = { id: number; leagueId: number; rulesetId: number };
 type SeasonFullRow = { id: number; slug: string; status: string };
 type RulesetRow = { id: number; leagueId: number; name: string; policy: string; paxTable: string };
+type EventRow = { id: number; seasonId: number };
 
 function season(id: number): SeasonRow {
   return db
@@ -170,6 +197,20 @@ describe("20260725010000_ruleset_centric_scoring migration", () => {
     // guarding against a leagueId mixup in the rebuild's column carry-over).
     expect(seasonFull(1)).toEqual({ id: 1, slug: "2025-season", status: "completed" });
     expect(seasonFull(4)).toEqual({ id: 4, slug: "2026-season", status: "active" });
+  });
+
+  it("preserves Event children and their Season relationships through the Season rebuild", () => {
+    const events = db
+      .prepare(`SELECT id, seasonId FROM "Event" ORDER BY id`)
+      .all() as EventRow[];
+    expect(events).toEqual([
+      { id: 11, seasonId: 1 },
+      { id: 12, seasonId: 2 },
+      { id: 13, seasonId: 2 },
+      { id: 14, seasonId: 4 },
+      { id: 15, seasonId: 6 },
+    ]);
+    expect(db.prepare(`SELECT COUNT(*) c FROM "Event"`).get()).toEqual({ c: 5 });
   });
 
   it("seeds every pre-existing ScoringSystem row's paxTable with the complete built-in table", () => {

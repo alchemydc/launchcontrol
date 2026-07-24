@@ -102,7 +102,8 @@ export default async function AdminLeaguePage({
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">
-                    Scoring rulesets seasons snapshot from.
+                    Seasons read scoring rulesets live; PAX changes require
+                    explicit re-apply.
                   </p>
                 </CardContent>
               </Card>

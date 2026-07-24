@@ -248,6 +248,31 @@ describe("updateSeason", () => {
     expect(persisted.slug).toBe(seasonA.slug);
   });
 
+  it("rejects a ruleset owned by another league without changing the season", async () => {
+    const { league } = await createLeague({ slug: "us-own-ruleset", name: "US Own Ruleset League" }, prisma);
+    const season = await createSeason({ leagueSlug: league.slug, name: "US Own Ruleset Season", year: 2110 }, prisma);
+    const { league: foreignLeague } = await createLeague(
+      { slug: "us-foreign-ruleset", name: "US Foreign Ruleset League" },
+      prisma,
+    );
+    const foreignRuleset = await createScoringSystem(prisma, {
+      leagueSlug: foreignLeague.slug,
+      name: "US Foreign Ruleset",
+      policyJson: RMSOLO_POLICY,
+    });
+
+    await expect(
+      updateSeason(
+        prisma,
+        { leagueSlug: league.slug, seasonSlug: season.slug },
+        { rulesetId: foreignRuleset.id },
+      ),
+    ).rejects.toThrow(/a season can only adopt a ruleset of its own league/);
+
+    const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
+    expect(persisted.rulesetId).toBe(season.rulesetId);
+  });
+
   it("rejects a duplicate name", async () => {
     const { league } = await createLeague({ slug: "us-dup-name", name: "US Dup Name League" }, prisma);
     const seasonA = await createSeason({ leagueSlug: league.slug, name: "US Dup A", year: 2097 }, prisma);

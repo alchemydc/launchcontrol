@@ -404,7 +404,11 @@ export async function buildSeasonLeaderboard(
       // classes whose entries carry per-driver derived factors (the printed
       // group results are indexed). (scoring-policy.ts v2 dropped the old
       // per-policy raw/pax ranking toggle — this is unconditional now.)
-      const rankMetric = Math.round(best * appliedPaxIndex(entry));
+      // Keep the indexed metric at full precision until the final points
+      // calculation. Rounding here can change points at a half-point boundary
+      // even when every entry in the class has the same PAX factor, violating
+      // the pure-rescale property described above.
+      const rankMetric = best * appliedPaxIndex(entry);
       const existing = byDriver.get(d.id);
       if (existing == null || rankMetric < existing) {
         byDriver.set(d.id, rankMetric);
