@@ -10,18 +10,20 @@
  *
  * The season selector sits directly after the league name — it IS the
  * context the tabs operate in, and renders even for a single season so the
- * current season is visible from any league page. The Leaderboard tab links
- * to the SELECTED season's scoped address (`/l/[slug]/leaderboard/s/[slug]`)
- * so the standings you land on are never ambiguous; selecting a different
- * season navigates there too. The Events tab (Task 21) is per-season too:
- * selecting a season there pushes `${basePath}?season=<slug>` on the league
- * home instead, and the tab's own href preserves whatever `?season=` is
- * currently active so tab-switching doesn't silently drop the selection.
+ * current season is visible from any league page. It is the SINGLE season
+ * control for the league: on the Leaderboard tab it drives the season-scoped
+ * standings (`/l/[slug]/leaderboard/s/[season]`); on the Events tab (Task 21)
+ * it drives the `?season=`-filtered event list, pushing `${basePath}?season=<slug>`
+ * on the league home. Switching tabs preserves the selected season (in both
+ * directions), so the two tabs always agree on which season you're looking at.
  *
- * Client component: active-tab highlighting and the current-season override
- * need `usePathname`/`useSearchParams` (legacy paths like /leaderboard count
- * as their scoped equivalents; the Events tab's season comes from the URL's
- * `?season=` query param rather than a path segment).
+ * Client component: active-tab highlighting, the current-season override, and
+ * reading the events tab's `?season=` need `usePathname`/`useSearchParams`
+ * (legacy paths like /leaderboard count as their scoped equivalents; the
+ * Events tab's season comes from the URL's `?season=` query param rather than
+ * a path segment). Every route mounting this subnav is force-dynamic, so
+ * `useSearchParams` needs no Suspense boundary (that requirement is
+ * prerendered-route-only).
  */
 
 import Link from "next/link";
@@ -65,14 +67,16 @@ export function LeagueSubnav({
   const leaderboardHref = currentSeasonSlug
     ? `${basePath}/leaderboard/s/${currentSeasonSlug}`
     : `${basePath}/leaderboard`;
-  // Preserve the active `?season=` selection when the Events tab link itself
-  // is clicked (e.g. from the leaderboard tab) — otherwise switching tabs
-  // would silently drop back to the league's default/active season.
-  // Use currentSeasonSlug (which reflects the leaderboard path or query param)
-  // but only emit ?season= when it differs from the active season (cleaner URLs).
-  const eventsHref = currentSeasonSlug && currentSeasonSlug !== activeSeasonSlug
-    ? `${basePath}?season=${currentSeasonSlug}`
-    : basePath;
+  // Preserve the currently-viewed season when the Events tab link itself is
+  // clicked (e.g. from a season-addressed leaderboard path) — otherwise
+  // tab-switching would silently drop back to the league's active season.
+  // Derive from currentSeasonSlug (which reflects the leaderboard path segment
+  // or the events query param), but only emit `?season=` when it differs from
+  // the active season, so the default view keeps a clean base path.
+  const eventsHref =
+    currentSeasonSlug && currentSeasonSlug !== activeSeasonSlug
+      ? `${basePath}?season=${currentSeasonSlug}`
+      : basePath;
 
   const tabClass = (active: boolean) =>
     `border-b-2 px-1 py-2 text-sm transition-colors ${
