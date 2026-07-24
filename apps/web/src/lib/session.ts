@@ -138,6 +138,26 @@ export function sanitizeReturnTo(raw: string | string[] | null | undefined): str
 // existence via 404 vs redirect behavior.
 // ---------------------------------------------------------------------------
 
+/**
+ * Gate for cacheable results pages (leaderboards, events). Unlike
+ * requireRmrMember it NEVER touches cookies() unless ACCESS_GATE=required —
+ * reading the request scope opts the route out of static/ISR rendering, and
+ * on public deployments these pages use no session data at all. Gated
+ * deployments hit the cookie read and render per-request, as they must.
+ *
+ * Callers MUST NOT wrap this in try/catch — redirect() throws NEXT_REDIRECT.
+ */
+export async function gateResultsPage(returnPath?: string): Promise<void> {
+  const club = getClubConfig();
+  if (club.accessGate !== "required") return;
+
+  const session = await getSession();
+  if (!session.msrUid || !session.isRmrMember) {
+    const safe = returnPath ? sanitizeReturnTo(returnPath) : null;
+    redirect(safe ? `/?returnTo=${encodeURIComponent(safe)}` : "/");
+  }
+}
+
 export async function requireRmrMember(
   returnPath?: string
 ): Promise<{ session: IronSession<SessionData> | null }> {
