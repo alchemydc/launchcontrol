@@ -21,33 +21,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { ScoringPolicy } from "@/lib/scoring-policy";
+import {
+  DEFAULT_SCORING_POLICY,
+  type ScoringPolicy,
+} from "@/lib/scoring-policy";
 import { canonicalPaxJson } from "@/lib/pax-table-edit";
 import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 import { PaxTableEditor } from "./pax-table-editor";
 import type { PresetRow } from "./presets-table";
 
-type Drops = ScoringPolicy["drops"];
+type DropTiming = ScoringPolicy["dropTiming"];
 
-const DROPS_OPTIONS: { value: Drops; label: string }[] = [
-  { value: "fixed", label: "Fixed — count best qualifying scores regardless of season progress" },
+const DROP_TIMING_OPTIONS: { value: DropTiming; label: string }[] = [
+  { value: "fixed", label: "Fixed — apply drops only after enough scores are recorded" },
   { value: "proportional", label: "Proportional — drops scale with completed events" },
 ];
 
-/** Sensible defaults when creating a preset, or recovering from an unparseable stored policy. */
-const DEFAULT_POLICY: ScoringPolicy = {
-  v: 2,
-  drops: "fixed",
-  paxSection: false,
-  conePenaltyMs: 2000,
-};
-
 function serializePolicy(fields: {
-  drops: Drops;
+  dropCount: number;
+  dropTiming: DropTiming;
   paxSection: boolean;
   conePenaltyMs: number;
 }): string {
-  const policy: ScoringPolicy = { v: 2, ...fields };
+  const policy: ScoringPolicy = { v: 3, ...fields };
   return JSON.stringify(policy);
 }
 
@@ -89,9 +85,12 @@ export function PresetDialog(props: CreateProps | EditProps) {
 function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [drops, setDrops] = useState<Drops>(DEFAULT_POLICY.drops);
-  const [paxSection, setPaxSection] = useState(DEFAULT_POLICY.paxSection);
-  const [conePenaltyMs, setConePenaltyMs] = useState(String(DEFAULT_POLICY.conePenaltyMs));
+  const [dropCount, setDropCount] = useState(String(DEFAULT_SCORING_POLICY.dropCount));
+  const [dropTiming, setDropTiming] = useState<DropTiming>(DEFAULT_SCORING_POLICY.dropTiming);
+  const [paxSection, setPaxSection] = useState(DEFAULT_SCORING_POLICY.paxSection);
+  const [conePenaltyMs, setConePenaltyMs] = useState(
+    String(DEFAULT_SCORING_POLICY.conePenaltyMs),
+  );
   const [seedChoice, setSeedChoice] = useState<SeedChoice>("scca");
   // The COMPLETE table (Task R3 — the editor owns the full table, not just
   // overrides); starts at the chosen seed and is freely editable from there.
@@ -101,9 +100,10 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
 
   function reset() {
     setName("");
-    setDrops(DEFAULT_POLICY.drops);
-    setPaxSection(DEFAULT_POLICY.paxSection);
-    setConePenaltyMs(String(DEFAULT_POLICY.conePenaltyMs));
+    setDropCount(String(DEFAULT_SCORING_POLICY.dropCount));
+    setDropTiming(DEFAULT_SCORING_POLICY.dropTiming);
+    setPaxSection(DEFAULT_SCORING_POLICY.paxSection);
+    setConePenaltyMs(String(DEFAULT_SCORING_POLICY.conePenaltyMs));
     setSeedChoice("scca");
     setPaxTable(seedTableJson("scca"));
     setError(null);
@@ -120,6 +120,12 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
     setError(null);
 
     const coneMs = Number(conePenaltyMs);
+    const dropCountNum = Number(dropCount);
+    if (!Number.isInteger(dropCountNum) || dropCountNum < 0) {
+      setError("Number of drops must be a non-negative integer");
+      setPending(false);
+      return;
+    }
     if (!Number.isFinite(coneMs) || coneMs < 0) {
       setError("Cone penalty must be a non-negative number");
       setPending(false);
@@ -132,7 +138,12 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          policyJson: serializePolicy({ drops, paxSection, conePenaltyMs: coneMs }),
+          policyJson: serializePolicy({
+            dropCount: dropCountNum,
+            dropTiming,
+            paxSection,
+            conePenaltyMs: coneMs,
+          }),
           paxTableJson: paxTable,
         }),
       });
@@ -182,13 +193,28 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="preset-drops">Drops</Label>
-            <Select value={drops} onValueChange={(v) => setDrops(v as Drops)}>
-              <SelectTrigger id="preset-drops" className="w-full">
+            <Label htmlFor="preset-drop-count">Number of drops</Label>
+            <Input
+              id="preset-drop-count"
+              type="number"
+              min={0}
+              value={dropCount}
+              onChange={(e) => setDropCount(e.target.value)}
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="preset-drop-timing">Drop timing</Label>
+            <Select
+              items={DROP_TIMING_OPTIONS}
+              value={dropTiming}
+              onValueChange={(v) => setDropTiming(v as DropTiming)}
+            >
+              <SelectTrigger id="preset-drop-timing" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DROPS_OPTIONS.map((opt) => (
+                {DROP_TIMING_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>
@@ -218,6 +244,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="preset-pax-seed">PAX factors — start from</Label>
             <Select
+              items={SEED_OPTIONS}
               value={seedChoice}
               onValueChange={(v) => handleSeedChoiceChange(v as SeedChoice)}
             >
@@ -255,9 +282,10 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
 }
 
 function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
-  const initialPolicy = preset.policy ?? DEFAULT_POLICY;
+  const initialPolicy = preset.policy ?? DEFAULT_SCORING_POLICY;
   const [name, setName] = useState(preset.name);
-  const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
+  const [dropCount, setDropCount] = useState(String(initialPolicy.dropCount));
+  const [dropTiming, setDropTiming] = useState<DropTiming>(initialPolicy.dropTiming);
   const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(initialPolicy.conePenaltyMs));
   // The COMPLETE table, editable in full (Task R3 — no override semantics).
@@ -275,6 +303,12 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
     setError(null);
 
     const coneMs = Number(conePenaltyMs);
+    const dropCountNum = Number(dropCount);
+    if (!Number.isInteger(dropCountNum) || dropCountNum < 0) {
+      setError("Number of drops must be a non-negative integer");
+      setPending(false);
+      return;
+    }
     if (!Number.isFinite(coneMs) || coneMs < 0) {
       setError("Cone penalty must be a non-negative number");
       setPending(false);
@@ -282,7 +316,8 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
     }
 
     const policyChanged =
-      drops !== initialPolicy.drops ||
+      dropCountNum !== initialPolicy.dropCount ||
+      dropTiming !== initialPolicy.dropTiming ||
       paxSection !== initialPolicy.paxSection ||
       coneMs !== initialPolicy.conePenaltyMs ||
       preset.policy === null; // unparseable stored row — always rewrite it in canonical form
@@ -292,7 +327,12 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
     const patch: Record<string, unknown> = {};
     if (name !== preset.name) patch.name = name;
     if (policyChanged) {
-      patch.policyJson = serializePolicy({ drops, paxSection, conePenaltyMs: coneMs });
+      patch.policyJson = serializePolicy({
+        dropCount: dropCountNum,
+        dropTiming,
+        paxSection,
+        conePenaltyMs: coneMs,
+      });
     }
     if (paxTableChanged) {
       patch.paxTableJson = paxTable;
@@ -366,13 +406,28 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-preset-drops">Drops</Label>
-                <Select value={drops} onValueChange={(v) => setDrops(v as Drops)}>
-                  <SelectTrigger id="edit-preset-drops" className="w-full">
+                <Label htmlFor="edit-preset-drop-count">Number of drops</Label>
+                <Input
+                  id="edit-preset-drop-count"
+                  type="number"
+                  min={0}
+                  value={dropCount}
+                  onChange={(e) => setDropCount(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-preset-drop-timing">Drop timing</Label>
+                <Select
+                  items={DROP_TIMING_OPTIONS}
+                  value={dropTiming}
+                  onValueChange={(v) => setDropTiming(v as DropTiming)}
+                >
+                  <SelectTrigger id="edit-preset-drop-timing" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {DROPS_OPTIONS.map((opt) => (
+                    {DROP_TIMING_OPTIONS.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
                       </SelectItem>

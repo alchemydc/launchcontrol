@@ -14,8 +14,8 @@ const TEST_DB_URL = "file:./test-season-average.db";
 
 let prisma: PrismaClient;
 
-// Three events, one class, fixed drops: N=3 -> qualifying floor(3/2)+1 = 2,
-// so each driver's best 2 of 3 count. averagePoints averages COUNTED
+// Three events, one class, ruleset dropCount=1, so each driver's best 2 of 3
+// count. averagePoints averages COUNTED
 // championship scores only (BJ, 2026-07-23) — the dropped score must not
 // dilute it.
 function event(n: number, aliceSecs: number, bobSecs: number): ParsedRmsoloEvent {
@@ -51,6 +51,15 @@ beforeAll(async () => {
   await ingestRmsoloEvent({ parsed: event(1, 40.0, 40.404), sha256: "avg1", date: "2026-04-18" }, prisma);
   await ingestRmsoloEvent({ parsed: event(2, 41.0, 42.268), sha256: "avg2", date: "2026-05-02" }, prisma);
   await ingestRmsoloEvent({ parsed: event(3, 42.0, 44.211), sha256: "avg3", date: "2026-05-16" }, prisma);
+  const season = await prisma.season.findFirstOrThrow({ where: { year: 2026 } });
+  await prisma.season.update({ where: { id: season.id }, data: { minimumEvents: 2 } });
+  await prisma.scoringSystem.update({
+    where: { id: season.rulesetId },
+    data: {
+      policy:
+        '{"v":3,"dropCount":1,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
+    },
+  });
 });
 
 afterAll(async () => {
@@ -64,7 +73,7 @@ describe("averagePoints", () => {
     const as = result.sections.find((s) => s.classCode === "AS")!;
     const alice = as.drivers.find((d) => d.driverName === "Alice A.")!;
     const bob = as.drivers.find((d) => d.driverName === "Bob B.")!;
-    // 3 completed events, fixed drops: counted = best 2.
+    // 3 completed events with one fixed drop: counted = best 2.
     expect(alice.averagePoints).toBe(1000); // (1000 + 1000) / 2, third 1000 dropped
     // Bob: 990 (40.404), 970 (42.268), 950 (44.211) → counted 990+970 → 980.
     // Mean over all three would be 970 — proves the dropped 950 is excluded.

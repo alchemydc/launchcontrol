@@ -15,8 +15,10 @@ import { dbTarget, migrateDeploy } from "./helpers/db";
 // each test builds its own scratch league (via createLeague) so tests stay
 // independent within a single shared DB file.
 
-const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
-const RMSOLO_POLICY = '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1000}';
+const PCA_POLICY =
+  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}';
+const RMSOLO_POLICY =
+  '{"v":3,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1000}';
 
 const { path: TEST_DB_PATH, url: TEST_DB_URL } = dbTarget("league-admin-crud");
 
@@ -173,7 +175,7 @@ describe("deleteLeague", () => {
 });
 
 describe("updateSeason", () => {
-  it("patches plannedEvents/status/rulesetId", async () => {
+  it("patches plannedEvents/minimumEvents/status/rulesetId", async () => {
     const { league } = await createLeague({ slug: "us-basic", name: "US Basic League" }, prisma);
     const season = await createSeason({ leagueSlug: league.slug, name: "US Season", year: 2092 }, prisma);
     const other = await createScoringSystem(prisma, {
@@ -185,15 +187,17 @@ describe("updateSeason", () => {
     const updated = await updateSeason(
       prisma,
       { leagueSlug: league.slug, seasonSlug: season.slug },
-      { plannedEvents: 9, status: "completed", rulesetId: other.id },
+      { plannedEvents: 9, minimumEvents: 5, status: "completed", rulesetId: other.id },
     );
 
     expect(updated.plannedEvents).toBe(9);
+    expect(updated.minimumEvents).toBe(5);
     expect(updated.status).toBe("completed");
     expect(updated.rulesetId).toBe(other.id);
 
     const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
     expect(persisted.plannedEvents).toBe(9);
+    expect(persisted.minimumEvents).toBe(5);
     expect(persisted.status).toBe("completed");
   });
 
@@ -212,10 +216,26 @@ describe("updateSeason", () => {
     expect(updated.year).toBe(2094);
   });
 
-  it("rejects invalid status, invalid rulesetId, duplicate slug", async () => {
+  it("rejects invalid event parameters, status, rulesetId, and duplicate slug", async () => {
     const { league } = await createLeague({ slug: "us-invalid", name: "US Invalid League" }, prisma);
     const seasonA = await createSeason({ leagueSlug: league.slug, name: "US Season A", year: 2095 }, prisma);
     const seasonB = await createSeason({ leagueSlug: league.slug, name: "US Season B", year: 2096 }, prisma);
+
+    await expect(
+      updateSeason(
+        prisma,
+        { leagueSlug: league.slug, seasonSlug: seasonA.slug },
+        { minimumEvents: -1 },
+      ),
+    ).rejects.toThrow(/minimumEvents must be a non-negative integer/);
+
+    await expect(
+      updateSeason(
+        prisma,
+        { leagueSlug: league.slug, seasonSlug: seasonA.slug },
+        { minimumEvents: 2.5 },
+      ),
+    ).rejects.toThrow(/minimumEvents must be a non-negative integer/);
 
     await expect(
       updateSeason(
@@ -337,9 +357,10 @@ describe("scoring systems", () => {
       createScoringSystem(prisma, {
         leagueSlug: league.slug,
         name: "Bad Policy Preset",
-        policyJson: '{"v":2,"drops":"sideways","paxSection":false,"conePenaltyMs":2000}',
+        policyJson:
+          '{"v":3,"dropCount":2,"dropTiming":"sideways","paxSection":false,"conePenaltyMs":2000}',
       }),
-    ).rejects.toThrow(/scoringPolicy\.drops/);
+    ).rejects.toThrow(/scoringPolicy\.dropTiming/);
   });
 
   it("create seeds the complete built-in PAX table when paxTableJson is absent", async () => {
@@ -404,9 +425,9 @@ describe("scoring systems", () => {
       updateScoringSystem(
         prisma,
         { leagueSlug: league.slug, name: "Preset A" },
-        { policyJson: '{"v":2,"drops":"sideways"}' },
+        { policyJson: '{"v":3,"dropCount":2,"dropTiming":"sideways"}' },
       ),
-    ).rejects.toThrow(/scoringPolicy\.drops/);
+    ).rejects.toThrow(/scoringPolicy\.dropTiming/);
 
     await expect(
       updateScoringSystem(prisma, { leagueSlug: league.slug, name: "Nonexistent" }, { policyJson: PCA_POLICY }),

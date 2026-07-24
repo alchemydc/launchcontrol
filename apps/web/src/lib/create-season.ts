@@ -13,6 +13,8 @@ export type CreateSeasonOptions = {
   year: number;
   /** Defaults to 0 — matches the ingest auto-create default; edit later once the season's calendar is known. */
   plannedEvents?: number;
+  /** Attendance required for an official standing. Defaults to 4. */
+  minimumEvents?: number;
   /** URL-safe addressing key, unique per league (see season-resolve.ts's resolveSeasonBySlug).
    *  Defaults to slugify(name). Must already be a valid slug shape (lowercase alphanumeric,
    *  hyphen-separated) — an explicit override is not re-slugified. */
@@ -44,12 +46,30 @@ export async function createSeason(
   opts: CreateSeasonOptions,
   client: PrismaClient = defaultClient,
 ): Promise<Season> {
-  const { leagueSlug, name, year, plannedEvents = 0, presetName, policyFilePath } = opts;
+  const {
+    leagueSlug,
+    name,
+    year,
+    plannedEvents = 0,
+    minimumEvents = 4,
+    presetName,
+    policyFilePath,
+  } = opts;
 
   if (policyFilePath !== undefined) {
     throw new Error(
       "[create-season] --policy-file is gone: scoring policies live on rulesets now. " +
         "Create or edit a ruleset (scoring system) and pass its name via --preset instead.",
+    );
+  }
+  if (!Number.isInteger(plannedEvents) || plannedEvents < 0) {
+    throw new Error(
+      `[create-season] plannedEvents must be a non-negative integer (got ${JSON.stringify(plannedEvents)}).`,
+    );
+  }
+  if (!Number.isInteger(minimumEvents) || minimumEvents < 0) {
+    throw new Error(
+      `[create-season] minimumEvents must be a non-negative integer (got ${JSON.stringify(minimumEvents)}).`,
     );
   }
 
@@ -105,6 +125,7 @@ export async function createSeason(
       slug,
       year,
       plannedEvents,
+      minimumEvents,
       rulesetId: preset.id,
     },
   });
@@ -117,6 +138,7 @@ export type UpdateSeasonPatch = Partial<{
   slug: string;
   year: number;
   plannedEvents: number;
+  minimumEvents: number;
   status: SeasonStatus;
   /** Id of a ScoringSystem ruleset belonging to the SAME league — validated before writing. */
   rulesetId: number;
@@ -154,6 +176,22 @@ export async function updateSeason(
 
   if (patch.status !== undefined && !SEASON_STATUSES.includes(patch.status)) {
     throw new Error(`[update-season] status must be one of ${SEASON_STATUSES.join(", ")} (got '${patch.status}').`);
+  }
+  if (
+    patch.plannedEvents !== undefined &&
+    (!Number.isInteger(patch.plannedEvents) || patch.plannedEvents < 0)
+  ) {
+    throw new Error(
+      `[update-season] plannedEvents must be a non-negative integer (got ${JSON.stringify(patch.plannedEvents)}).`,
+    );
+  }
+  if (
+    patch.minimumEvents !== undefined &&
+    (!Number.isInteger(patch.minimumEvents) || patch.minimumEvents < 0)
+  ) {
+    throw new Error(
+      `[update-season] minimumEvents must be a non-negative integer (got ${JSON.stringify(patch.minimumEvents)}).`,
+    );
   }
 
   if (patch.name !== undefined && patch.name !== season.name) {
@@ -201,6 +239,7 @@ export async function updateSeason(
   if (newSlug !== undefined) data.slug = newSlug;
   if (patch.year !== undefined) data.year = patch.year;
   if (patch.plannedEvents !== undefined) data.plannedEvents = patch.plannedEvents;
+  if (patch.minimumEvents !== undefined) data.minimumEvents = patch.minimumEvents;
   if (patch.status !== undefined) data.status = patch.status;
   if (patch.rulesetId !== undefined) data.ruleset = { connect: { id: patch.rulesetId } };
 

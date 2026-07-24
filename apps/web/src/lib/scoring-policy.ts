@@ -1,5 +1,5 @@
 /**
- * ScoringPolicy v2 — the scoring knobs stored as JSON on a ScoringSystem
+ * ScoringPolicy v3 — the scoring knobs stored as JSON on a ScoringSystem
  * ("ruleset") row, read live through `Season.rulesetId` (Task R2 — seasons
  * no longer snapshot a policy of their own). This is the only shape in play
  * right now: no formula DSL, no per-field defaulting. Every seeded ruleset
@@ -8,7 +8,7 @@
  * `parseScoringPolicy` never needs to paper over a partial row — a malformed
  * or incomplete policy is a data bug and should throw, not silently coerce.
  *
- * v2 (Task R1) drops v1's per-policy raw/pax class-ranking toggle: class
+ * v2 (Task R1) dropped v1's per-policy raw/pax class-ranking toggle: class
  * sections now always rank on the entry's applied-PAX-indexed best time
  * (see season-leaderboard.ts). For a class whose entries all share one PAX
  * factor this is a pure rescale of the raw best — identical order and
@@ -16,23 +16,39 @@
  * entries carry per-driver derived factors it's the official (indexed)
  * ordering the old "pax" setting existed to produce. Since there was never
  * a case where "raw" gave a *different, still-correct* ordering, the toggle
- * only ever hid a bug for run-group classes — so it's removed rather than
- * defaulted. `v1` payloads are rejected outright; no dual v1/v2 support in
- * app code.
+ * only ever hid a bug for run-group classes — so it was removed rather than
+ * defaulted.
+ *
+ * v3 separates two concepts that the old `floor(N/2)+1` threshold coupled:
+ * `dropCount` is a ruleset scoring parameter, while the minimum attendance
+ * required for an official standing lives on Season. `dropTiming` retains
+ * v2's fixed/proportional behavior but is named for what it actually controls.
+ * Older payloads are rejected outright; migrations canonicalize stored rows
+ * before this code deploys.
  */
 export type ScoringPolicy = {
-  v: 2;
+  v: 3;
+  /** Number of lowest season scores discarded once the season is complete. */
+  dropCount: number;
   /**
-   * fixed: count the best qualifying-threshold scores regardless of season
-   * progress (PCA — mid-season, nothing drops).
+   * fixed: use the season-end counted target throughout the season (PCA —
+   * mid-season, nothing drops until a driver has more scores than that target).
    * proportional: drops scale with completed events (RMsolo) — see
    * `countedEventTarget` in season-leaderboard.ts.
    */
-  drops: "fixed" | "proportional";
+  dropTiming: "fixed" | "proportional";
   /** Synthetic overall-PAX standings section, pinned first (season-leaderboard.ts PAX_SECTION_CODE). */
   paxSection: boolean;
   /** Milliseconds added per cone struck. PCA convention is 2000. */
   conePenaltyMs: number;
+};
+
+export const DEFAULT_SCORING_POLICY: ScoringPolicy = {
+  v: 3,
+  dropCount: 2,
+  dropTiming: "fixed",
+  paxSection: false,
+  conePenaltyMs: 2000,
 };
 
 function fail(field: string, expected: string, raw: unknown): never {
@@ -60,11 +76,18 @@ export function parseScoringPolicy(json: string): ScoringPolicy {
   }
   const obj = raw as Record<string, unknown>;
 
-  if (obj.v !== 2) {
-    fail("v", "2", obj.v);
+  if (obj.v !== 3) {
+    fail("v", "3", obj.v);
   }
-  if (obj.drops !== "fixed" && obj.drops !== "proportional") {
-    fail("drops", '"fixed" or "proportional"', obj.drops);
+  if (
+    typeof obj.dropCount !== "number" ||
+    !Number.isInteger(obj.dropCount) ||
+    obj.dropCount < 0
+  ) {
+    fail("dropCount", "a non-negative integer", obj.dropCount);
+  }
+  if (obj.dropTiming !== "fixed" && obj.dropTiming !== "proportional") {
+    fail("dropTiming", '"fixed" or "proportional"', obj.dropTiming);
   }
   if (typeof obj.paxSection !== "boolean") {
     fail("paxSection", "a boolean", obj.paxSection);
@@ -74,8 +97,9 @@ export function parseScoringPolicy(json: string): ScoringPolicy {
   }
 
   return {
-    v: 2,
-    drops: obj.drops,
+    v: 3,
+    dropCount: obj.dropCount,
+    dropTiming: obj.dropTiming,
     paxSection: obj.paxSection,
     conePenaltyMs: obj.conePenaltyMs,
   };

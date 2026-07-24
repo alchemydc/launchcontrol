@@ -1,18 +1,17 @@
 import type { ReactNode } from "react";
 
-// Scoring-rule copy that stays truthful in both SEASON_DROPS modes: in fixed
-// mode countedEvents === qualifyingEvents, reproducing the original sentence
-// byte-for-byte; in proportional mode mid-season it states the current
-// counted target and the season-end rule.
+// Scoring-rule copy keeps score drops separate from the minimum attendance
+// threshold. Fixed timing uses the season-end target throughout; proportional
+// timing can use a smaller current target mid-season.
 export function scoringNote(
   countedEvents: number,
-  qualifyingEvents: number,
+  finalCountedEvents: number,
   totalEvents: number,
 ): string {
-  if (countedEvents === qualifyingEvents) {
-    return `Best ${qualifyingEvents} of ${totalEvents} scores count toward the season total.`;
+  if (countedEvents === finalCountedEvents) {
+    return `Best ${finalCountedEvents} of ${totalEvents} scores count toward the season total.`;
   }
-  return `Best ${countedEvents} scores currently count toward the season total (best ${qualifyingEvents} of ${totalEvents} at season end).`;
+  return `Best ${countedEvents} scores currently count toward the season total (best ${finalCountedEvents} of ${totalEvents} at season end).`;
 }
 
 /**
@@ -25,6 +24,7 @@ export function SeasonHeader({
   totalEvents,
   completedEvents,
   qualifyingEvents,
+  finalCountedEvents,
   countedEvents,
   hasStandings,
 }: {
@@ -33,6 +33,7 @@ export function SeasonHeader({
   totalEvents: number;
   completedEvents: number;
   qualifyingEvents: number;
+  finalCountedEvents: number;
   countedEvents: number;
   hasStandings: boolean;
 }) {
@@ -53,7 +54,7 @@ export function SeasonHeader({
                 Points are awarded per event: 1000 to the class winner, others
                 proportional. Combined (same-date, multi-session) events score
                 once, on summed session times.{" "}
-                {scoringNote(countedEvents, qualifyingEvents, totalEvents)}{" "}
+                {scoringNote(countedEvents, finalCountedEvents, totalEvents)}{" "}
                 Drivers with fewer than {qualifyingEvents} scoring events are
                 marked Provisional.
               </p>

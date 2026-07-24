@@ -56,6 +56,7 @@ export default async function AdminSeasonsPage({
     slug: season.slug,
     year: season.year,
     plannedEvents: season.plannedEvents,
+    minimumEvents: season.minimumEvents,
     status: season.status as "active" | "completed",
     rulesetId: season.ruleset.id,
     rulesetName: season.ruleset.name,

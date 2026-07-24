@@ -38,6 +38,7 @@ export async function POST(
 
   const opts: CreateSeasonOptions = { leagueSlug: slug, name: b.name, year: b.year };
   if (typeof b.plannedEvents === "number") opts.plannedEvents = b.plannedEvents;
+  if (typeof b.minimumEvents === "number") opts.minimumEvents = b.minimumEvents;
   if (typeof b.slug === "string") opts.slug = b.slug;
   if (typeof b.presetName === "string") opts.presetName = b.presetName;
 

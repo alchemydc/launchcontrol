@@ -13,8 +13,10 @@ const TEST_DB_URL = "file:./test-season-pax.db";
 
 const YEAR = 2026;
 
-const FIXED_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
-const FIXED_PAX_SECTION_POLICY = '{"v":2,"drops":"fixed","paxSection":true,"conePenaltyMs":2000}';
+const FIXED_POLICY =
+  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}';
+const FIXED_PAX_SECTION_POLICY =
+  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000}';
 
 let prisma: PrismaClient;
 let seasonId: number;
@@ -284,22 +286,27 @@ describe("season PAX section (ruleset policy paxSection)", () => {
   });
 });
 
-describe("countedEventTarget (ruleset policy drops)", () => {
-  it("fixed mode counts the qualifying threshold regardless of progress", () => {
-    expect(countedEventTarget(10, 6, 5, "fixed")).toBe(6);
-    expect(countedEventTarget(6, 4, 3, "fixed")).toBe(4);
+describe("countedEventTarget (ruleset drop count + timing)", () => {
+  it("fixed timing uses the season-end target regardless of progress", () => {
+    expect(countedEventTarget(10, 4, 5, "fixed")).toBe(6);
+    expect(countedEventTarget(6, 2, 3, "fixed")).toBe(4);
   });
 
   it("proportional mode scales drops with completed events", () => {
-    expect(countedEventTarget(10, 6, 5, "proportional")).toBe(3); // half season → half of 4 drops
-    expect(countedEventTarget(10, 6, 10, "proportional")).toBe(6); // full season → best 6 of 10
-    expect(countedEventTarget(10, 6, 1, "proportional")).toBe(1);
-    expect(countedEventTarget(10, 6, 7, "proportional")).toBe(5); // 7 - floor(7×4/10)=7-2
+    expect(countedEventTarget(10, 4, 5, "proportional")).toBe(3); // half season → half of 4 drops
+    expect(countedEventTarget(10, 4, 10, "proportional")).toBe(6); // full season → best 6 of 10
+    expect(countedEventTarget(10, 4, 1, "proportional")).toBe(1);
+    expect(countedEventTarget(10, 4, 7, "proportional")).toBe(5); // 7 - floor(7×4/10)=7-2
   });
 
   it("degenerate seasons never drop below one counted event", () => {
-    expect(countedEventTarget(0, 0, 0, "proportional")).toBe(0);
-    expect(countedEventTarget(2, 2, 1, "proportional")).toBe(1);
+    expect(countedEventTarget(0, 4, 0, "proportional")).toBe(0);
+    expect(countedEventTarget(2, 4, 1, "proportional")).toBe(1);
+  });
+
+  it("drop count is independent of the season's minimum qualifying events", () => {
+    expect(countedEventTarget(6, 1, 6, "fixed")).toBe(5);
+    expect(countedEventTarget(6, 3, 6, "fixed")).toBe(3);
   });
 });
 
@@ -311,7 +318,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("a season's default 2000ms policy (matching CONE_PENALTY_MS) is the parity baseline", async () => {
     await setConePenaltyPolicy(
-      '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
@@ -323,7 +330,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("a 1000ms-penalty season scores this same matchup differently end-to-end — the win flips", async () => {
     await setConePenaltyPolicy(
-      '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":1000}',
+      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":1000}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
@@ -335,7 +342,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("the same 1000ms penalty also flips the ruleset's synthetic overall-PAX section", async () => {
     await setConePenaltyPolicy(
-      '{"v":2,"drops":"fixed","paxSection":true,"conePenaltyMs":1000}',
+      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":1000}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const pax = result.sections.find((s) => s.classCode === "PAX")!;
@@ -345,7 +352,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("restoring the 2000ms policy restores the original (parity) order — the threading is not one-directional", async () => {
     await setConePenaltyPolicy(
-      '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;

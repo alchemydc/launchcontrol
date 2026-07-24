@@ -32,13 +32,13 @@ model Event {
 }
 
 model Driver {
-  id          Int     @id @default(autoincrement())
-  msrUid      String? @unique
+  id           Int     @id @default(autoincrement())
+  msrUid       String? @unique
   firstName    String
-  lastInitial  String  // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest.ts redactLastName()
+  lastInitial  String // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest.ts redactLastName()
   identityHash String  @unique
   memberNum    String?
-  nameOnlyHash String?   // sha256(lower(first)|lower(last)) — full-name key for blank-member merging at ingest; nullable because pre-existing rows can't be backfilled (full surname is never stored)
+  nameOnlyHash String? // sha256(lower(first)|lower(last)) — full-name key for blank-member merging at ingest; nullable because pre-existing rows can't be backfilled (full surname is never stored)
 
   entries Entry[]
   videos  Video[]
@@ -60,15 +60,15 @@ model CarClass {
 }
 
 model Entry {
-  id             Int     @id @default(autoincrement())
-  eventId        Int
-  driverId       Int
-  classId        Int
-  paxClassId     Int
-  paxIndexApplied Decimal? // factor actually applied at ingest (PAX snapshot; PR 3) — null only pre-backfill
+  id                     Int      @id @default(autoincrement())
+  eventId                Int
+  driverId               Int
+  classId                Int
+  paxClassId             Int
+  paxIndexApplied        Decimal? // factor actually applied at ingest (PAX snapshot; PR 3) — null only pre-backfill
   carNumber              String
   carDescription         String?
-  bestCommittedRunNumber Int?    // VisualAX-authoritative best-run pointer; resolved from registrations.bestcommittedrun_id by finding the FK's position in the driver's sorted-by-id source runs (1-indexed). Null when VisualAX emits no committed best.
+  bestCommittedRunNumber Int? // VisualAX-authoritative best-run pointer; resolved from registrations.bestcommittedrun_id by finding the FK's position in the driver's sorted-by-id source runs (1-indexed). Null when VisualAX emits no committed best.
 
   event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   driver   Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
@@ -145,7 +145,7 @@ model ScoringSystem {
   id        Int      @id @default(autoincrement())
   leagueId  Int
   name      String
-  policy    String // JSON ScoringPolicy v2 (SQLite has no JSON type)
+  policy    String // JSON ScoringPolicy v3 (SQLite has no JSON type)
   paxTable  String   @default("{}") // COMPLETE JSON code->factor table — no built-in fallback at read time
   createdAt DateTime @default(now())
 
@@ -162,6 +162,7 @@ model Season {
   slug          String // URL-safe addressing key — slugify(name) unless overridden via --slug
   year          Int
   plannedEvents Int    @default(0)
+  minimumEvents Int    @default(4) // attendance required for an official championship standing
   status        String @default("active") // "active" | "completed"
   rulesetId     Int // live reference — standings read policy/paxTable via season.ruleset at render time
 
@@ -193,13 +194,13 @@ model SuperUser {
 
 model AdminAuditLog {
   id          Int      @id @default(autoincrement())
-  action      String   // "ingest" | "event.update" | "event.delete"
-  actorMsrUid String   // MSR UID, or "cli" for scripts/ingest.ts
-  actorName   String   // "First L." only — NEVER full last name (PII rule)
-  targetType  String   // "event"
+  action      String // "ingest" | "event.update" | "event.delete"
+  actorMsrUid String // MSR UID, or "cli" for scripts/ingest.ts
+  actorName   String // "First L." only — NEVER full last name (PII rule)
+  targetType  String // "event"
   targetId    Int?
   targetSlug  String?
-  detail      String   // JSON string (SQLite has no native JSON type)
+  detail      String // JSON string (SQLite has no native JSON type)
   createdAt   DateTime @default(now())
 
   @@index([createdAt])

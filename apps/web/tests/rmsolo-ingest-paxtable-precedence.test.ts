@@ -70,7 +70,8 @@ describe("ruleset paxTable, end-to-end through ingestRmsoloEvent", () => {
     const ruleset = await createScoringSystem(prisma, {
       leagueSlug: "pca-rmr",
       name: "2027 Override Rules",
-      policyJson: '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      policyJson:
+        '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
       paxTableJson: JSON.stringify({ AS: 0.5 }),
     });
     const season = await prisma.season.create({
@@ -100,7 +101,8 @@ describe("ruleset paxTable, end-to-end through ingestRmsoloEvent", () => {
     const ruleset = await createScoringSystem(prisma, {
       leagueSlug: "pca-rmr",
       name: "2028 Rules",
-      policyJson: '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      policyJson:
+        '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
       paxTableJson: JSON.stringify({ ZZ: 0.75 }), // covers ZZ, but not the class used below
     });
     const season = await prisma.season.create({

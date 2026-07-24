@@ -15,10 +15,10 @@ import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 export const DEFAULT_LEAGUE_SLUG = "pca-rmr";
 
 // Matches the "PCA Classic" ruleset seeded by the league-foundation migration
-// (canonicalized to v2 by scoring_policy_v2) — the policy every fixture
+// (canonicalized to v3 by ruleset_scoring_parameters) — the policy every fixture
 // season scores with unless a test points it at a different ruleset.
 export const DEFAULT_SCORING_POLICY =
-  '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
+  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 /**
  * Return a ScoringSystem id usable as a Season.rulesetId for `leagueId` —
@@ -53,6 +53,7 @@ export async function ensureRuleset(
 export type SeasonFixtureSpec = {
   year: number;
   plannedEvents?: number;
+  minimumEvents?: number;
   name?: string;
 };
 
@@ -65,8 +66,9 @@ export type LeagueFixtureResult = {
  * Ensure a League row (default slug "pca-rmr") and one Season row per given
  * year exist in `client`'s DB, creating only what's missing — a Season row
  * `ingestAxdb` already auto-created for that (league, year) is left as-is.
- * Accepts either a bare year (plannedEvents defaults to 0, matching the
- * ingest auto-create default) or a `{ year, plannedEvents, name }` spec.
+ * Accepts either a bare year (plannedEvents defaults to 0 and minimumEvents
+ * defaults to 4, matching Season defaults) or a
+ * `{ year, plannedEvents, minimumEvents, name }` spec.
  */
 export async function ensureLeagueAndSeasons(
   client: PrismaClient,
@@ -112,8 +114,10 @@ export async function ensureLeagueAndSeasons(
 
   const seasonIdByYear = new Map<number, number>();
   for (const spec of years) {
-    const { year, plannedEvents = 0, name } =
-      typeof spec === "number" ? { year: spec, plannedEvents: 0, name: undefined } : spec;
+    const { year, plannedEvents = 0, minimumEvents = 4, name } =
+      typeof spec === "number"
+        ? { year: spec, plannedEvents: 0, minimumEvents: 4, name: undefined }
+        : spec;
 
     let season = await client.season.findFirst({ where: { leagueId: league.id, year } });
     if (!season) {
@@ -125,6 +129,7 @@ export async function ensureLeagueAndSeasons(
           slug: slugify(seasonName),
           year,
           plannedEvents,
+          minimumEvents,
           rulesetId: ruleset.id,
         },
       });

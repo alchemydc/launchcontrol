@@ -28,6 +28,7 @@ export type SeasonRow = {
   slug: string;
   year: number;
   plannedEvents: number;
+  minimumEvents: number;
   status: "active" | "completed";
   /** Live ScoringSystem reference (Task R2) — the ruleset holds policy + PAX table. */
   rulesetId: number;
@@ -66,6 +67,7 @@ export function SeasonsTable({
             <TableHead>Slug</TableHead>
             <TableHead>Year</TableHead>
             <TableHead>Planned events</TableHead>
+            <TableHead>Minimum events</TableHead>
             <TableHead>Events</TableHead>
             <TableHead>Ruleset</TableHead>
             <TableHead>Status</TableHead>
@@ -81,6 +83,7 @@ export function SeasonsTable({
               </TableCell>
               <TableCell>{row.year}</TableCell>
               <TableCell>{row.plannedEvents}</TableCell>
+              <TableCell>{row.minimumEvents}</TableCell>
               <TableCell>{row.events}</TableCell>
               <TableCell>{row.rulesetName}</TableCell>
               <TableCell>
@@ -107,7 +110,7 @@ export function SeasonsTable({
           ))}
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-muted-foreground">
+              <TableCell colSpan={9} className="text-center text-muted-foreground">
                 No seasons yet.
               </TableCell>
             </TableRow>

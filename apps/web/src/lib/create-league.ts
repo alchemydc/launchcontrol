@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { League, Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
 import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
-import { parseScoringPolicy } from "@/lib/scoring-policy";
+import { DEFAULT_SCORING_POLICY, parseScoringPolicy } from "@/lib/scoring-policy";
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -29,13 +29,13 @@ function validateLogoUrl(logoUrl: string): void {
   }
 }
 
-// A new league needs a default policy to snapshot when neither --preset-name
+// A new league needs a default ruleset policy when neither --preset-name
 // (there IS no preset yet — this call creates the first one) nor
 // --policy-file is given. PCA-shaped: fixed drops, no PAX section, 2000ms
 // cone penalty — the same defaults `league-foundation` seeded for pca-rmr
-// (now canonicalized to v2), a reasonable starting point for any new league.
+// (now canonicalized to v3), a reasonable starting point for any new league.
 const DEFAULT_POLICY_JSON =
-  '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
+  JSON.stringify(DEFAULT_SCORING_POLICY);
 
 export type CreateLeagueOptions = {
   slug: string;
@@ -54,7 +54,7 @@ export type CreateLeagueOptions = {
   gate?: AccessGate;
   /** Name for the auto-created default ScoringSystem preset. Defaults to `<name> Default`. */
   presetName?: string;
-  /** Path to a JSON file holding a ScoringPolicy v1 object for the default preset. Defaults to a PCA-shaped policy. */
+  /** Path to a JSON file holding a ScoringPolicy v3 object for the default preset. Defaults to a PCA-shaped policy. */
   policyFilePath?: string;
   /** Logo image URL for the league gate card grid. Must be http(s) when given. Defaults to null (placeholder tile). */
   logoUrl?: string | null;

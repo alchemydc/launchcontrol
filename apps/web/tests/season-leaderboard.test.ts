@@ -96,7 +96,7 @@ describe("nameOnlyHash merge-back across events", () => {
 //    Dee   967, 1000                     → 1967 provisional 2/4
 //    Bea   1000                          → 1000 provisional 1/4 (event 5 only)
 //
-// Dynamic qualifying threshold: floor(6/2)+1 = 4
+// Season.minimumEvents = 4; ruleset dropCount = 2, so best 4 of 6 count.
 // ---------------------------------------------------------------------------
 
 describe("buildSeasonLeaderboard(2026)", () => {
@@ -169,6 +169,54 @@ describe("buildSeasonLeaderboard(2026)", () => {
     expect(alex.totalPoints).toBe(sumCounted);
     // All Alex's scores are 1000, so totalPoints = 4000
     expect(alex.totalPoints).toBe(4000);
+  });
+
+  it("changing the season minimum does not change the ruleset's drop count", async () => {
+    const season = await prisma.season.findFirstOrThrow({ where: { year: 2026 } });
+    try {
+      await prisma.season.update({ where: { id: season.id }, data: { minimumEvents: 5 } });
+      const result = await buildSeasonLeaderboard(2026, prisma);
+      const alex = result.sections
+        .find((s) => s.classCode === "C1")!
+        .drivers.find((d) => d.driverName === "Alex A.")!;
+
+      expect(result.qualifyingEvents).toBe(5);
+      expect(result.finalCountedEvents).toBe(4);
+      expect(alex.scores.filter((s) => !s.dropped)).toHaveLength(4);
+      expect(alex.scores.filter((s) => s.dropped)).toHaveLength(2);
+    } finally {
+      await prisma.season.update({ where: { id: season.id }, data: { minimumEvents: 4 } });
+    }
+  });
+
+  it("changing ruleset drops does not change the season minimum", async () => {
+    const season = await prisma.season.findFirstOrThrow({
+      where: { year: 2026 },
+      include: { ruleset: true },
+    });
+    try {
+      await prisma.scoringSystem.update({
+        where: { id: season.rulesetId },
+        data: {
+          policy:
+            '{"v":3,"dropCount":1,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
+        },
+      });
+      const result = await buildSeasonLeaderboard(2026, prisma);
+      const alex = result.sections
+        .find((s) => s.classCode === "C1")!
+        .drivers.find((d) => d.driverName === "Alex A.")!;
+
+      expect(result.qualifyingEvents).toBe(4);
+      expect(result.finalCountedEvents).toBe(5);
+      expect(alex.scores.filter((s) => !s.dropped)).toHaveLength(5);
+      expect(alex.scores.filter((s) => s.dropped)).toHaveLength(1);
+    } finally {
+      await prisma.scoringSystem.update({
+        where: { id: season.rulesetId },
+        data: { policy: season.ruleset.policy },
+      });
+    }
   });
 
   // Assertion 4 (M1.14): Multi-class participation. Bea ran C1 at events 1-4+6
@@ -414,13 +462,10 @@ describe("buildSeasonLeaderboard(2026)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// M1.13 — qualifyingEventCount helper unit tests
+// Season qualification threshold
 // ---------------------------------------------------------------------------
-describe("qualifyingEventCount formula", () => {
-  // Tested indirectly via result.qualifyingEvents for known N values.
-  // We exercise the formula through the public API with different event counts.
-  // The fixture has 6 events → floor(6/2)+1 = 4.
-  it("6 events → qualifyingEvents = 4", async () => {
+describe("season minimum events", () => {
+  it("uses Season.minimumEvents", async () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     expect(result.totalEvents).toBe(6);
     expect(result.qualifyingEvents).toBe(4);
@@ -469,7 +514,8 @@ describe("buildSeasonLeaderboard empty year", () => {
       totalEvents: 6,
       qualifyingEvents: 4,
       completedEvents: 0,
-      countedEvents: 4, // fixed-mode default policy (DEFAULT_SCORING_POLICY): counted == qualifying
+      finalCountedEvents: 4,
+      countedEvents: 4,
       sections: [],
     });
   });
@@ -496,7 +542,7 @@ describe("buildSeasonLeaderboard — explicit targets", () => {
   it("a second league's same-year season is isolated from the default league's ingested data", async () => {
     const { leagueId: otherLeagueId } = await ensureLeagueAndSeasons(
       prisma,
-      [{ year: 2026, plannedEvents: 4 }],
+      [{ year: 2026, plannedEvents: 4, minimumEvents: 3 }],
       "other-league",
     );
     const result = await buildSeasonLeaderboard({ leagueId: otherLeagueId, year: 2026 }, prisma);
@@ -506,7 +552,8 @@ describe("buildSeasonLeaderboard — explicit targets", () => {
       totalEvents: 4,
       completedEvents: 0,
       qualifyingEvents: 3,
-      countedEvents: 3,
+      finalCountedEvents: 2,
+      countedEvents: 2,
       sections: [],
     });
   });
@@ -517,6 +564,7 @@ describe("buildSeasonLeaderboard — explicit targets", () => {
       totalEvents: 0,
       completedEvents: 0,
       qualifyingEvents: 0,
+      finalCountedEvents: 0,
       countedEvents: 0,
       sections: [],
     });
@@ -543,32 +591,32 @@ describe("listSeasonYears — explicit leagueId", () => {
 // M1.16 — seasonScoringBasis: pure function, no DB
 // ---------------------------------------------------------------------------
 describe("seasonScoringBasis", () => {
-  it("planned > actual: uses the planned size for total and threshold", () => {
-    expect(seasonScoringBasis(2026, 3, { 2026: 6 })).toEqual({
+  it("planned > actual: uses the planned size and the season's minimum", () => {
+    expect(seasonScoringBasis(2026, 3, { 2026: 6 }, 4)).toEqual({
       totalEvents: 6,
       completedEvents: 3,
       qualifyingEvents: 4,
     });
   });
 
-  it("actual > planned: uses the actual size for total and threshold", () => {
-    expect(seasonScoringBasis(2026, 8, { 2026: 6 })).toEqual({
+  it("actual > planned: uses the actual size without changing the configured minimum", () => {
+    expect(seasonScoringBasis(2026, 8, { 2026: 6 }, 4)).toEqual({
       totalEvents: 8,
       completedEvents: 8,
-      qualifyingEvents: 5,
-    });
-  });
-
-  it("unlisted year: falls back to actual (derived) behavior", () => {
-    expect(seasonScoringBasis(2025, 6, { 2026: 6 })).toEqual({
-      totalEvents: 6,
-      completedEvents: 6,
       qualifyingEvents: 4,
     });
   });
 
+  it("the minimum qualifying events is independent of season size", () => {
+    expect(seasonScoringBasis(2025, 6, { 2026: 6 }, 3)).toEqual({
+      totalEvents: 6,
+      completedEvents: 6,
+      qualifyingEvents: 3,
+    });
+  });
+
   it("zero actual and no planned entry: all zero", () => {
-    expect(seasonScoringBasis(2025, 0, { 2026: 6 })).toEqual({
+    expect(seasonScoringBasis(2025, 0, { 2026: 6 }, 4)).toEqual({
       totalEvents: 0,
       completedEvents: 0,
       qualifyingEvents: 0,

@@ -10,6 +10,7 @@ const PATCH_KEYS = [
   "slug",
   "year",
   "plannedEvents",
+  "minimumEvents",
   "status",
   "rulesetId",
 ] as const satisfies readonly (keyof UpdateSeasonPatch)[];
