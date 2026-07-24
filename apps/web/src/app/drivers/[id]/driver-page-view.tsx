@@ -74,11 +74,19 @@ type CurrentSelection = {
  * `locked` (Task 20, `/l/[league]/drivers/[id]`): the league filter is
  * pinned to `defaultLeague` (here, the route's own league) and every
  * `?league=` param plus the no-footprint fallback above are ignored --
- * the viewer can never leave that league's scope from this page.
+ * the viewer can never leave that league's scope from this page. A
+ * `?season=` naming a season from a DIFFERENT league is likewise dropped
+ * (falls back to the locked league's default all-time scope) rather than
+ * honored -- `seasonId` wins over `leagueIds` in driver-history.ts's
+ * `resolveScope`, so an unvalidated cross-league season id would otherwise
+ * escape the lock entirely. Validated against `seasons` (the driver's own
+ * season breadth, same list the season chips render from), mirroring how a
+ * conflicting `?league=` is ignored using that same driver-scoped list.
  */
-function parseFilter(
+export function parseFilter(
   searchParams: { league?: string; season?: string; from?: string; to?: string },
   leagues: Array<{ id: number; slug: string }>,
+  seasons: Array<{ seasonId: number; leagueId: number }>,
   defaultLeague: { id: number; slug: string },
   locked: boolean,
 ): { filter: DriverHistoryFilter; current: CurrentSelection } {
@@ -114,7 +122,13 @@ function parseFilter(
   let to: string | undefined;
 
   const seasonIdNum = searchParams.season ? Number(searchParams.season) : NaN;
-  if (Number.isInteger(seasonIdNum) && seasonIdNum > 0) {
+  const seasonRequested = Number.isInteger(seasonIdNum) && seasonIdNum > 0;
+  // Locked pages only honor a `?season=` that resolves to a season within
+  // the locked league itself -- see the doc comment above.
+  const seasonAllowed =
+    seasonRequested &&
+    (!locked || seasons.some((s) => s.seasonId === seasonIdNum && s.leagueId === defaultLeague.id));
+  if (seasonAllowed) {
     filter.seasonId = seasonIdNum;
     timeScope = "season";
     seasonId = seasonIdNum;
@@ -177,7 +191,13 @@ export async function DriverPageView({
 
   const lockedLeague = lockedLeagueSlug ? await getLeagueConfigForSlug(lockedLeagueSlug) : null;
   const defaultLeague = lockedLeague ?? (await getLeagueConfig());
-  const { filter, current } = parseFilter(rawSearchParams, leagues, defaultLeague, lockedLeague != null);
+  const { filter, current } = parseFilter(
+    rawSearchParams,
+    leagues,
+    driverSeasons,
+    defaultLeague,
+    lockedLeague != null,
+  );
 
   const history = await buildDriverHistory(driverId, filter, prisma);
   const driverName = `${driver.firstName} ${driver.lastInitial}`;
