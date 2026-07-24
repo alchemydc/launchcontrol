@@ -28,66 +28,95 @@ pnpm --filter web dev
 
 Open http://localhost:3000. See [docs/BUILD.md](docs/BUILD.md) for ingest CLI, schema migration, and Turso ops.
 
-## Environment variables
+## Leagues & Seasons
 
-| Variable | Local default | Purpose |
+Tenant config lives in the database, not environment variables. A deployment's branding, access rule, and scoring all resolve from `League`/`Season`/`ScoringSystem` rows — see `apps/web/.env.example` for connection/secrets config (DB, MSR, SmugMug, session).
+
+- **`League`** — one row per club/tenant: site branding (name, title, description, footer), the MSR access gate and org, and SmugMug lookup defaults. `DEFAULT_LEAGUE_SLUG` (env, default `pca-rmr`) names which `League` row the **legacy, unprefixed routes** (`/`, `/leaderboard[/year]`, `/events/[slug]`, `/drivers/[id]`) serve — a fresh DB seeds the `pca-rmr` row via the League Foundation migration, reproducing the original production deployment byte-for-byte. A deployment isn't limited to one league, though: every `League` row is also publicly browsable at its own `/l/[league]` URLs (see "Multi-league browsing" below), so one deployment can host several clubs side by side.
+- **`ScoringSystem`** (UI: **Ruleset**) — named scoring configuration owned by a league (e.g. "PCA Classic"), including its policy and complete PAX-factor table.
+- **`Season`** — one per league-year, addressed by a `slug` unique within its league (defaults to `slugify(name)`; multiple seasons in the same year are allowed — each gets its own slug, e.g. a "2026 Summer Series" and a later "2026 Winter Series"). Each season points to a Ruleset by live reference, so policy edits immediately affect every assigned season. Existing entries retain their applied PAX factors until an admin explicitly re-applies the edited table to that season.
+
+### Multi-league browsing
+
+- **`/leagues`** — directory of every `League` row on the deployment (name, active-season summary, event counts).
+- **`/l/[league]`** — that league's home page (events list), **`/l/[league]/leaderboard`** (active/latest season) or **`/l/[league]/leaderboard/s/[seasonSlug]`** (a specific season), and **`/l/[league]/events/[slug]`** — all league-scoped, respecting that league's own `accessGate`.
+- The **legacy, unprefixed routes** (`/`, `/leaderboard[/year]`, `/events/[slug]`) are unchanged and always serve `DEFAULT_LEAGUE_SLUG` — existing bookmarks and the production PCA deployment are unaffected.
+- The site header shows a "Leagues" nav link only when the deployment hosts more than one league.
+
+### CLIs
+
+Create a new league (a fresh tenant — site branding, access gate, and a default scoring preset in one step):
+
+```sh
+pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo" \
+  [--title <title>] [--description <text>] [--footer <text>] [--landing <text>] \
+  [--gate required|optional|none] [--preset-name <name>] [--policy-file ./policy.json]
+```
+
+`--gate` defaults to `"optional"` when omitted. `--gate required` is now accepted for any league, not just the seeded `pca-rmr` default — per-league membership gating (`LeagueMembership` roles, MSR org match against `session.msrOrgIds`) resolves access correctly per league, so a non-default `"required"` league no longer mis-gates on the wrong org (see "Operational note" below, now describing the current behavior rather than a restriction). `league:create` also creates the league's first Ruleset: `--policy-file` if given, else a PCA-shaped default (fixed drops, no PAX section, 2000ms cone penalty). Season creation and ingest auto-creation use the league's oldest Ruleset when none is named.
+
+Create a new season with:
+
+```sh
+pnpm --filter web season:create --league pca-rmr --name "2027 Season" --year 2027 --planned 6 \
+  [--slug 2027-season] [--preset "PCA Classic"]
+```
+
+`--slug` defaults to `slugify(name)`. `--preset` selects an existing Ruleset by name (the option name is retained for CLI compatibility). Multiple seasons per (league, year) are allowed as long as their slugs differ within that league — this is what makes a mid-year second series (e.g. a Winter Series alongside a Summer Series) addressable.
+
+Ingest supports a `--league <slug>` flag on both pipelines (defaults to `DEFAULT_LEAGUE_SLUG` when omitted):
+
+```sh
+pnpm --filter web ingest --league rmsolo <path-to.axdb>
+pnpm --filter web ingest:rmsolo --league rmsolo --file <pdf> --date YYYY-MM-DD [--name "Event name"]
+pnpm --filter web ingest:rmsolo --league rmsolo   # no --file: scrapes the RMsolo results index instead
+```
+
+**ScoringPolicy v2** (stored on `ScoringSystem.policy`):
+
+| Field | Values | Meaning |
 |---|---|---|
-| `DATABASE_URL` | `file:./dev.db` | Local libSQL file path |
-| `TURSO_DATABASE_URL` | _(blank)_ | Turso remote URL — set in Vercel for preview/prod |
-| `TURSO_AUTH_TOKEN` | _(blank)_ | Turso auth token — set in Vercel for preview/prod |
-| `SMUGMUG_API_KEY` | _(blank)_ | SmugMug API key. Optional — leave blank locally; the event "Photos ↗" link is hidden when unset. |
-| `SMUGMUG_USER` | `rmrpca` | SmugMug account whose galleries are searched. Hard-coded to RMR PCA for MVP. |
-| `SMUGMUG_DISCIPLINE_PATH` | `Autocross` | Discipline folder within the SmugMug account. |
+| `v` | `2` | Policy schema version. |
+| `drops` | `"fixed"` \| `"proportional"` | fixed: best-N-of-M scores count regardless of season progress (PCA). proportional: the drop count scales with events completed (RMsolo). |
+| `paxSection` | boolean | Render a synthetic overall-PAX standings section, pinned first. |
+| `conePenaltyMs` | number | Milliseconds added per cone struck (PCA convention: 2000). Threaded end-to-end into per-entry corrected-time math. |
 
-## Multi-club configuration
+`League.footerText` renders verbatim in the site footer when set; a league with `footerText` left `null` falls back to the generic **"Powered by Launch Control"** string.
 
-Tenant identity, branding, and access policy are env-driven (`src/lib/club-config.ts`), so one codebase can serve other clubs without a fork. Defaults reproduce the PCA RMR deployment byte-for-byte.
+### Two-league local bring-up walkthrough
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `SITE_TITLE` | `Launch Control · PCA RMR` | Site title/branding |
-| `SITE_DESCRIPTION` | _(RMR copy)_ | Meta description |
-| `FOOTER_TEXT` | _(RMR copy)_ | Footer text |
-| `LANDING_DESCRIPTION` | _(RMR copy)_ | Landing page copy |
-| `ACCESS_GATE` | `required` | `required` (session + org membership gate results, PCA posture) \| `optional` (public results, login offered) \| `none` (public, no login UI) |
-| `MSR_ORG_ID` | _(blank)_ | MSR org UUID for membership display/gating. `MSR_RMR_ORG_ID` still honored as a legacy alias. |
-
-### RMsolo deployment
-
-Some clubs publish results as [RMsolo](http://rm-solo.sourceforge.net/) PDFs instead of AxWare `.axdb` exports. A second ingest pipeline (`src/lib/rmsolo-{index,parse,ingest}.ts`) scrapes a club's RMsolo results page and parses its Full-results PDFs.
-
-Requires [poppler](https://poppler.freedesktop.org/) for `pdftotext`: `brew install poppler` (macOS) or `apt install poppler-utils` (Debian/Ubuntu).
+The exact commands to stand up a second league (RMsolo) alongside the default `pca-rmr` league in your local DB:
 
 ```sh
-# Scrape the current season's results page and ingest every new event
-pnpm --filter web ingest:rmsolo
+# 1. Create an RMsolo-style ruleset policy, then create the league with it.
+cat > /tmp/rmsolo-policy.json <<'EOF'
+{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}
+EOF
+pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo" \
+  --preset-name "RMsolo Rules" --policy-file /tmp/rmsolo-policy.json
 
-# Ingest a single PDF already on disk
-pnpm --filter web ingest:rmsolo --file event.pdf --date 2026-04-12 [--name "April Points #2"]
+# 2. Create the season with that live ruleset reference.
+pnpm --filter web season:create --league rmsolo --name "2026 Summer Series" --year 2026 \
+  --planned 10 --preset "RMsolo Rules"
+
+# 3. Ingest RMsolo results into that league (scrapes the RMsolo results index;
+#    pass --file/--date instead to ingest one PDF).
+pnpm --filter web ingest:rmsolo --league rmsolo
+
+# 4. Browse it.
+pnpm --filter web dev
+# open http://localhost:3000/leagues
 ```
 
-Pro Solo events are auto-skipped (unsupported results format, deferred alongside the Winter Series). Driver names are always displayed redacted ("First L.") regardless of source — full surnames are hashed for identity but never stored. Entries with no printed driver name ingest as anonymous drivers named "Unknown #\<car\>" — these are real scoring entries in the official results. Classes whose printed Best is PAX-indexed (M/N/S/P/X run-groups) ingest with the best time computed from runs (`bestCommittedRunNumber` left null); results remain correct.
+**Operational note:** any league — default or not — may run with `accessGate: "required"`. Per-league membership gating resolves access independently for each league: a `LeagueMembership` row (`ADMIN`/`MEMBER` allows, `BLOCKED` denies) takes precedence, and failing that, an MSR org match checks the *viewer's* `session.msrOrgIds` (captured at login) against *that specific league's* `msrOrgId` — not just the default league's, as in earlier PRs. `--gate` still defaults to `"optional"` on `league:create` since most self-hosted leagues won't want a login wall, but passing `--gate required` is no longer refused.
 
-For a self-hosted deployment, the simplest path is Docker Compose — one `web` service (runs migrations on boot) plus an ingest sidecar that polls rmsolo.org daily (interval configurable via `INGEST_INTERVAL_SECONDS`):
+**`SESSION_SECRET` is required** whenever the *default* league's `accessGate` is `"required"` — that's the seeded `pca-rmr` config, so any deployment serving it (including this local walkthrough, since `pca-rmr` stays the default league) needs `SESSION_SECRET` set in `apps/web/.env`, or every gated page 500s. Generate one with `openssl rand -hex 32`.
 
-```sh
-cp deploy/launchcontrol.env.example deploy/launchcontrol.env   # edit branding/flags as needed
-docker compose --profile ingest up -d --build
-```
+### Driver stats filters
 
-The SQLite database lives on the `lc-data` named volume and survives image upgrades. The image is multi-arch — it builds natively on Apple Silicon and on amd64 hosts; to cross-build for an amd64 server from an ARM machine: `docker buildx build --platform linux/amd64 -t launchcontrol .`
+`/drivers/[id]` accepts query params to scope its stats: `?league=<slug>` (or `league=all` to combine leagues; default is the legacy single-league scope) crossed with a time scope — `?season=<seasonId>` for one season, `?from=YYYY-MM-DD&to=YYYY-MM-DD` for a custom range, or no time param at all for all-time. Event/podium/points counts aggregate across leagues when `league=all`; progression and time-delta charts always render one series per league (never mixed on one axis).
 
-Without Docker, build once and run the server, then poll on a schedule (the ingest CLI runs independently of the built server — no rebuild needed for the cron job):
-
-```sh
-pnpm --filter web build && pnpm --filter web start
-```
-
-```
-15 6 * * * cd /path/to/launchcontrol && pnpm --filter web ingest:rmsolo >> /var/log/rmsolo-ingest.log 2>&1
-```
-
-**Deploy note:** migration `20260722000000_driver_lastname_and_source_sha` renames `Event.axdbSha256` to `sourceSha256`. On the production Turso DB, run `pnpm --filter web migrate:turso` and promote the new deploy back-to-back — either order leaves a brief window where the live build's `Event` queries error until both sides match. Rollback: rename the column back. The same back-to-back rule applies to migration `20260723000000_drop_driver_lastname` — the prior build still selects `lastName` until the new deploy is promoted.
+The season leaderboard's **Avg** column is the driver's championship average points (total points ÷ counted scores, i.e. dropped scores excluded) — a quick read on scoring pace independent of how many events a driver has attended.
 
 ## Project status
 

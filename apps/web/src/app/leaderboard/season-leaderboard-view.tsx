@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DriverLink } from "@/components/driver-link";
@@ -15,17 +16,35 @@ import type {
   SeasonStandingsByClass,
   SeasonStandingsRow,
 } from "@/lib/season-leaderboard";
-import { scoringNote, SeasonHeader } from "./season-header";
 
 interface SeasonLeaderboardViewProps {
-  year: number;
-  years: number[];
+  /** Heading text, e.g. "2026 Season Leaderboard" (legacy, by year) or
+   *  "<Season name> Leaderboard" (league-scoped, by season). */
+  title: string;
+  /** Rendered in the header's switcher slot (already wrapped in its layout
+   *  div by the caller) — `null`/omitted renders nothing, same as the
+   *  legacy `years.length > 1` guard did inline. */
+  switcher?: ReactNode;
   section: SeasonStandingsByClass;
   allSummaries: SeasonClassSummary[];
+  overviewHref: string;
+  classBasePath: string;
   totalEvents: number;
   completedEvents: number;
   qualifyingEvents: number;
   countedEvents: number;
+  /** `?sort=` query value — row order within the class. Rank pills always
+   *  show the CHAMPIONSHIP position (by points) regardless of sort. */
+  sortBy?: string | null;
+  /** "" for the legacy route (byte-identical to pre-Task-20 driver hrefs),
+   *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` below. */
+  driverBasePath?: string;
+}
+
+type SortKey = "points" | "avg";
+
+function resolveSort(sortBy: string | null | undefined): SortKey {
+  return sortBy === "avg" ? "avg" : "points";
 }
 
 type EventScore = SeasonStandingsRow["scores"][number];
@@ -81,16 +100,23 @@ function EventScoreStrip({ scores }: { scores: EventScore[] }) {
 function DriverCard({
   driver,
   rank,
+  driverBasePath,
 }: {
   driver: SeasonStandingsRow;
   rank: number;
+  driverBasePath?: string;
 }) {
   return (
     <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
       <div className="flex items-center gap-3">
         <RankPill rank={rank} />
         <div className="min-w-0 flex-1">
-          <DriverLink driverId={driver.driverId} name={driver.driverName} className="block truncate" />
+          <DriverLink
+            driverId={driver.driverId}
+            name={driver.driverName}
+            className="block truncate"
+            basePath={driverBasePath}
+          />
           {!driver.eligible && (
             <Badge variant="outline" className="mt-1 text-[10px]">
               Provisional · {driver.eventsCountedInClass}/
@@ -103,7 +129,7 @@ function DriverCard({
             {driver.totalPoints}
           </div>
           <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-            points
+            points · avg {formatAvg(driver.averagePoints)}
           </div>
         </div>
       </div>
@@ -119,9 +145,11 @@ function DriverCard({
 function DriverTableRow({
   driver,
   rank,
+  driverBasePath,
 }: {
   driver: SeasonStandingsRow;
   rank: number;
+  driverBasePath?: string;
 }) {
   return (
     <TableRow
@@ -136,7 +164,7 @@ function DriverTableRow({
       </TableCell>
       <TableCell className="px-3 py-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <DriverLink driverId={driver.driverId} name={driver.driverName} />
+          <DriverLink driverId={driver.driverId} name={driver.driverName} basePath={driverBasePath} />
           {!driver.eligible && (
             <Badge variant="outline" className="text-xs">
               Provisional · {driver.eventsCountedInClass}/
@@ -148,10 +176,73 @@ function DriverTableRow({
       <TableCell className="px-3 py-3 text-right tabular-nums font-semibold whitespace-nowrap">
         {driver.totalPoints}
       </TableCell>
+      <TableCell className="px-3 py-3 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+        {formatAvg(driver.averagePoints)}
+      </TableCell>
       <TableCell className="px-3 py-3">
         <EventScoreStrip scores={driver.scores} />
       </TableCell>
     </TableRow>
+  );
+}
+
+// Scoring-rule copy that stays truthful in both SEASON_DROPS modes: in fixed
+// mode countedEvents === qualifyingEvents, reproducing the original sentence
+// byte-for-byte; in proportional mode mid-season it states the current
+// counted target and the season-end rule.
+function scoringNote(
+  countedEvents: number,
+  qualifyingEvents: number,
+  totalEvents: number,
+): string {
+  if (countedEvents === qualifyingEvents) {
+    return `Best ${qualifyingEvents} of ${totalEvents} scores count toward the season total.`;
+  }
+  return `Best ${countedEvents} scores currently count toward the season total (best ${qualifyingEvents} of ${totalEvents} at season end).`;
+}
+
+// Always one decimal place — "998.0" / "993.3" — so the column stays
+// visually aligned.
+function formatAvg(avg: number): string {
+  return avg.toFixed(1);
+}
+
+function classAnchorId(classCode: string): string {
+  return `class-${classCode.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+}
+
+// One class renders at a time: a season with hundreds of drivers across
+// dozens of classes produced an ~8 MB page when every section rendered.
+function SortHeaderLink({
+  label,
+  sortKey,
+  currentSort,
+  classHref,
+  title,
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentSort: SortKey;
+  classHref: string;
+  title?: string;
+}) {
+  const active = currentSort === sortKey;
+  const href = sortKey === "points" ? classHref : `${classHref}?sort=avg`;
+  return (
+    <Link
+      href={href}
+      scroll={false}
+      title={title}
+      className={
+        "inline-flex items-center gap-1 transition-colors hover:text-foreground " +
+        (active ? "text-foreground" : "")
+      }
+    >
+      {label}
+      <span aria-hidden className={active ? "" : "invisible"}>
+        ↓
+      </span>
+    </Link>
   );
 }
 
@@ -160,18 +251,36 @@ function ClassSection({
   totalEvents,
   qualifyingEvents,
   countedEvents,
+  sort,
+  classHref,
+  driverBasePath,
 }: {
   section: SeasonStandingsByClass;
   totalEvents: number;
   qualifyingEvents: number;
   countedEvents: number;
+  sort: SortKey;
+  classHref: string;
+  driverBasePath?: string;
 }) {
   if (section.drivers.length === 0) return null;
   const leader = section.drivers[0];
   const driverCount = section.drivers.length;
+  // Championship rank is the position in the incoming (points-sorted) order;
+  // re-sorting by Avg reorders rows but keeps each driver's rank pill.
+  const rankByDriverId = new Map(
+    section.drivers.map((d, i) => [d.driverId, i + 1]),
+  );
+  const rows =
+    sort === "avg"
+      ? [...section.drivers].sort((a, b) => b.averagePoints - a.averagePoints)
+      : section.drivers;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm mb-6">
+    <section
+      id={classAnchorId(section.classCode)}
+      className="scroll-mt-20 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm mb-6"
+    >
       <div className="flex items-center justify-between gap-3 bg-muted/40 px-4 py-3 border-b border-border/60">
         <div className="flex items-center gap-2 min-w-0">
           <h2 className="text-sm font-semibold tracking-wide uppercase text-foreground">
@@ -184,7 +293,11 @@ function ClassSection({
         {leader && (
           <p className="hidden sm:block truncate text-xs text-muted-foreground">
             Leader:{" "}
-            <DriverLink driverId={leader.driverId} name={leader.driverName} />{" "}
+            <DriverLink
+              driverId={leader.driverId}
+              name={leader.driverName}
+              basePath={driverBasePath}
+            />{" "}
             · <span className="tabular-nums">{leader.totalPoints}</span> pts
           </p>
         )}
@@ -192,8 +305,13 @@ function ClassSection({
 
       {/* Mobile: card list */}
       <ul className="md:hidden divide-y divide-border/60">
-        {section.drivers.map((d, i) => (
-          <DriverCard key={d.driverId} driver={d} rank={i + 1} />
+        {rows.map((d) => (
+          <DriverCard
+            key={d.driverId}
+            driver={d}
+            rank={rankByDriverId.get(d.driverId)!}
+            driverBasePath={driverBasePath}
+          />
         ))}
       </ul>
 
@@ -209,7 +327,21 @@ function ClassSection({
                 Driver
               </TableHead>
               <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right">
-                Points
+                <SortHeaderLink
+                  label="Points"
+                  sortKey="points"
+                  currentSort={sort}
+                  classHref={classHref}
+                />
+              </TableHead>
+              <TableHead className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground text-right">
+                <SortHeaderLink
+                  label="Avg"
+                  sortKey="avg"
+                  currentSort={sort}
+                  classHref={classHref}
+                  title="Average points per counted championship event (dropped scores excluded)"
+                />
               </TableHead>
               <TableHead
                 className="h-9 px-3 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
@@ -220,8 +352,13 @@ function ClassSection({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {section.drivers.map((d, i) => (
-              <DriverTableRow key={d.driverId} driver={d} rank={i + 1} />
+            {rows.map((d) => (
+              <DriverTableRow
+                key={d.driverId}
+                driver={d}
+                rank={rankByDriverId.get(d.driverId)!}
+                driverBasePath={driverBasePath}
+              />
             ))}
           </TableBody>
         </Table>
@@ -230,44 +367,43 @@ function ClassSection({
   );
 }
 
-/**
- * Link pills to every class page for the year, "Overview" first, the active
- * class highlighted. Targets are ISR-cached, so Next prefetches in-viewport
- * links and class switching is instant.
- */
 function ClassLinkBar({
-  year,
   summaries,
   activeClassCode,
+  overviewHref,
+  classBasePath,
 }: {
-  year: number;
   summaries: SeasonClassSummary[];
   activeClassCode: string;
+  overviewHref: string;
+  classBasePath: string;
 }) {
-  const inactive =
-    "inline-flex items-center rounded-full border border-border bg-background px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none";
-  const active =
-    "inline-flex items-center rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-primary transition-colors";
   return (
-    <nav aria-label="Jump to class" className="mb-6">
-      {/* flex-wrap (not overflow-x-auto) so the class list wraps to multiple
-          lines like the event page's class filter. */}
+    <nav aria-label="Select class" className="mb-6">
       <ul className="flex flex-wrap gap-1.5">
         <li>
-          <Link href={`/leaderboard/${year}`} className={inactive}>
+          <Link
+            href={overviewHref}
+            className="inline-flex items-center rounded-full border border-border bg-background px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none"
+          >
             Overview
           </Link>
         </li>
-        {summaries.map((s) => {
-          const isActive = s.classCode === activeClassCode;
+        {summaries.map((summary) => {
+          const active = summary.classCode === activeClassCode;
           return (
-            <li key={s.classCode}>
+            <li key={summary.classCode}>
               <Link
-                href={`/leaderboard/${year}/${encodeURIComponent(s.classCode)}`}
-                aria-current={isActive ? "page" : undefined}
-                className={isActive ? active : inactive}
+                href={`${classBasePath}/${encodeURIComponent(summary.classCode)}`}
+                aria-current={active ? "page" : undefined}
+                className={
+                  "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide transition-colors focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none " +
+                  (active
+                    ? "border-primary/60 bg-primary/10 text-primary"
+                    : "border-border bg-background text-foreground/80 hover:border-primary/40 hover:text-primary")
+                }
               >
-                {s.classCode}
+                {summary.classCode}
               </Link>
             </li>
           );
@@ -278,31 +414,63 @@ function ClassLinkBar({
 }
 
 export function SeasonLeaderboardView({
-  year,
-  years,
+  title,
+  switcher,
   section,
   allSummaries,
+  overviewHref,
+  classBasePath,
   totalEvents,
   completedEvents,
   qualifyingEvents,
   countedEvents,
+  sortBy,
+  driverBasePath,
 }: SeasonLeaderboardViewProps) {
+  const sort = resolveSort(sortBy);
+  const classHref = `${classBasePath}/${encodeURIComponent(section.classCode)}`;
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
-      <SeasonHeader
-        year={year}
-        years={years}
-        totalEvents={totalEvents}
-        completedEvents={completedEvents}
-        qualifyingEvents={qualifyingEvents}
-        countedEvents={countedEvents}
-        hasStandings
-      />
+      <header className="mb-6 sm:mb-8">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary mb-3">
+          Season standings
+        </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+                {title}
+              </h1>
+              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+                Points are awarded per event: 1000 to the class winner, others
+                proportional. Combined (same-date, multi-session) events score
+                once, on summed session times.{" "}
+                {scoringNote(countedEvents, qualifyingEvents, totalEvents)}{" "}
+                Drivers with fewer than {qualifyingEvents} scoring events are
+                marked Provisional.
+              </p>
+            </div>
+          </div>
+          {switcher}
+        </div>
+      </header>
+
+      {completedEvents < qualifyingEvents && (
+        <div className="mb-6 flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-4">
+          <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
+          <p className="text-sm text-muted-foreground">
+            Standings are provisional until {qualifyingEvents} of{" "}
+            {totalEvents} events are complete ({completedEvents} run so far).
+          </p>
+        </div>
+      )}
 
       <ClassLinkBar
-        year={year}
         summaries={allSummaries}
         activeClassCode={section.classCode}
+        overviewHref={overviewHref}
+        classBasePath={classBasePath}
       />
 
       <ClassSection
@@ -310,6 +478,9 @@ export function SeasonLeaderboardView({
         totalEvents={totalEvents}
         qualifyingEvents={qualifyingEvents}
         countedEvents={countedEvents}
+        sort={sort}
+        classHref={classHref}
+        driverBasePath={driverBasePath}
       />
     </main>
   );

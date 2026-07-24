@@ -8,6 +8,7 @@ import {
   type SortingState,
   flexRender,
   getCoreRowModel,
+  getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
@@ -25,6 +26,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { type LeaderboardRow, formatMs, formatDelta } from "@/lib/leaderboard";
+
+const ALL_CLASSES = "__all__";
+// Overall-PAX standings view (shown when the event's season policy sets
+// paxSection): all classes, ranked by PAX-indexed best time instead of raw.
+// Sentinel lives beside ALL_CLASSES so the two "virtual filters" stay
+// obviously paired.
+const PAX_VIEW = "__pax__";
 
 function SortHeader({
   label,
@@ -86,6 +94,31 @@ function RunChips({ runs }: { runs: LeaderboardRow["runs"] }) {
   );
 }
 
+function ClassChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        active
+          ? "inline-flex items-center rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-primary transition-colors"
+          : "inline-flex items-center rounded-full border border-border bg-background px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none"
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 function ClassBadge({
   classCode,
   paxClassCode,
@@ -108,18 +141,25 @@ function DriverCard({
   rank,
   delta,
   paxView = false,
+  driverBasePath,
 }: {
   row: LeaderboardRow;
   rank: number | undefined;
   delta: { fromPrior: number | null; fromP1: number | null } | undefined;
   paxView?: boolean;
+  driverBasePath?: string;
 }) {
   return (
     <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
       <div className="flex items-start gap-3">
         <RankPill rank={rank} />
         <div className="min-w-0 flex-1">
-          <DriverLink driverId={row.driverId} name={row.driverName} className="block truncate" />
+          <DriverLink
+            driverId={row.driverId}
+            name={row.driverName}
+            className="block truncate"
+            basePath={driverBasePath}
+          />
           {row.carDescription && (
             <p className="text-xs text-muted-foreground truncate">
               {row.carDescription}
@@ -157,20 +197,61 @@ function DriverCard({
 
 export function LeaderboardTable({
   rows,
-  paxView = false,
+  classCodes = [],
+  showPaxView = false,
+  paxView,
+  driverBasePath,
 }: {
   rows: LeaderboardRow[];
+  classCodes?: string[];
+  showPaxView?: boolean;
+  /** Set on a route-filtered class/PAX page. Omitting it retains the legacy
+   *  in-component class filter for callers that still need that mode. */
   paxView?: boolean;
+  /** "" for the legacy route (byte-identical to pre-Task-20 driver hrefs),
+   *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` below. */
+  driverBasePath?: string;
 }) {
-  // Rows arrive pre-filtered to one class (or the PAX view) — class selection
-  // is a server-side route concern now (/events/[slug]/[class]). paxView is
-  // true for the PAX standings page and for heterogeneous run-group classes
-  // whose official printed results are indexed (see classUsesPaxMetric).
-  const paxMetric = paxView;
   const [sorting, setSorting] = useState<SortingState>([
     { id: paxView ? "bestPaxMs" : "bestRawMs", desc: false },
   ]);
-  const filteredRows = rows;
+  const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
+  const fixedView = paxView != null;
+  const paxActive = classFilter === PAX_VIEW;
+  // Run-group class filters (M/N/S/P/X — heterogeneous per-entry factors)
+  // rank by indexed time in PAX-standings mode, matching the official printed
+  // group results. Uniform classes keep raw (identical order either way).
+  const usesPaxMetric = (filterValue: string): boolean => {
+    if (fixedView) return paxView;
+    if (!showPaxView) return false;
+    if (filterValue === PAX_VIEW) return true;
+    if (filterValue === ALL_CLASSES) return false;
+    return (
+      new Set(rows.filter((r) => r.classCode === filterValue).map((r) => r.paxIndex)).size > 1
+    );
+  };
+  const paxMetric = usesPaxMetric(classFilter);
+  // Switching views also resets the sort to that view's natural metric —
+  // otherwise leaving the PAX view would strand the table sorted on a column
+  // that no longer exists, and heterogeneous class views would show rank
+  // pills out of row order.
+  const selectFilter = (value: string) => {
+    setClassFilter(value);
+    // Reset sorting only when the ranking metric actually changes —
+    // plain class-filter hops keep the user's chosen sort (pre-existing
+    // behavior for non-PAX deployments).
+    const nextPax = usesPaxMetric(value);
+    if (nextPax !== paxMetric) {
+      setSorting([{ id: nextPax ? "bestPaxMs" : "bestRawMs", desc: false }]);
+    }
+  };
+  const filteredRows = useMemo(
+    () =>
+      fixedView || classFilter === ALL_CLASSES || classFilter === PAX_VIEW
+        ? rows
+        : rows.filter((r) => r.classCode === classFilter),
+    [rows, classFilter, fixedView],
+  );
 
   const { deltaByRow, rankByRow } = useMemo(() => {
     // Rank and gaps use the active view's metric: PAX-indexed best in the
@@ -234,7 +315,11 @@ export function LeaderboardTable({
         ),
         cell: ({ row }) => (
           <div>
-            <DriverLink driverId={row.original.driverId} name={row.original.driverName} />
+            <DriverLink
+              driverId={row.original.driverId}
+              name={row.original.driverName}
+              basePath={driverBasePath}
+            />
             {row.original.carDescription && (
               <div className="text-muted-foreground text-xs">
                 {row.original.carDescription}
@@ -324,7 +409,7 @@ export function LeaderboardTable({
         cell: ({ row }) => <RunChips runs={row.original.runs} />,
       },
     ],
-    [deltaByRow, rankByRow, paxMetric],
+    [deltaByRow, rankByRow, paxMetric, driverBasePath],
   );
 
   // React Compiler can't safely memoize TanStack Table's returned functions;
@@ -338,21 +423,72 @@ export function LeaderboardTable({
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
   });
 
   const sortedRows = table.getRowModel().rows;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+      {!fixedView && (
+        <div className="flex flex-col gap-3 bg-muted/40 px-4 py-3 border-b border-border/60 md:flex-row md:items-center">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground shrink-0">
+          Filter class
+        </span>
+        <nav
+          aria-label="Filter by class"
+          className="-mx-1 px-1 overflow-x-auto flex-1"
+        >
+          <ul className="flex flex-wrap gap-1.5">
+            <li>
+              <ClassChip
+                active={classFilter === ALL_CLASSES}
+                onClick={() => selectFilter(ALL_CLASSES)}
+              >
+                {showPaxView ? "All Raw" : "All"}
+              </ClassChip>
+            </li>
+            {showPaxView && (
+              <li>
+                <ClassChip active={paxActive} onClick={() => selectFilter(PAX_VIEW)}>
+                  All PAX
+                </ClassChip>
+              </li>
+            )}
+            {classCodes.map((code) => (
+              <li key={code}>
+                <ClassChip
+                  active={classFilter === code}
+                  onClick={() => selectFilter(code)}
+                >
+                  {code}
+                </ClassChip>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <span className="rounded-full bg-background px-3 py-1 text-xs tabular-nums text-muted-foreground shrink-0 self-start md:self-auto md:ml-auto">
+          {filteredRows.length} of {rows.length}
+        </span>
+        </div>
+      )}
+
       {/* Mobile: card list */}
       <ul className="md:hidden divide-y divide-border/60">
         {sortedRows.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-muted-foreground">
-            No entries in this class.
+            {fixedView ? "No entries in this class." : "No entries match the current filter."}
           </li>
         ) : (
           sortedRows.map((row) => (
-            <DriverCard key={row.id} row={row.original} rank={rankByRow.get(row.original)} delta={deltaByRow.get(row.original)} paxView={paxMetric} />
+            <DriverCard
+              key={row.id}
+              row={row.original}
+              rank={rankByRow.get(row.original)}
+              delta={deltaByRow.get(row.original)}
+              paxView={paxMetric}
+              driverBasePath={driverBasePath}
+            />
           ))
         )}
       </ul>
@@ -386,7 +522,7 @@ export function LeaderboardTable({
                   colSpan={columns.length}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
-                  No entries in this class.
+                  {fixedView ? "No entries in this class." : "No entries match the current filter."}
                 </TableCell>
               </TableRow>
             ) : (

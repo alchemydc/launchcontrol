@@ -1,7 +1,7 @@
 # launchcontrol — single full-workspace image.
 #
-# Deliberately NOT a Next standalone build: the ingest CLI (tsx scripts,
-# Prisma CLI for migrate deploy, poppler's pdftotext) needs the full
+# Deliberately NOT a Next standalone build: the ingest CLIs (tsx scripts,
+# Prisma CLI for migrate deploy, poppler's pdftotext) need the full
 # workspace anyway, so one image serves the web process, the ingest
 # sidecar, and boot-time migrations. Multi-arch: builds natively on
 # linux/arm64 (Apple Silicon dev) and linux/amd64 (deploy targets) —

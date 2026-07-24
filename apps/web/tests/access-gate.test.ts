@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getClubConfig } from "@/lib/club-config";
+import type { LeagueConfig } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 
 // gateResultsPage must never touch the request scope on public deployments —
@@ -15,10 +15,26 @@ const redirectMock = vi.fn((url: string) => {
 });
 vi.mock("next/navigation", () => ({ redirect: (url: string) => redirectMock(url) }));
 
-let fakeSession: Record<string, unknown> = {};
 vi.mock("iron-session", () => ({
-  getIronSession: async () => fakeSession,
+  getIronSession: async () => ({}),
 }));
+
+function league(accessGate: LeagueConfig["accessGate"]): LeagueConfig {
+  return {
+    id: 1,
+    slug: "test",
+    name: "Test League",
+    siteTitle: "Test",
+    siteDescription: "Test",
+    footerText: null,
+    landingDescription: "Test",
+    accessGate,
+    msrOrgId: null,
+    loginEnabled: false,
+    smugmugUser: null,
+    smugmugDisciplinePath: null,
+  };
+}
 
 afterEach(() => {
   delete process.env.ACCESS_GATE;
@@ -26,50 +42,25 @@ afterEach(() => {
   delete process.env.SESSION_SECRET;
   cookiesMock.mockClear();
   redirectMock.mockClear();
-  fakeSession = {};
-});
-
-// requireRmrMember depends on next/headers (request scope), so the unit here
-// verifies the gate decision logic exposed via config; the short-circuit branch
-// in requireRmrMember is a 3-line guard reviewed by inspection + exercised by build.
-describe("access gate config", () => {
-  it("defaults to required", () => {
-    expect(getClubConfig().accessGate).toBe("required");
-  });
-  it("optional and none are public modes", () => {
-    for (const mode of ["optional", "none"] as const) {
-      process.env.ACCESS_GATE = mode;
-      expect(getClubConfig().accessGate).toBe(mode);
-    }
-  });
 });
 
 describe("gateResultsPage", () => {
   it("never touches cookies when the gate is optional or none", async () => {
     for (const mode of ["optional", "none"] as const) {
-      process.env.ACCESS_GATE = mode;
-      await expect(gateResultsPage("/leaderboard")).resolves.toBeUndefined();
+      await expect(
+        gateResultsPage(league(mode), "/leaderboard", "/l/test"),
+      ).resolves.toBeUndefined();
     }
     expect(cookiesMock).not.toHaveBeenCalled();
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
   it("redirects unauthenticated viewers when the gate is required", async () => {
-    process.env.ACCESS_GATE = "required";
-    process.env.SESSION_SECRET = "x".repeat(32);
-    cookiesMock.mockReturnValueOnce(undefined as never); // required branch may read cookies
-    fakeSession = {};
-    await expect(gateResultsPage("/leaderboard")).rejects.toThrow(
-      "NEXT_REDIRECT:/?returnTo=%2Fleaderboard",
+    await expect(
+      gateResultsPage(league("required"), "/leaderboard", "/l/test"),
+    ).rejects.toThrow(
+      "NEXT_REDIRECT:/l/test",
     );
-  });
-
-  it("lets members through when the gate is required", async () => {
-    process.env.ACCESS_GATE = "required";
-    process.env.SESSION_SECRET = "x".repeat(32);
-    cookiesMock.mockReturnValueOnce(undefined as never);
-    fakeSession = { msrUid: "ABC-123", isRmrMember: true };
-    await expect(gateResultsPage("/leaderboard")).resolves.toBeUndefined();
-    expect(redirectMock).not.toHaveBeenCalled();
+    expect(cookiesMock).not.toHaveBeenCalled();
   });
 });

@@ -7,16 +7,20 @@ export function CombinedResultsView({
   results,
   dateLabel,
   photosUrl,
+  basePath = "",
 }: {
   results: CombinedResults;
   dateLabel: string;
   photosUrl: string | null;
+  /** "" for the legacy route (byte-identical to pre-Task-5 hrefs), "/l/[slug]"
+   *  for league-scoped. */
+  basePath?: string;
 }) {
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <header className="mb-6 sm:mb-8">
         <div className="mb-3 flex items-center gap-3">
-          <BackButton fallbackHref="/" />
+          <BackButton fallbackHref={basePath || "/"} />
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
             {dateLabel} · Combined event
           </p>
@@ -32,7 +36,7 @@ export function CombinedResultsView({
               </p>
               <div className="mt-2 flex flex-wrap gap-3 text-sm">
                 {results.sessions.map((s) => (
-                  <Link key={s.id} href={`/events/${s.slug}`} className="text-primary hover:underline">
+                  <Link key={s.id} href={`${basePath}/events/${s.slug}`} className="text-primary hover:underline">
                     {s.name} ↗
                   </Link>
                 ))}
@@ -52,7 +56,7 @@ export function CombinedResultsView({
         </div>
       </header>
 
-      <CombinedTable results={results} />
+      <CombinedTable results={results} driverBasePath={basePath} />
     </main>
   );
 }

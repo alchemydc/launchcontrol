@@ -93,12 +93,107 @@ export function nearestPaxClass(
 
 const warned = new Set<string>();
 
+/**
+ * Seed-only since Task R2 (ruleset-centric scoring): the built-in table no
+ * longer backs any read path — a ruleset's stored paxTable is COMPLETE, and
+ * `resolveRulesetPaxIndex` below is the only ingest-time factor lookup. This
+ * stays exported for creation-time seeding (`scoring-system.ts`,
+ * `create-league.ts`) and the pax-table editor's reference column.
+ */
 export function getRmsoloPaxIndex(classCode: string): number {
   const pax = RMSOLO_PAX_2026[classCode];
   if (pax != null) return pax;
   if (!warned.has(classCode)) {
     warned.add(classCode);
     console.warn(`[rmsolo-pax] no PAX factor for class '${classCode}' — using 1.0`);
+  }
+  return 1.0;
+}
+
+/**
+ * Parses a ScoringSystem.paxTable JSON string (see schema.prisma) into a plain
+ * code->factor map. Returns `{}` (and warns once) for anything that isn't a
+ * JSON object — a malformed table must not crash an ingest, just fall
+ * through to `resolveRulesetPaxIndex`'s 1.0 default for every class code.
+ * Per-entry values are validated too: an entry whose value isn't a finite
+ * number is dropped (with a warning), not coerced — a numeric STRING like
+ * `"0.83"` is dropped rather than parsed, so a class with a dropped/invalid
+ * entry resolves to 1.0 exactly like a class missing from the paxTable
+ * altogether, instead of silently taking on a value of the wrong type.
+ */
+export function parseSeasonPaxTable(raw: string): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const table: Record<string, number> = {};
+      for (const [classCode, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          table[classCode] = value;
+        } else {
+          console.warn(
+            `[rmsolo-pax] season paxTable entry '${classCode}' is not a finite number — ignoring it: ${JSON.stringify(value)}`,
+          );
+        }
+      }
+      return table;
+    }
+  } catch {
+    // fall through to the warning below
+  }
+  console.warn(`[rmsolo-pax] season paxTable is not a valid JSON object — ignoring it: ${JSON.stringify(raw)}`);
+  return {};
+}
+
+/**
+ * Strict variant of `parseSeasonPaxTable` for admin *write* validation
+ * (ruleset paxTable create/update in `scoring-system.ts`, and the per-season
+ * "re-apply factors" action, `src/lib/pax-reapply.ts`) — where a malformed
+ * table must reject the write outright rather than silently drop entries,
+ * since those paths are deliberate, admin-owned writes/rewrites. Throws on
+ * non-object JSON (including arrays/null), and on
+ * any entry whose value isn't a positive finite number (0 and negative
+ * factors are physically meaningless PAX indices, so they're rejected here
+ * too, unlike the lenient read-side parser which only checks "is a finite
+ * number").
+ */
+export function parseSeasonPaxTableStrict(json: string): Record<string, number> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error("paxTable: invalid JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("paxTable: must be a JSON object of code -> factor");
+  }
+  const out: Record<string, number> = {};
+  for (const [code, v] of Object.entries(parsed)) {
+    if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
+      throw new Error(`paxTable.${code}: factor must be a positive finite number`);
+    }
+    out[code] = v;
+  }
+  return out;
+}
+
+const rulesetWarned = new Set<string>();
+
+/**
+ * PAX factor for a class code during RMsolo ingest, resolved from the
+ * season's ruleset paxTable (Task R2 — the table is COMPLETE; there is no
+ * built-in fallback at read time). An unlisted class resolves to 1.0 with a
+ * one-shot warning, mirroring the old built-in-table miss behavior.
+ * Run-group factor DERIVATION (nearestPaxClass, matching a printed indexed
+ * Best back to a class code) is unrelated and unchanged by this — this
+ * function only resolves the final numeric factor for a class code once
+ * that code is already known.
+ */
+export function resolveRulesetPaxIndex(classCode: string, rulesetPaxTable: Record<string, number>): number {
+  const factor = rulesetPaxTable[classCode];
+  if (factor != null) return factor;
+  if (!rulesetWarned.has(classCode)) {
+    rulesetWarned.add(classCode);
+    console.warn(`[rmsolo-pax] ruleset paxTable has no factor for class '${classCode}' — using 1.0`);
   }
   return 1.0;
 }

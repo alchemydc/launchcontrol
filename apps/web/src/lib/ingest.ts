@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
+import { resolveOrCreateSeason } from "@/lib/season-resolve";
 import { redactLastName } from "./pii";
 export { redactLastName };
 
@@ -40,6 +41,13 @@ type SrcRegistration = {
 };
 
 const REQUIRED_TABLES = ["events", "classes", "drivers", "registrations", "runs"] as const;
+
+// The deployment's league. PR 1 is single-league-per-deployment: this module-level
+// env read is static in practice (one process, one deployment, one league) and is
+// duplicated in league-config.ts's getLeagueConfig() for app-facing config; the
+// season-resolution logic that used to live here is centralized in
+// season-resolve.ts's resolveOrCreateSeason(), shared with admin-events.ts.
+const DEFAULT_LEAGUE_SLUG = process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
 
 
 export function slugify(s: string): string {
@@ -98,9 +106,15 @@ export function normalizeMemberNum(raw: string | null): string | null {
   return stripped.length > 0 ? stripped : null;
 }
 
+export type IngestAxdbOptions = {
+  /** Target league slug. Defaults to DEFAULT_LEAGUE_SLUG (unchanged single-league behavior). */
+  leagueSlug?: string;
+};
+
 export async function ingestAxdb(
   path: string,
   client: PrismaClient = defaultClient,
+  opts: IngestAxdbOptions = {},
 ): Promise<IngestSummary> {
   const sha = createHash("sha256").update(readFileSync(path)).digest("hex");
 
@@ -184,7 +198,28 @@ export async function ingestAxdb(
     const eventDate = new Date(`${srcEvent.event_date}T00:00:00.000Z`);
 
     return await client.$transaction(async (tx) => {
-      const existing = await tx.event.findUnique({ where: { slug } });
+      // Resolve the target League → Season for this event. The league is seeded by
+      // the league-foundation migration; a missing league means the DB was never
+      // migrated. The Season is resolved by (league, event year) — auto-created
+      // (login-less self-heal — seasons otherwise come from seeds or
+      // `pnpm --filter web season:create`) if none exists — via the shared
+      // resolveOrCreateSeason(), also used by admin-events.ts's cross-year
+      // re-resolution on a date edit.
+      const leagueSlug = opts.leagueSlug?.trim() || DEFAULT_LEAGUE_SLUG;
+      const league = await tx.league.findUnique({ where: { slug: leagueSlug } });
+      if (!league) {
+        throw new Error(
+          `[ingest] league '${leagueSlug}' not found — check --league, or run 'prisma migrate deploy' ` +
+            `to seed the default league (or 'pnpm --filter web league:create' for a new one).`,
+        );
+      }
+      const eventYear = eventDate.getUTCFullYear();
+      const season = await resolveOrCreateSeason(tx, league, eventYear);
+      const seasonId = season.id;
+
+      const existing = await tx.event.findUnique({
+        where: { seasonId_slug: { seasonId, slug } },
+      });
 
       if (existing && existing.sourceSha256 === sha) {
         const entries = await tx.entry.count({ where: { eventId: existing.id } });
@@ -208,7 +243,7 @@ export async function ingestAxdb(
             data: { sourceSha256: sha, name: srcEvent.event_name, date: eventDate },
           })
         : await tx.event.create({
-            data: { slug, name: srcEvent.event_name, date: eventDate, sourceSha256: sha },
+            data: { seasonId, slug, name: srcEvent.event_name, date: eventDate, sourceSha256: sha },
           });
 
       if (existing) {
@@ -218,13 +253,13 @@ export async function ingestAxdb(
       // CarClass: findMany existing, createMany new, update only paxIndex-changed rows, findMany to map IDs.
       const srcClassCodes = srcClasses.map((c) => c.class_name);
       const existingClasses = await tx.carClass.findMany({
-        where: { code: { in: srcClassCodes } },
+        where: { leagueId: league.id, code: { in: srcClassCodes } },
       });
       const existingClassByCode = new Map(existingClasses.map((c) => [c.code, c]));
 
       const newClassData = srcClasses
         .filter((c) => !existingClassByCode.has(c.class_name))
-        .map((c) => ({ code: c.class_name, paxIndex: c.pax }));
+        .map((c) => ({ leagueId: league.id, code: c.class_name, paxIndex: c.pax }));
       if (newClassData.length > 0) {
         await tx.carClass.createMany({ data: newClassData });
       }
@@ -235,9 +270,14 @@ export async function ingestAxdb(
         }
       }
       const allClasses = await tx.carClass.findMany({
-        where: { code: { in: srcClassCodes } },
+        where: { leagueId: league.id, code: { in: srcClassCodes } },
       });
       const classIdByCode = new Map(allClasses.map((c) => [c.code, c.id]));
+      // Source pax factor by source class id — the same per-class value the
+      // CarClass diff above writes as CarClass.paxIndex. Used to snapshot
+      // Entry.paxIndexApplied at creation (PR 3), decoupling scoring from later
+      // CarClass.paxIndex edits.
+      const paxBySrcClassId = new Map(srcClasses.map((c) => [c.id, c.pax]));
       const classIdBySrc = new Map<number, number>();
       for (const c of srcClasses) {
         const id = classIdByCode.get(c.class_name);
@@ -426,7 +466,14 @@ export async function ingestAxdb(
       const entriesData = srcDrivers.map((d) => {
         const classId = classIdBySrc.get(d.class_id);
         const paxClassId = classIdBySrc.get(d.paxmult_id);
-        if (classId == null || paxClassId == null) {
+        // paxIndexApplied mirrors the paxClass's source factor exactly (same
+        // map that fed CarClass.paxIndex), so Entry.paxClass.paxIndex ===
+        // Entry.paxIndexApplied at ingest — the two diverge only if the
+        // CarClass is later edited. AxWare entries usually have paxClass ===
+        // class, but the paxmult_id key is used regardless so a distinct
+        // paxmult class snapshots its own factor.
+        const paxIndexApplied = paxBySrcClassId.get(d.paxmult_id);
+        if (classId == null || paxClassId == null || paxIndexApplied == null) {
           throw new Error(
             `Driver ${d.id} references unknown class (class_id=${d.class_id}, paxmult_id=${d.paxmult_id})`,
           );
@@ -451,6 +498,7 @@ export async function ingestAxdb(
           driverId,
           classId,
           paxClassId,
+          paxIndexApplied,
           carNumber: d.number,
           carDescription: d.car_model,
           bestCommittedRunNumber,

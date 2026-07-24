@@ -7,9 +7,6 @@
 # Local dev only. See feedback_sensitive_axdb_fixtures memory.
 real_season_data/
 
-# Scraped RMsolo results PDFs (public data, but no need to version large binaries).
-rmsolo_data/
-
 # claude config / scratch
 .claude/
 
@@ -34,4 +31,6 @@ docs/private/
 
 # logos etc
 assets/
+
+# self-hosted deployment config (real secrets/config; see .example)
 deploy/launchcontrol.env

@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { RMSOLO_PAX_2026, getRmsoloPaxIndex, nearestPaxClass } from "@/lib/rmsolo-pax";
+import { describe, expect, it, vi } from "vitest";
+import {
+  RMSOLO_PAX_2026,
+  getRmsoloPaxIndex,
+  nearestPaxClass,
+  parseSeasonPaxTable,
+  resolveRulesetPaxIndex,
+} from "@/lib/rmsolo-pax";
 
 describe("RMsolo PAX table", () => {
   it("covers every class code seen in the 2026 Full-PDF fixture", () => {
@@ -51,5 +57,62 @@ describe("2026 season-sheet reconciliation additions", () => {
   it("nearestPaxClass rejects factors far from any class", () => {
     expect(nearestPaxClass(0.5)).toBeNull();
     expect(nearestPaxClass(1.0 - 0.05)).toBeNull();
+  });
+});
+
+describe("parseSeasonPaxTable", () => {
+  it("parses a well-formed JSON object", () => {
+    expect(parseSeasonPaxTable('{"AS": 0.5, "BS": 0.6}')).toEqual({ AS: 0.5, BS: 0.6 });
+  });
+
+  it("parses the schema default '{}' as an empty table", () => {
+    expect(parseSeasonPaxTable("{}")).toEqual({});
+  });
+
+  it("warns and returns {} for invalid JSON", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(parseSeasonPaxTable("not json")).toEqual({});
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not a valid JSON object"));
+    warnSpy.mockRestore();
+  });
+
+  it("warns and returns {} for a JSON array or scalar", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(parseSeasonPaxTable("[1,2,3]")).toEqual({});
+    expect(parseSeasonPaxTable("42")).toEqual({});
+    warnSpy.mockRestore();
+  });
+
+  it("drops a non-finite-number entry with a warning, so the class resolves to 1.0 like an unlisted one", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(parseSeasonPaxTable('{"AS":"abc"}')).toEqual({});
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("'AS' is not a finite number"));
+    warnSpy.mockRestore();
+  });
+
+  it("keeps well-formed entries alongside a dropped one", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(parseSeasonPaxTable('{"AS": 0.5, "BS": "bad", "CS": null}')).toEqual({ AS: 0.5 });
+    warnSpy.mockRestore();
+  });
+});
+
+describe("resolveRulesetPaxIndex — ruleset table is the only read-time source", () => {
+  it("returns the ruleset table's factor for a listed class", () => {
+    expect(RMSOLO_PAX_2026.AS).not.toBe(0.5); // sanity: differs from the built-in value
+    expect(resolveRulesetPaxIndex("AS", { AS: 0.5 })).toBe(0.5);
+  });
+
+  it("does NOT fall back to the built-in table — an unlisted class resolves to 1.0 (with a one-shot warning)", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolveRulesetPaxIndex("AS", { BS: 0.9 })).toBe(1.0);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no factor for class 'AS'"));
+    warnSpy.mockRestore();
+  });
+
+  it("resolves 1.0 (with a warning) for a class listed nowhere", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolveRulesetPaxIndex("ZZZ-UNKNOWN", {})).toBe(1.0);
+    warnSpy.mockRestore();
   });
 });

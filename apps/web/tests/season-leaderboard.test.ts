@@ -11,6 +11,7 @@ import {
   seasonScoringBasis,
 } from "@/lib/season-leaderboard";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
+import { ensureLeagueAndSeasons } from "./helpers/league-fixture";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-season.db");
 const TEST_DB_URL = "file:./test-season.db";
@@ -302,9 +303,10 @@ describe("buildSeasonLeaderboard(2026)", () => {
     const result = await buildSeasonLeaderboard(2026, prisma);
     expect(result.totalEvents).toBe(6);
     expect(result.qualifyingEvents).toBe(4);
-    // M1.16: PLANNED_SEASON_EVENTS[2026] === 6 equals this fixture's actual
-    // group count, so max(planned, actual) = 6 and completedEvents = actual
-    // groups ingested — the planned/actual coincidence for this fixture year.
+    // M1.16: this fixture's Season row is auto-created by ingestAxdb with
+    // plannedEvents=0 (League Foundation deleted the PLANNED_SEASON_EVENTS
+    // constant), so max(planned=0, actual=6) = 6 and completedEvents = actual
+    // groups ingested.
     expect(result.completedEvents).toBe(6);
   });
 
@@ -455,18 +457,85 @@ describe("buildSeasonLeaderboard empty year", () => {
     expect(result.completedEvents).toBe(0);
   });
 
-  // M1.16: a year mapped in PLANNED_SEASON_EVENTS but with no events ingested
-  // yet still reports the planned season size and threshold, with zero
-  // completed — e.g. /leaderboard/2026 on an empty DB reports 6/4/0.
-  it("a mapped-but-empty year reports the planned totals with zero completed", async () => {
-    const result = await buildSeasonLeaderboard(1999, prisma, { 1999: 6 });
+  // M1.16: a year with a Season row configured with a planned size but no
+  // events ingested yet still reports the planned season size and threshold,
+  // with zero completed — e.g. /leaderboard/2026 on an empty DB reports 6/4/0.
+  // (League Foundation: plannedEvents now lives on the Season row rather than
+  // an injected map, so the fixture is a Season row instead of a param.)
+  it("a season configured with a planned size but no events reports the planned totals with zero completed", async () => {
+    await ensureLeagueAndSeasons(prisma, [{ year: 2099, plannedEvents: 6 }]);
+    const result = await buildSeasonLeaderboard(2099, prisma);
     expect(result).toEqual({
       totalEvents: 6,
       qualifyingEvents: 4,
       completedEvents: 0,
-      countedEvents: 4,
+      countedEvents: 4, // fixed-mode default policy (DEFAULT_SCORING_POLICY): counted == qualifying
       sections: [],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 4 — explicit league/season targets (default-path parity + isolation)
+// ---------------------------------------------------------------------------
+describe("buildSeasonLeaderboard — explicit targets", () => {
+  it("{ leagueId, year } for the default league's 2026 season matches the legacy (year, client) call", async () => {
+    const legacy = await buildSeasonLeaderboard(2026, prisma);
+    const { leagueId } = await ensureLeagueAndSeasons(prisma, [2026]);
+    const explicit = await buildSeasonLeaderboard({ leagueId, year: 2026 }, prisma);
+    expect(explicit).toEqual(legacy);
+  });
+
+  it("{ seasonId } for the default league's 2026 season matches the legacy (year, client) call", async () => {
+    const legacy = await buildSeasonLeaderboard(2026, prisma);
+    const season = await prisma.season.findFirst({ where: { year: 2026 } });
+    const explicit = await buildSeasonLeaderboard({ seasonId: season!.id }, prisma);
+    expect(explicit).toEqual(legacy);
+  });
+
+  it("a second league's same-year season is isolated from the default league's ingested data", async () => {
+    const { leagueId: otherLeagueId } = await ensureLeagueAndSeasons(
+      prisma,
+      [{ year: 2026, plannedEvents: 4 }],
+      "other-league",
+    );
+    const result = await buildSeasonLeaderboard({ leagueId: otherLeagueId, year: 2026 }, prisma);
+    // No events ingested for this league — planned-only basis (M1.16), no
+    // sections, none of the default league's 6-event 2026 season data leaks in.
+    expect(result).toEqual({
+      totalEvents: 4,
+      completedEvents: 0,
+      qualifyingEvents: 3,
+      countedEvents: 3,
+      sections: [],
+    });
+  });
+
+  it("{ seasonId } for an unknown id returns the empty-year shape rather than throwing", async () => {
+    const result = await buildSeasonLeaderboard({ seasonId: 999_999 }, prisma);
+    expect(result).toEqual({
+      totalEvents: 0,
+      completedEvents: 0,
+      qualifyingEvents: 0,
+      countedEvents: 0,
+      sections: [],
+    });
+  });
+});
+
+describe("listSeasonYears — explicit leagueId", () => {
+  it("a second league with only a 2027 season is isolated from the default league's years", async () => {
+    const before = await listSeasonYears(prisma);
+    const { leagueId: otherLeagueId } = await ensureLeagueAndSeasons(
+      prisma,
+      [2027],
+      "years-other-league",
+    );
+    await expect(listSeasonYears(otherLeagueId, prisma)).resolves.toEqual([2027]);
+    // Default (no-arg) path is unaffected by the other league's existence —
+    // same parity guarantee as buildSeasonLeaderboard's explicit-target tests.
+    await expect(listSeasonYears(prisma)).resolves.toEqual(before);
+    expect(before).not.toContain(2027);
   });
 });
 

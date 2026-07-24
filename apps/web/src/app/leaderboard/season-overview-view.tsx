@@ -1,11 +1,14 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { SeasonClassSummary } from "@/lib/season-leaderboard";
 import { SeasonHeader } from "./season-header";
 
 interface SeasonOverviewViewProps {
-  year: number;
-  years: number[];
+  title: string;
+  switcher?: ReactNode;
+  periodLabel: string;
+  classBasePath: string;
   summaries: SeasonClassSummary[];
   totalEvents: number;
   completedEvents: number;
@@ -19,8 +22,10 @@ interface SeasonOverviewViewProps {
  * anchor, and anchors don't nest.
  */
 export function SeasonOverviewView({
-  year,
-  years,
+  title,
+  switcher,
+  periodLabel,
+  classBasePath,
   summaries,
   totalEvents,
   completedEvents,
@@ -30,8 +35,8 @@ export function SeasonOverviewView({
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
       <SeasonHeader
-        year={year}
-        years={years}
+        title={title}
+        switcher={switcher}
         totalEvents={totalEvents}
         completedEvents={completedEvents}
         qualifyingEvents={qualifyingEvents}
@@ -43,7 +48,7 @@ export function SeasonOverviewView({
         <div className="flex items-start gap-4 rounded-2xl border border-border/70 bg-card shadow-sm px-6 py-12">
           <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
           <p className="text-sm text-muted-foreground">
-            No season data available for {year}.
+            No season data available for {periodLabel}.
           </p>
         </div>
       ) : (
@@ -57,7 +62,7 @@ export function SeasonOverviewView({
             {summaries.map((s) => (
               <li key={s.classCode}>
                 <Link
-                  href={`/leaderboard/${year}/${encodeURIComponent(s.classCode)}`}
+                  href={`${classBasePath}/${encodeURIComponent(s.classCode)}`}
                   className="flex items-center gap-3 px-4 py-3 transition-colors odd:bg-background even:bg-muted/10 hover:bg-accent/40"
                 >
                   <span className="w-14 shrink-0 text-sm font-semibold uppercase tracking-wide text-foreground">

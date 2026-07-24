@@ -1,4 +1,4 @@
-import { SeasonSwitcher } from "./season-switcher";
+import type { ReactNode } from "react";
 
 // Scoring-rule copy that stays truthful in both SEASON_DROPS modes: in fixed
 // mode countedEvents === qualifyingEvents, reproducing the original sentence
@@ -20,16 +20,16 @@ export function scoringNote(
  * copy, year switcher, and the provisional-standings banner.
  */
 export function SeasonHeader({
-  year,
-  years,
+  title,
+  switcher,
   totalEvents,
   completedEvents,
   qualifyingEvents,
   countedEvents,
   hasStandings,
 }: {
-  year: number;
-  years: number[];
+  title: string;
+  switcher?: ReactNode;
   totalEvents: number;
   completedEvents: number;
   qualifyingEvents: number;
@@ -47,7 +47,7 @@ export function SeasonHeader({
             <div className="h-8 w-0.5 bg-primary rounded-full shrink-0 mt-1" />
             <div className="min-w-0">
               <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-                {year} Season Leaderboard
+                {title}
               </h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Points are awarded per event: 1000 to the class winner, others
@@ -59,11 +59,7 @@ export function SeasonHeader({
               </p>
             </div>
           </div>
-          {years.length > 1 && (
-            <div className="sm:shrink-0 sm:ml-4">
-              <SeasonSwitcher years={years} currentYear={year} />
-            </div>
-          )}
+          {switcher}
         </div>
       </header>
 

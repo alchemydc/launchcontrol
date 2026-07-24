@@ -6,7 +6,7 @@ Implementation reference and build history for [Launch Control](https://launchco
 
 ## Current Status
 
-**Status (2026-07-20):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M1.14 ✓ · M1.15 ✓ · M1.16 ✓ · M1.17 ✓ · M2 ✓ · M2.1 ✓ · M4 ✓ · M4.1 ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (top-K-of-N where K is the dynamic qualifying threshold, per-class standings, multi-season nav, multi-class & multi-car participation as of M1.14, same-date events auto-grouped into one combined scoring event with a dedicated `/events/combined/[date]` standings page as of M1.15, mid-season threshold now derived against the planned season size rather than only events ingested so far, with a provisional-standings banner, as of M1.16), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus the dynamic qualifying threshold from M1.13. Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. Event data and leaderboards (event list, event detail, season standings, driver profiles) are now restricted to MSR-authenticated RMR members; unauth and non-RMR visitors see a landing page at `/` and deep links survive sign-in via a sanitized `returnTo` round-trip. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required — and manage ingested events at `/admin/events`: edit name/date/location (the URL slug regenerates), or delete a bad/duplicate event with full cascade and an orphan-driver sweep, with every admin ingest/edit/delete recorded in a persistent `AdminAuditLog`. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
+**Status (2026-07-22):** M0 ✓ · M1 ✓ · M1.5a ✓ · M1.5b ✓ · M1.6 ✓ · M1.7 ✓ · M1.8 ✓ · M1.9 ✓ · M1.10 ✓ · M1.11 ✓ · M1.12 ✓ · M1.13 ✓ · M1.14 ✓ · M1.15 ✓ · M1.16 ✓ · M1.17 ✓ · M2 ✓ · M2.1 ✓ · M4 ✓ · M4.1 ✓ · League Foundation ✓ — public preview is live at [launchcontrol.club](https://launchcontrol.club) (Vercel + Turso libSQL), with last-name redaction, racing-red styled UI, GitHub Actions CI (lint/typecheck/test/build on every PR), a per-driver progression page (`/drivers/[id]`) charting raw/PAX/best-of progression and time-delta vs. event leader across the season, SmugMug photo album links surfaced on home + event pages, the RMR season points leaderboard at `/leaderboard` (top-K-of-N where K is the dynamic qualifying threshold, per-class standings, multi-season nav, multi-class & multi-car participation as of M1.14, same-date events auto-grouped into one combined scoring event with a dedicated `/events/combined/[date]` standings page as of M1.15, mid-season threshold now derived against the planned season size rather than only events ingested so far, with a provisional-standings banner, as of M1.16), an ingest correctness pass — batched writes, identity-hash driver dedupe, ghost-registration skip — plus the dynamic qualifying threshold from M1.13. Members can now sign in with their MotorsportReg account via the header nav and view `/me`, which shows their MSR identity and an RMR-membership badge. Event data and leaderboards (event list, event detail, season standings, driver profiles) are now restricted to MSR-authenticated RMR members; unauth and non-RMR visitors see a landing page at `/` and deep links survive sign-in via a sanitized `returnTo` round-trip. Admins can upload `.axdb` files from the browser at `/admin/ingest` — no shell access required — and manage ingested events at `/admin/events`: edit name/date/location (the URL slug regenerates), or delete a bad/duplicate event with full cascade and an orphan-driver sweep, with every admin ingest/edit/delete recorded in a persistent `AdminAuditLog`. **Next up:** M3 — Public calendar (RMR event calendar from /rest/calendars/organization/{org_id}).
 
 ---
 
@@ -37,7 +37,7 @@ External:
 [ Next.js ] ──REST──────▶ api.motorsportreg.com/rest/* (with stored access token)
 ```
 
-The "SQLite app DB" above is **SQLite locally** and **Turso (libSQL) in preview/prod** — same SQL dialect, swapped at the Prisma driver-adapter layer. See "Database Hosting" below for rationale. No Docker, Nginx, or Tailscale in the MVP.
+The "SQLite app DB" above is **SQLite locally** and **Turso (libSQL) in preview/prod** — same SQL dialect, swapped at the Prisma driver-adapter layer. See "Database Hosting" below for rationale. This is the Vercel-hosted production topology; no Nginx or Tailscale there. A self-hosted alternative (Docker Compose, plain SQLite volume, optional RMsolo ingest sidecar) also exists as of PR 2 — see "League Multi-Club (PR 2)" below and the Appendix.
 
 ### MSR OAuth 1.0a (verified)
 
@@ -123,7 +123,7 @@ model Event {
   name         String
   date         DateTime
   location     String?
-  axdbSha256   String?                    // dedupe re-ingests of the same .axdb
+  sourceSha256 String?                    // dedupe re-ingests of the same source artifact (renamed from axdbSha256 in League Foundation)
   createdAt    DateTime @default(now())
   entries      Entry[]
   videos       Video[]
@@ -312,7 +312,7 @@ The original M0 plan put SQLite directly on the host. That works locally but **b
 
 ### M1 — Static leaderboard ✓ (done 2026-05-18)
 
-- `src/lib/ingest.ts` — reusable ingest module (read-only `better-sqlite3` against VisualAX source, normalize into Prisma in a single transaction, idempotent via `Event.axdbSha256`).
+- `src/lib/ingest.ts` — reusable ingest module (read-only `better-sqlite3` against VisualAX source, normalize into Prisma in a single transaction, idempotent via `Event.sourceSha256`, renamed from `axdbSha256` in League Foundation).
 - `scripts/ingest.ts` — thin CLI; wired as `pnpm --filter web ingest <path-to-axdb>` (resolves the path against `$INIT_CWD` so relative paths work from the repo root).
 - Vitest integration tests against the synthetic fixture (`pnpm --filter web test`).
 - `/` lists events from the DB; `/events/[slug]` renders a sortable, class-filterable leaderboard (Raw / PAX / per-run badges) using shadcn `Table` + `@tanstack/react-table` state.
@@ -415,7 +415,7 @@ A season-long points standings page across each car class, plus the navigation s
 
 **Computation library:** `apps/web/src/lib/season-leaderboard.ts`. `CONE_PENALTY_MS` lives in `src/lib/constants.ts`.
 
-**Historical 2025 ingest:** the existing `pnpm ingest <path-to-axdb>` CLI handles 2025 files unchanged — `Event.axdbSha256` keeps re-ingests idempotent.
+**Historical 2025 ingest:** the existing `pnpm ingest <path-to-axdb>` CLI handles 2025 files unchanged — `Event.sourceSha256` (renamed from `axdbSha256` in League Foundation) keeps re-ingests idempotent.
 
 ### M1.10 — Ingest correctness pass ✓ (done 2026-05-23)
 
@@ -647,7 +647,7 @@ Closes the "hand-edit the DB to fix bad uploads" gap. An admin uploaded 2024/202
 - **Edit metadata** (`PATCH /api/admin/events/:id`) — name/date/location edited in place. Changing name or date regenerates the slug via `buildEventSlug()` (exported from `src/lib/ingest.ts` so ingest and admin-edit can never drift). Editing into another event's slug returns 409 with an inline dialog error; a Prisma `P2002` catch backstops the check-then-update race.
 - **Guarded delete** (`DELETE /api/admin/events/:id`) — confirmation dialog shows exactly what goes ("N entries, M runs, K videos"; no type-to-confirm — deletes are recoverable by re-uploading the `.axdb`). `Event` delete cascades `Entry` → `Run` and `Video`; the same interactive transaction then sweeps `Driver` rows with no remaining entries **and** no videos. The sweep is global by design (also cleans pre-existing orphans); `Driver`/`CarClass` are shared across events and otherwise untouched.
 - **`AdminAuditLog`** (migration `20260710213325_admin_audit_log`) — one generic table for `ingest` / `event.update` / `event.delete` with actor MSR UID + redacted display name (`First L.` only), target id/slug, and a JSON-string `detail` column (before/after for edits, counts + `orphanDriversDeleted` for deletes, filename + sha + counts for ingests). Edit/delete write the audit row inside their transaction; the two ingest paths (admin upload route, CLI with `actor: "cli"`) write best-effort in a try/catch so an audit hiccup never fails a completed ingest.
-- `IngestSummary` gained `axdbSha256` (ingest already computed it) so audit writers don't recompute.
+- `IngestSummary` gained `sourceSha256` (renamed from `axdbSha256` in League Foundation; ingest already computed it) so audit writers don't recompute.
 - Added the shadcn `dialog` primitive (base-nova / Base UI — no new npm dependency).
 - **`/admin/audit`** (follow-up in the same PR) — read-only server-rendered page behind the same admin gate listing the latest 200 audit rows (timestamp, action, redacted actor, target slug) with per-row expandable pretty-printed detail JSON. Third card on the `/admin` hub.
 - **Delete result stays visible** (follow-up in the same PR): the delete dialog switches to a persistent success state showing entries/runs/videos removed and orphaned drivers swept, closing only when dismissed; the table refreshes behind the open dialog.
@@ -718,6 +718,114 @@ A member reported two `/drivers/[id]` UX bugs: (1) hovering the progression char
 
 **Files:** `apps/web/src/lib/driver-history.ts`, `apps/web/src/app/drivers/[id]/event-history.tsx`, `apps/web/src/app/drivers/[id]/progression-chart.tsx`, `apps/web/src/app/drivers/[id]/time-delta-chart.tsx`, `apps/web/tests/driver-history.test.ts`, `docs/BUILD.md`, `docs/PRD.md`.
 
+### League Foundation — Multi-tenant data model ✓ (done 2026-07-22)
+
+PR 1 of a broader "any autocross club can self-host Launch Control" initiative. Ships a DB-native tenant/scoring model with **no user-facing behavior change** for the existing PCA RMR deployment — every seeded default reproduces production byte-for-byte.
+
+**Data model:**
+
+- **`League`** (new) — one row per deployment: branding (`name`, `siteTitle`, `siteDescription`, `landingDescription`, `footerText`), `accessGate` (`"required" | "optional" | "none"`), `msrOrgId`, `smugmugUser`, `smugmugDisciplinePath`. `apps/web/src/lib/league-config.ts` resolves the row named by `DEFAULT_LEAGUE_SLUG` (env, default `"pca-rmr"`) — the only tenant-selecting env var — and is now the single source every route/page reads branding, the access gate, and SmugMug config from. `msrOrgId` / `smugmugUser` / `smugmugDisciplinePath` still fall back to the legacy `MSR_ORG_ID` / `MSR_RMR_ORG_ID` / `SMUGMUG_USER` / `SMUGMUG_DISCIPLINE_PATH` env vars, but only when the League row leaves the field `null` — a transitional shim, not a permanent dual-config surface.
+- **`ScoringSystem`** (new) — named scoring presets owned by a league (`policy`: a JSON `ScoringPolicy` v1 string, see `apps/web/src/lib/scoring-policy.ts`). Seeded preset: "PCA Classic" — `{"v":1,"drops":"fixed","paxSection":false,"classMetric":"raw","conePenaltyMs":2000}`, today's production scoring behavior, byte-identical.
+- **`Season`** (new) — one row per league-year. `scoringPolicy` is a **snapshot** copy of a `ScoringSystem`'s policy at creation time, never a live reference, so editing a preset later never reshapes a past season's standings. `plannedEvents` replaces the old code-level `PLANNED_SEASON_EVENTS` map (M1.16) as the source for `seasonScoringBasis()`'s dynamic qualifying threshold. New rows are created via `pnpm --filter web season:create` (`apps/web/scripts/create-season.ts` → `src/lib/create-season.ts`); ingest also auto-creates a bare Season (oldest preset on the league, `plannedEvents: 0`) the first time it sees an event year with none.
+- **`LeagueMembership`** (new) — `(leagueId, msrUid, role)` where `role` is `"ADMIN" | "MEMBER"`. `apps/web/src/lib/admin.ts`'s `isAdmin()` is a compatibility shim: the pre-existing `ADMIN_MSR_UIDS` env allowlist is checked first and short-circuits before any DB read; only a uid that misses the allowlist falls through to an ADMIN `LeagueMembership` lookup on the deployment's default league. The table seeds empty — no UI writes these rows yet, so only manual `prisma studio` edits populate it today; membership-management UI is future scope.
+- **`Event.seasonId`** and **`CarClass.leagueId`** are now required foreign keys — previously the "season" was implicit (`date.getFullYear()`) and `CarClass.code` was globally unique. Both are scoped per-season/per-league now.
+- **`Event.axdbSha256` renamed to `sourceSha256`**, and its uniqueness moved from global to `@@unique([seasonId, sourceSha256])` — two different leagues/seasons can now legitimately re-ingest byte-identical fixture data without colliding.
+
+**Seed & backfill migration (`20260722020000_league_foundation`):** hand-written, not `prisma migrate dev` — it must run an ordered seed plus two table rebuilds deterministically on every deploy:
+
+1. Create the four new tables (`League`, `ScoringSystem`, `Season`, `LeagueMembership`).
+2. Seed the `pca-rmr` League row and its "PCA Classic" `ScoringSystem` preset — production branding/scoring strings, copied verbatim (the upstream-compatibility contract).
+3. Seed one `Season` per **distinct year** already present in `Event` rows, `scoringPolicy` a literal copy of the PCA Classic policy, `plannedEvents` mirroring the old `PLANNED_SEASON_EVENTS` map (2026→6, else 0). A fresh, eventless DB seeds no Seasons here — ingest's auto-create path covers that case.
+4. **Table-rebuild `Event`**: add the now-required `seasonId`, backfilled by joining each event's year to the Season just seeded; re-scope `sourceSha256` uniqueness to per-season.
+5. **Table-rebuild `CarClass`**: add the now-required `leagueId`, backfilled to `pca-rmr`; re-scope `code` uniqueness to per-league.
+
+Both rebuilds use the standard Prisma/SQLite table-rebuild pattern (`PRAGMA defer_foreign_keys=ON` + `foreign_keys=OFF`, `CREATE new_* → INSERT…SELECT → DROP → RENAME`) — existing `Entry`/`Run`/`Video` rows and their foreign keys survive untouched; ids are preserved.
+
+**Deploy runbook:**
+
+> ⚠️ **This migration rebuilds the `Event` and `CarClass` tables in place.** Back up the production DB before running it (Turso: a platform snapshot, or `turso db shell <db> .dump` piped to a file).
+
+1. **Required pre-flight query.** The migration moves `Event.sourceSha256` uniqueness from global to per-`(seasonId, sourceSha256)` (season derived from `strftime('%Y', date)` for this backfill). Before migrating, confirm no existing data would collide under the new scope:
+
+   ```sql
+   SELECT CAST(strftime('%Y', date) AS INTEGER) y, sourceSha256, COUNT(*) c
+   FROM Event
+   WHERE sourceSha256 IS NOT NULL
+   GROUP BY y, sourceSha256
+   HAVING c > 1;
+   ```
+
+   **Must return 0 rows.** A non-empty result means two events in the same calendar year share a `sourceSha256` — resolve the duplicate (or diagnose why two distinct events hashed the same) before migrating; don't proceed with an unresolved collision.
+
+2. **Migrate and promote back-to-back, in the same deploy window — never leave a deploy half-migrated.** Run `pnpm --filter web migrate:turso` (applies `prisma migrate deploy` against Turso) immediately before promoting the build that expects the new schema. A build running the new code against the old (pre-migration) schema, or the old code against the new schema, is unsupported and untested — the app fails loudly (`[league-config] no League row for DEFAULT_LEAGUE_SLUG=...`) rather than serving degraded, but that's a symptom to avoid, not a safety net to rely on.
+3. Confirm `DEFAULT_LEAGUE_SLUG` is set correctly for the target environment (unset defaults to `pca-rmr`, correct for the existing production deployment — only set it explicitly when standing up a genuinely new tenant).
+4. Smoke-test `/`, `/leaderboard`, and one `/events/[slug]` page post-deploy to confirm the seeded League/Season rows resolved correctly.
+
+**Follow-up (not landed in this PR):** `Season.scoringPolicy.conePenaltyMs` is validated and enforced-equal to the shared `CONE_PENALTY_MS` constant (throws at season-load time on a mismatch — see `scoring-policy.ts` / `season-leaderboard.ts`), but isn't yet threaded into the per-entry cone math in `entry-best.ts` / `combined-event.ts` / `leaderboard.ts`. A season configured with a different cone penalty is rejected at load time rather than silently mis-scored; true per-season cone penalties await a later PR. `LeagueMembership` management UI (create/edit/remove ADMIN rows from the admin surface, rather than `prisma studio`) is also deferred.
+
+### League Multi-Club (PR 2) — RMsolo pipeline, public browsing, Docker ✓ (done 2026-07-23)
+
+PR 2 of the multi-club initiative, stacked on League Foundation (PR 1). Ships a second league (RMsolo) with its own full ingest pipeline, makes every league publicly browsable, and closes the deferred cone-penalty/error-boundary/backfill-test gaps PR 1 left open. Default-league (`pca-rmr`) routes remain byte-identical to PR 1 throughout — this PR is additive.
+
+**`Season.slug` migration (`20260723010000_season_slug`):** hand-written table rebuild adding a required `slug TEXT` column to `Season`, unique per `(leagueId, slug)`, backfilled for existing rows by a SQL approximation of `slugify()` (fixed punctuation set — space/underscore/apostrophe/period/ampersand/slash → `-`, collapsed, trimmed — see the migration's own header comment for the exact set and its limitation vs. the full TS `slugify()`). This is the addressing key `/l/[league]/leaderboard/s/[seasonSlug]` resolves against. It also **lifts create-season's old duplicate-year refusal** — season uniqueness is now by slug, not by `(leagueId, year)`, so a second season in the same calendar year (e.g. a Winter Series alongside a Summer Series) is a supported CLI operation, not just a schema possibility. `resolveSeasonBySlug(leagueId, slug)` and `activeSeason(leagueId)` (status `active`, newest year, tie newest id) in `src/lib/season-resolve.ts` are the two resolution paths pages use.
+
+**Multi-league data model summary:**
+
+- **RMsolo pipeline** (`src/lib/rmsolo-index.ts`/`rmsolo-parse.ts`/`rmsolo-pax.ts`/`rmsolo-ingest.ts`, ported from the archived `feat/rmsolo-ingest` branch, league-agnostic parsing + league-targeted ingest): `ingestRmsoloEvent({ leagueSlug, ... })` resolves/auto-creates the event's `Season` scoped to that league, and creates/updates `CarClass` rows scoped to that league (same class code can carry different PAX factors in two different leagues — isolation is by construction in the ingest write path, not a DB constraint, same posture as the `.axdb` path).
+- **Per-season PAX tables:** `getRmsoloPaxIndex` precedence is `Season.paxTable` JSON (per-season override) → built-in `RMSOLO_PAX_2026` table → a derived factor from run-group placement (`nearestPaxClass`) → `1.0` with a warning. No CLI flag writes `paxTable` today (a `--write-pax-table` option was scoped and dropped as YAGNI) — it's hand-edited or seeded via `season:create --policy-file`/direct DB write.
+- **`league:create` CLI** (`src/lib/create-league.ts` + `scripts/create-league.ts`): creates a `League` row plus a default `ScoringSystem` preset in one transaction (a league needs at least one preset before `resolveOrCreateSeason`'s ingest-time auto-create path can work). Mirrors `season:create`'s lib/CLI split. `--gate` defaults to `"required"` — see the operational invariant below.
+- **Public browsing routes** (login-less, respect each league's own gate): `/leagues` (directory), `/l/[league]` (home/events), `/l/[league]/leaderboard[/s/[seasonSlug]]`, `/l/[league]/events/[slug]`. Legacy routes (`/`, `/leaderboard[/year]`, `/events/...`) are unchanged and always resolve `DEFAULT_LEAGUE_SLUG`.
+- **Driver stats filters** (`/drivers/[id]`, `src/lib/driver-history.ts`): `?league=<slug|all>` × `?season=<id>` / `?from=&to=` / all-time. Counts aggregate across leagues under `league=all`; progression/time-delta charts always render one series per league.
+- **Cone-penalty threading (PR 1's deferred item, closed):** `bestCorrectedMsForEntry` / `leaderboard.ts` / `combined-event.ts` now accept a `penaltyMs` parameter (default `CONE_PENALTY_MS`), sourced from the entry's season's `scoringPolicy.conePenaltyMs`. The PR 1 throw-guard (season-load-time mismatch check against the shared constant) is removed now that the value is actually wired end-to-end instead of merely validated.
+- **App-level `error.tsx`:** a friendly message + error digest, no stack/internals leaked to the client; a malformed `scoringPolicy` still throws loudly server-side (visible in logs) but no longer renders a raw framework 500 page to visitors.
+- **Two-league coexistence** (`apps/web/tests/multi-league.test.ts`): one DB, PCA league (`.axdb` synthetic fixture) + RMsolo league (synthetic parsed events) — asserts `CarClass` same-code isolation with different factors, standings isolation, `/leagues` data-fn sees both, a cross-league driver (same identity hash in both leagues) aggregates per the driver-stats rules above, and legacy routes stay default-league-only.
+
+**Operational invariant (carried to AGENTS.md and README):** only the default league may run with `accessGate: "required"` — per-login MSR membership (`isRmrMember`) is checked against the *default* league's org only; `LeagueMembership` (per-league roles) isn't wired into gating yet. `league:create --gate` does not refuse `"required"` on a non-default league today, so this is an operator discipline, not an enforced constraint — true per-league membership is PR 3 scope.
+
+**Docker (`Dockerfile`/`compose.yaml`/`deploy/launchcontrol.env.example`, ported from the archive, already club-agnostic):** the optional `ingest` sidecar profile passes `--league "$${INGEST_LEAGUE:-}"` to `ingest:rmsolo`; an empty/unset `INGEST_LEAGUE` falls through to `DEFAULT_LEAGUE_SLUG` (the ingest CLI's own default, not a shell conditional). `deploy/launchcontrol.env.example` documents both `DEFAULT_LEAGUE_SLUG` and `INGEST_LEAGUE`, plus the first-boot step for adding a second league/season via `docker compose exec web pnpm --filter web league:create/season:create`. See the Appendix note below — containerization is no longer a deferred item.
+
+### League Admin (PR 3) — two-tier roles, membership gating, PAX snapshots ✓ (done 2026-07-23)
+
+PR 3 of 3 in the multi-club initiative. Closes PR 2's two deferred gaps — `LeagueMembership` had no write path and only the default league could gate on MSR org membership — with a real role model, and separately freezes PAX scoring against a snapshot so a later factor correction can't reach back and reshape an already-scored event.
+
+**Role model — two tiers:**
+
+- **Superuser** (`src/lib/super-user.ts`) — global, deployment-wide. Bootstrapped irrevocably from the `ADMIN_MSR_UIDS` env allowlist (checked first, no DB read) or granted via a `SuperUser` row (`{ msrUid }`, unique). `setSuperUser()` refuses to revoke a uid that's still in the env allowlist — the env bootstrap can only be undone by editing the env var. A superuser administers every league and bypasses every per-league gate.
+- **Per-league membership** (`src/lib/membership.ts`, `LeagueMembership` table, `(leagueId, msrUid)` unique) — `role` is one of `ADMIN` / `MEMBER` / `BLOCKED`. `ADMIN` grants that one league's admin surface (`isLeagueAdmin()`); `MEMBER` and `ADMIN` both satisfy a `"required"` access gate for that league; `BLOCKED` denies it outright, overriding an org match. Written today only via the admin UI (`/admin/leagues/[slug]/members`) and its REST route (`POST/DELETE /api/admin/leagues/[slug]/members`) — no more manual `prisma studio` edits needed.
+- **Gate helpers** (`src/lib/admin.ts`): `isLeagueAdmin(msrUid, leagueId)` (superuser OR ADMIN row on that league), `isAnyLeagueAdmin(msrUid)` (superuser OR ADMIN row on any league — gates the coarse `/admin` entry point), `administeredLeagues(msrUid)` (every league for a superuser, else just the leagues where the uid holds an ADMIN row — feeds the `/admin` index and the events/audit league filters).
+
+**Access decision chain (`decideLeagueAccess`, `src/lib/league-access.ts`) — exact order:**
+
+1. Superuser → **allow** (unconditional).
+2. `membershipRole === "BLOCKED"` → **deny**.
+3. `membershipRole` is `"ADMIN"` or `"MEMBER"` → **allow**.
+4. `accessGate !== "required"` (i.e. `"optional"`/`"none"`) → **allow**.
+5. `msrOrgId` set on the league AND the session's `msrOrgIds` includes it → **allow**.
+6. Otherwise → **redirect** (bounce to sign-in, `returnTo` preserved).
+
+Public gates (`"optional"`/`"none"`) short-circuit at step 4 without any session or DB read, so a `BLOCKED` row only ever bites on a `"required"` gate — "BLOCKED is gated-access-only" is by design, not an oversight. `checkLeagueAccess()`/`requireMember()` in `src/lib/session.ts` resolve this chain per-league (superuser + membership-role lookups run in parallel via `Promise.all`), replacing the old default-league-only `isRmrMember` flag as the sole per-league gate; both call sites turn `"deny"` into a no-`returnTo` redirect (no point looping a blocked user back to sign-in) and `"redirect"` into a `returnTo`-carrying one. **Both temporary PR 2 guards that refused a `"required"` gate on any non-default league are deleted now that real per-league gating exists:** `league-config.ts`'s `toLeagueConfig` throw, and `createLeague`'s refusal of `--gate required` (see README update below).
+**Disclosure:** org matching reads `session.msrOrgIds`, captured at MSR login (Task 5) — sessions minted before this field shipped lack it and fall through to step 6 (redirect); affected users simply re-login. `/admin/audit`'s league filter is an approximation (best-effort match against audit detail, not a hard FK) — see the route's own comment for the exact heuristic.
+
+**PAX snapshot semantics (`Entry.paxIndexApplied`, `src/lib/pax-applied.ts`/`pax-reapply.ts`):**
+
+- **Stamped at ingest, not read live.** Both pipelines (`src/lib/ingest.ts` for AxWare, `src/lib/rmsolo-ingest.ts` for RMsolo) resolve the PAX factor once at ingest time and write it onto `Entry.paxIndexApplied`. Scoring (`appliedPaxIndex()`) reads that frozen column, falling back to the live `entry.paxClass.paxIndex` join only when the snapshot is `null` (a data anomaly post-backfill, not the normal path). Net effect: editing a `CarClass.paxIndex` later (a rules-committee correction, a new season's table) never reaches back and reshapes an already-scored entry.
+- **Backfilled frozen-at-migration-time.** Migration `20260724020000_entry_pax_applied` adds the nullable `Decimal` column and backfills every pre-existing `Entry` from its **current** `CarClass.paxIndex` — the real at-ingest factor for old rows is unrecoverable (same caveat as `Driver.nameOnlyHash`), so historical entries freeze at whatever the live table said on migration day, not at whatever it said when they actually raced.
+- **Re-apply blast radius (`reapplySeasonPaxFactors()`):** an admin action, scoped to **one `Season`** at a time (`POST /api/admin/leagues/[slug]/seasons/[seasonSlug]/pax-reapply`, surfaced from the season editor). It reads that season's own `Season.paxTable` JSON (`{ code: factor }`, validated by `parseSeasonPaxTableStrict()` — positive finite numbers only, throws otherwise) and stamps `paxIndexApplied` onto every `Entry` under that season whose `paxClass.code` is a key of the table — scoped additionally to the season's own league, since `CarClass.code` is only unique per-league. Codes **absent** from the table are left untouched (an entry ingested under a class the season's override table doesn't cover keeps whatever was stamped at ingest). This is a deliberate, bounded history rewrite: one season's worth of entries, one admin click, auditable (`writeAudit` records the `{ updated, codes }` result under `action: "season.update"`).
+
+**Ingest-now capability gating (`src/lib/rmsolo-run.ts`, `POST /api/admin/leagues/[slug]/ingest-now`):** the on-demand "Ingest now" admin-dashboard button (shipped in Task 18, doc'd here for completeness) is gated by `ingestNowCapability()` — `INGEST_NOW_ENABLED=1` env AND a memoized `pdftotext -v` probe — so the button/route is invisible/disabled unless both the operator opted in and poppler is actually on `PATH`. The route's full chain: `guardLeagueAdmin(slug)` (404 fail-closed, not 403 — a non-admin can't distinguish "no such league" from "not allowed") → capability gate (501 + reason) → a per-league in-process mutex (409 if a scrape is already running for that league) → run the shared scrape (`runRmsoloIngest`, the same code path as the CLI and the sidecar) → best-effort audit write (`action: "ingest.now"`, failure logged but doesn't fail the request) → JSON counts.
+
+**Other surfaces shipped in this PR** (see task history for detail): league/season/scoring-preset admin CRUD (lib functions + REST routes + dialogs under `/admin/leagues/[slug]/...`); a members-only lock badge on `/leagues` directory cards for `"required"`-gate leagues; league-scoped driver routes; a per-season Events tab on league pages.
+
+**Deferred / known limitations:** audit's league filter is a best-effort approximation, not a hard join (see above). Sessions minted before `msrOrgIds` shipped need a re-login to get per-league org gating. `BLOCKED` has no effect on public (`"optional"`/`"none"`) leagues by design.
+
+**Deploy runbook (two new migrations, both additive — much lower-risk than League Foundation's table rebuilds above):**
+
+- **`20260724010000_super_user`** — `CREATE TABLE "SuperUser"` + a unique index on `msrUid`. New table only; nothing existing is touched. Deliberately **not** backfilled from `ADMIN_MSR_UIDS` — the env allowlist stays the irrevocable bootstrap (same posture as `LeagueMembership`: env is config, rows are data).
+- **`20260724020000_entry_pax_applied`** — `ALTER TABLE "Entry" ADD COLUMN "paxIndexApplied" DECIMAL` (nullable), then one `UPDATE` backfilling every existing row from its **current** `CarClass.paxIndex` via a correlated subquery. The backfill is idempotent — re-running it just re-sets each row to today's live factor again, a no-op if no `CarClass.paxIndex` changed in between.
+- **Back up first** (same as League Foundation's runbook: a Turso platform snapshot, or `turso db shell <db> .dump` piped to a file) — the `Entry` backfill is a bulk `UPDATE` across every row in the table.
+- **One `pnpm --filter web migrate:turso` run applies both** (`prisma migrate deploy` runs pending migrations in filename order — `..._super_user` then `..._entry_pax_applied` — in a single invocation). No seed step, no pre-flight collision query (unlike League Foundation) — both migrations are unconditionally safe to run against any prior schema state.
+- Promote the build in the same window as the migration, per the existing rule above: old code against the new schema, or new code against the old schema, is unsupported.
+
 ### M3 — Public calendar (target: 0.5 session, after M2)
 
 - `/calendar` server-fetches `/rest/calendars/organization/{RMR_ORG_ID}`.
@@ -763,7 +871,7 @@ Resolved open questions from PRD development — preserved here as context for f
 
 Out of scope for the MVP but noted to keep prior thinking discoverable:
 
-- **Containerization** (Docker / `docker-compose`) for parity between dev, preview, and prod.
+- ~~**Containerization** (Docker / `docker-compose`) for parity between dev, preview, and prod.~~ **Done, PR 2 (2026-07-23):** `Dockerfile` + `compose.yaml` + `deploy/launchcontrol.env.example`, ported from the archived `feat/rmsolo-ingest` branch and made league-aware (`--league`/`INGEST_LEAGUE` on the ingest sidecar). This is an optional self-host path alongside the existing Vercel+Turso production deployment, not a replacement for it — see "League Multi-Club (PR 2)" above.
 - **Background ingestion worker** if `.axdb` uploads outgrow Vercel function limits.
 - **Revisit the `better-sqlite3` dependency.** `apps/web/src/lib/axdb-validate.ts` and `apps/web/src/lib/ingest.ts` both import `better-sqlite3` to read user-uploaded `.axdb` SQLite files. It is a native N-API addon (statically links SQLite C) and has caused real friction:
   - Every install needs either a `prebuild-install` binary matching `<node-abi>-<platform>-<arch>` or a fresh `node-gyp` compile (Python + clang). Node 24 / ABI v137 on darwin-arm64 may not have a published prebuild yet, forcing source builds.

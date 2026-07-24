@@ -7,6 +7,13 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
 import type { ParsedRmsoloEvent } from "@/lib/rmsolo-parse";
 
+// Ported from archive (feat/rmsolo-ingest @ 12edd82, apps/web/tests/rmsolo-ingest.test.ts),
+// adapted to the League model: every ingest here targets the default (pca-rmr) league —
+// seeded with a "PCA Classic" ScoringSystem by the league-foundation migration, so
+// resolveOrCreateSeason's auto-create path (invoked with no --league) has a preset to
+// snapshot, same as ingestAxdb. Class assertions now also pin CarClass.leagueId — see
+// tests/rmsolo-ingest-league-targeting.test.ts for cross-league isolation.
+//
 // Unique per-file DB path (not the shared test.db) so this file's beforeAll
 // (rmSync + `prisma migrate deploy`) can't race another test file's DB reset
 // when vitest runs test files concurrently — see admin-events.test.ts,
@@ -15,8 +22,9 @@ const TEST_DB_PATH = resolve(__dirname, "..", "test-rmsolo-ingest.db");
 const TEST_DB_URL = "file:./test-rmsolo-ingest.db";
 
 let prisma: PrismaClient;
+let leagueId: number;
 
-beforeAll(() => {
+beforeAll(async () => {
   rmSync(TEST_DB_PATH, { force: true });
   execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
     cwd: resolve(__dirname, ".."),
@@ -25,6 +33,8 @@ beforeAll(() => {
   });
   const adapter = new PrismaLibSql({ url: TEST_DB_URL });
   prisma = new PrismaClient({ adapter });
+  const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
+  leagueId = league.id;
 });
 
 afterAll(async () => {
@@ -59,7 +69,7 @@ const parsed: ParsedRmsoloEvent = {
 };
 
 describe("ingestRmsoloEvent", () => {
-  it("creates event, classes, drivers with redacted initials, entries, runs", async () => {
+  it("creates event, classes (league-scoped), drivers with redacted initials, entries, runs", async () => {
     const result = await ingestRmsoloEvent({ parsed, sha256: "abc123", date: "2026-04-18" }, prisma);
     expect(result.status).toBe("ingested");
     expect(result.event.slug).toBe("2026-04-18-summer-2026-1");
@@ -77,6 +87,13 @@ describe("ingestRmsoloEvent", () => {
     expect(alex.runs[1]).toMatchObject({ rawTimeMs: 42908, cones: 1, disposition: "CLEAN" });
     expect(alex.bestCommittedRunNumber).toBe(3); // run 3 = printed Best 42.298
     expect(Number(alex.class.paxIndex)).toBeGreaterThan(0.7); // from RMSOLO_PAX table
+    expect(alex.class.leagueId).toBe(leagueId); // CarClass is league-scoped
+
+    // The event's season resolved (auto-created) under the target league, for the event's year.
+    const event = await prisma.event.findUniqueOrThrow({ where: { id: alex.eventId } });
+    const season = await prisma.season.findUniqueOrThrow({ where: { id: event.seasonId } });
+    expect(season.leagueId).toBe(leagueId);
+    expect(season.year).toBe(2026);
   });
 
   it("DNF runs store null rawTimeMs", async () => {
@@ -258,6 +275,7 @@ describe("run-group paxClass derivation", () => {
     expect(entry!.class.code).toBe("X");
     expect(entry!.paxClass.code).toBe("AST");
     expect(Number(entry!.paxClass.paxIndex)).toBe(0.836);
+    expect(entry!.paxClass.leagueId).toBe(leagueId);
   });
 
   it("reconciled entries keep paxClass = entered class", async () => {
@@ -266,5 +284,36 @@ describe("run-group paxClass derivation", () => {
       include: { class: true, paxClass: true },
     });
     expect(entry!.paxClass.code).toBe("AS");
+  });
+});
+
+describe("Entry.paxIndexApplied snapshot", () => {
+  // The run-group derivation event (carNumber 198 → paxClass AST @ 0.836,
+  // fallback entries → paxClass = entered class) is ingested in the block above,
+  // so by now the DB holds both normal-class entries and a derived-factor one.
+  it("stamps paxIndexApplied equal to the resolved paxClass factor for every entry", async () => {
+    const entries = await prisma.entry.findMany({ include: { paxClass: true } });
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.paxIndexApplied, `entry ${e.id} should carry paxIndexApplied`).not.toBeNull();
+      expect(Number(e.paxIndexApplied)).toBeCloseTo(Number(e.paxClass.paxIndex), 6);
+    }
+  });
+
+  it("stamps the derived run-group factor (not 1.0) on the paxClass-derived entry", async () => {
+    const entry = await prisma.entry.findFirstOrThrow({
+      where: { carNumber: "198", event: { slug: "2026-09-01-summer-2026-9" } },
+      include: { paxClass: true },
+    });
+    expect(Number(entry.paxIndexApplied)).toBeCloseTo(0.836, 6);
+    expect(entry.paxClass.code).toBe("AST");
+  });
+
+  it("snapshot survives a later factor change", async () => {
+    const entry = await prisma.entry.findFirstOrThrow({ include: { paxClass: true } });
+    const before = Number(entry.paxIndexApplied);
+    await prisma.carClass.update({ where: { id: entry.paxClassId }, data: { paxIndex: 0.5 } });
+    const after = await prisma.entry.findUniqueOrThrow({ where: { id: entry.id } });
+    expect(Number(after.paxIndexApplied)).toBe(before); // frozen — decoupled from the live CarClass
   });
 });

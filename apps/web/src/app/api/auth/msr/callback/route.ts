@@ -10,7 +10,8 @@
  *  6. Apply PII rule: compute lastInitial via redactLastName; discard full lastName.
  *  7. Compute isRmrMember from org list.
  *  8. Persist the SessionData fields in the main session cookie.
- *  9. 302 / (events home).
+ *  9. 302 to a re-validated returnTo (members) or "/" — which is now the
+ *     league gate (card grid), not the old events home.
  *
  * On error, redirects to /login?error=<reason>. Full last name is never
  * logged, stored in a cookie, or written to any persistent layer.
@@ -22,16 +23,18 @@ import { MSR_ACCESS_TOKEN_URL, MSR_ME_URL } from "@/lib/msr-endpoints";
 import { parseFormEncoded, signRequest, signedMsrFetch } from "@/lib/msr";
 import type { MsrMeResponse } from "@/lib/msr";
 import { getRequestTokenSession, getSession, sanitizeReturnTo } from "@/lib/session";
+import { getLeagueConfig } from "@/lib/league-config";
 import { redactLastName } from "@/lib/pii";
-import { getClubConfig } from "@/lib/club-config";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const club = getClubConfig();
-  const orgId = club.msrOrgId;
-  if (!orgId && club.accessGate === "required") {
-    throw new Error("MSR_ORG_ID (or legacy MSR_RMR_ORG_ID) must be set when ACCESS_GATE=required");
+  const league = await getLeagueConfig();
+  const orgId = league.msrOrgId;
+  if (!orgId && league.accessGate === "required") {
+    throw new Error(
+      "MSR_ORG_ID (or legacy MSR_RMR_ORG_ID) must be set when the league's accessGate is 'required'",
+    );
   }
 
   const { searchParams } = request.nextUrl;
@@ -112,6 +115,7 @@ export async function GET(request: NextRequest) {
   session.accessToken = accessToken;
   session.accessTokenSecret = accessSecret;
   session.isRmrMember = isRmrMember;
+  session.msrOrgIds = profile.organizations.map((o) => o.id);
   await session.save();
 
   // 9. Redirect: RMR members go to returnTo (re-validated) or home; non-members

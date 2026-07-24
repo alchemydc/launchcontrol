@@ -9,5 +9,6 @@ import { revalidatePath } from "next/cache";
 export function expireResultsCache(): void {
   revalidatePath("/leaderboard", "layout");
   revalidatePath("/events", "layout");
+  revalidatePath("/l", "layout");
   revalidatePath("/");
 }

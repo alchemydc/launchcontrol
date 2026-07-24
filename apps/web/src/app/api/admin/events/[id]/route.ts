@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expireResultsCache } from "@/lib/results-cache";
 import { getSession } from "@/lib/session";
-import { isAdmin } from "@/lib/admin";
+import { isLeagueAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import {
   updateEventMetadata,
@@ -13,7 +13,12 @@ import {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-async function guard(): Promise<
+// The event is fetched BEFORE the permission check so its league can be
+// resolved (event → season → leagueId) and the admin gate scoped to that
+// league. A missing event and an authenticated-but-not-admin caller return
+// the IDENTICAL 404 shape, so a non-admin can never probe which event ids
+// exist.
+async function guard(eventId: number): Promise<
   | { ok: true; actor: Actor }
   | { ok: false; response: NextResponse }
 > {
@@ -25,8 +30,16 @@ async function guard(): Promise<
 
   const msrUid = session.msrUid;
 
-  if (!isAdmin(msrUid)) {
-    return { ok: false, response: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
+  const notFound = NextResponse.json({ error: "event not found" }, { status: 404 });
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { season: { select: { leagueId: true } } },
+  });
+  if (!event) return { ok: false, response: notFound };
+
+  if (!(await isLeagueAdmin(msrUid, event.season.leagueId))) {
+    return { ok: false, response: notFound };
   }
 
   const actorName = [session.firstName, session.lastInitial].filter(Boolean).join(" ") || "unknown";
@@ -42,14 +55,14 @@ export async function PATCH(
   request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const guarded = await guard();
-  if (!guarded.ok) return guarded.response;
-
   const { id } = await ctx.params;
   const eventId = parseEventId(id);
   if (eventId == null) {
     return NextResponse.json({ error: "invalid event id" }, { status: 400 });
   }
+
+  const guarded = await guard(eventId);
+  if (!guarded.ok) return guarded.response;
 
   let body: unknown;
   try {
@@ -103,14 +116,14 @@ export async function DELETE(
   _request: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const guarded = await guard();
-  if (!guarded.ok) return guarded.response;
-
   const { id } = await ctx.params;
   const eventId = parseEventId(id);
   if (eventId == null) {
     return NextResponse.json({ error: "invalid event id" }, { status: 400 });
   }
+
+  const guarded = await guard(eventId);
+  if (!guarded.ok) return guarded.response;
 
   try {
     const result = await deleteEventWithSweep(prisma, eventId, guarded.actor);

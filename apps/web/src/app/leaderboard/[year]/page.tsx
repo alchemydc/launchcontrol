@@ -4,12 +4,12 @@ import {
   listSeasonYears,
   summarizeSeasonSections,
 } from "@/lib/season-leaderboard";
-import { SeasonOverviewView } from "../season-overview-view";
+import { getLeagueConfig } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
+import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
+import { SeasonSwitcher } from "../season-switcher";
+import { SeasonOverviewView } from "../season-overview-view";
 
-// ISR: rendered on demand, then cached for 5 minutes. Gated deployments
-// (ACCESS_GATE=required) read cookies inside gateResultsPage and render
-// per-request instead.
 export const revalidate = 300;
 
 export default async function LeaderboardYearPage({
@@ -18,29 +18,39 @@ export default async function LeaderboardYearPage({
   params: Promise<{ year: string }>;
 }) {
   const { year: yearStr } = await params;
-
-  // Gate runs before the year range check so unauth viewers can't probe valid vs invalid years.
-  await gateResultsPage(`/leaderboard/${yearStr}`);
+  const league = await getLeagueConfig();
+  await gateResultsPage(
+    league,
+    `/leaderboard/${yearStr}`,
+    `/l/${league.slug}`,
+  );
 
   const year = Number(yearStr);
-
-  // Validate: must be a finite integer in a sensible calendar range
-  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
-    notFound();
-  }
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) notFound();
 
   const years = await listSeasonYears();
   const result = await buildSeasonLeaderboard(year);
 
   return (
-    <SeasonOverviewView
-      year={year}
-      years={years}
-      summaries={summarizeSeasonSections(result.sections)}
-      totalEvents={result.totalEvents}
-      completedEvents={result.completedEvents}
-      qualifyingEvents={result.qualifyingEvents}
-      countedEvents={result.countedEvents}
-    />
+    <>
+      <DefaultLeagueSubnav />
+      <SeasonOverviewView
+        title={`${year} Season Leaderboard`}
+        switcher={
+          years.length > 1 ? (
+            <div className="sm:shrink-0 sm:ml-4">
+              <SeasonSwitcher years={years} currentYear={year} />
+            </div>
+          ) : null
+        }
+        periodLabel={String(year)}
+        classBasePath={`/leaderboard/${year}`}
+        summaries={summarizeSeasonSections(result.sections)}
+        totalEvents={result.totalEvents}
+        completedEvents={result.completedEvents}
+        qualifyingEvents={result.qualifyingEvents}
+        countedEvents={result.countedEvents}
+      />
+    </>
   );
 }

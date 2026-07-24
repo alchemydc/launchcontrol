@@ -10,37 +10,37 @@
 
 import Link from "next/link";
 import { getSession } from "@/lib/session";
-import { getClubConfig } from "@/lib/club-config";
-import { isAdmin } from "@/lib/admin";
+import { getLeagueConfig, countLeagues } from "@/lib/league-config";
+import { isAnyLeagueAdmin } from "@/lib/admin";
 
 const linkClass =
   "text-sm text-muted-foreground hover:text-foreground transition-colors";
 
 export async function HeaderNav() {
-  const club = getClubConfig();
-  const publicMode = club.accessGate !== "required";
+  const league = await getLeagueConfig();
+  const publicMode = league.accessGate !== "required";
   // Guard session read for secret-less public deploys. Required-mode deploys
   // always read the session (member gating depends on it); public deploys
   // only read it when login is actually enabled.
   const session =
-    !publicMode || club.loginEnabled ? await getSession() : null;
+    !publicMode || league.loginEnabled ? await getSession() : null;
   const isSignedIn = Boolean(session?.msrUid);
   const displayName = isSignedIn
     ? `${session!.firstName ?? ""} ${session!.lastInitial ?? ""}`.trim()
     : null;
-  const showAdmin = isAdmin(session?.msrUid);
-  const showResultsLinks = publicMode || Boolean(session?.isRmrMember);
+  const showAdmin = await isAnyLeagueAdmin(session?.msrUid);
+  // Events/Leaderboard live in the per-league subnav (LeagueSubnav), not
+  // here — header links carried no indication of WHICH league they pointed
+  // at. The header keeps only global, league-independent items.
+  // "Leagues" only appears once a second league exists — single-league
+  // deployments (PCA production) see zero nav change (Task 5).
+  const showLeaguesLink = (await countLeagues()) > 1;
 
   return (
     <nav className="flex flex-wrap items-center gap-3 sm:gap-4">
-      {showResultsLinks && (
-        <Link href="/" className={linkClass}>
-          Events
-        </Link>
-      )}
-      {showResultsLinks && (
-        <Link href="/leaderboard" className={linkClass}>
-          Leaderboard
+      {showLeaguesLink && (
+        <Link href="/leagues" className={linkClass}>
+          Leagues
         </Link>
       )}
       {showAdmin && (
@@ -53,7 +53,7 @@ export async function HeaderNav() {
           {displayName}
         </Link>
       )}
-      {!isSignedIn && (club.loginEnabled || club.accessGate === "required") && (
+      {!isSignedIn && (league.loginEnabled || league.accessGate === "required") && (
         <Link href="/login" className={linkClass}>
           Sign in
         </Link>

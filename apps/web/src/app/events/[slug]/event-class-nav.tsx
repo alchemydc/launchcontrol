@@ -11,13 +11,16 @@ export function EventClassNav({
   classCodes,
   paxAvailable,
   active,
+  basePath = "",
 }: {
   slug: string;
   classCodes: string[];
   paxAvailable: boolean;
   /** Active class code, `"pax"` for the PAX view, or undefined on the overview. */
   active?: string;
+  basePath?: string;
 }) {
+  const eventHref = `${basePath}/events/${slug}`;
   const inactiveCls =
     "inline-flex items-center rounded-full border border-border bg-background px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none";
   const activeCls =
@@ -36,14 +39,14 @@ export function EventClassNav({
   return (
     <nav aria-label="Event views" className="mb-6">
       <ul className="flex flex-wrap gap-1.5">
-        <li>{pill(`/events/${slug}`, active == null, "Overview")}</li>
+        <li>{pill(eventHref, active == null, "Overview")}</li>
         {paxAvailable && (
-          <li>{pill(`/events/${slug}/pax`, active === "pax", "All PAX")}</li>
+          <li>{pill(`${eventHref}/pax`, active === "pax", "All PAX")}</li>
         )}
         {classCodes.map((code) => (
           <li key={code}>
             {pill(
-              `/events/${slug}/${encodeURIComponent(code)}`,
+              `${eventHref}/${encodeURIComponent(code)}`,
               active === code,
               code,
             )}

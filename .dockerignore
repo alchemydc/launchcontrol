@@ -7,7 +7,6 @@ apps/web/.env
 apps/web/.env.local
 apps/web/*.db
 apps/web/*.db-journal
-apps/web/test-*.db
 rmsolo_data
 real_season_data
 2026_season_data

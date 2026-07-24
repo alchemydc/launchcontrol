@@ -7,11 +7,18 @@ import {
   redactLastName,
   type IngestSummary,
 } from "@/lib/ingest";
-import { getRmsoloPaxIndex, nearestPaxClass } from "@/lib/rmsolo-pax";
+import { resolveOrCreateSeason } from "@/lib/season-resolve";
+import { nearestPaxClass, parseSeasonPaxTable, resolveRulesetPaxIndex } from "@/lib/rmsolo-pax";
 import { reconcileTimes, type ParsedEntry, type ParsedRmsoloEvent, type ParsedRun } from "@/lib/rmsolo-parse";
 
 const CONE_SECONDS = 2.0;
 const EPS = 0.0005;
+
+// The deployment's default league when no --league / leagueSlug is given —
+// same env var and fallback as ingest.ts's DEFAULT_LEAGUE_SLUG (PR 1's single
+// tenant-selecting knob), duplicated here rather than imported so this module
+// has no import-time dependency on ingest.ts beyond its named helpers.
+const DEFAULT_LEAGUE_SLUG = process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
 
 export type RmsoloIngestInput = {
   parsed: ParsedRmsoloEvent;
@@ -20,6 +27,8 @@ export type RmsoloIngestInput = {
   date: string; // YYYY-MM-DD
   /** Optional display-name override; defaults to a normalized parsed.title ("Summer 2026#1" → "Summer 2026 #1"). */
   name?: string;
+  /** Target league slug. Defaults to DEFAULT_LEAGUE_SLUG (single-league behavior, unchanged). */
+  leagueSlug?: string;
 };
 
 function toDisposition(raw: ParsedRun["disposition"]): RunDisposition {
@@ -60,6 +69,7 @@ export async function ingestRmsoloEvent(
   client: PrismaClient = defaultClient,
 ): Promise<IngestSummary> {
   const { parsed, sha256, date } = input;
+  const leagueSlug = input.leagueSlug?.trim() || DEFAULT_LEAGUE_SLUG;
   const { interpretation, unreconciled } = reconcileTimes(parsed);
   const unreconciledSet = new Set(unreconciled);
   const anonymousCount = parsed.entries.filter(
@@ -101,7 +111,10 @@ export async function ingestRmsoloEvent(
   // class it belongs to — giving the entry its true paxClass while the
   // entered class remains the run group (mirroring the .axdb class/paxmult
   // split this schema was built for). Entries whose factor matches nothing
-  // in the table keep paxClass = entered class (factor 1.0 fallback).
+  // in the table keep paxClass = entered class (factor 1.0 fallback). This
+  // matching is against the built-in RMSOLO_PAX_2026 table only — the
+  // ruleset's paxTable doesn't affect WHICH class a derived factor maps to,
+  // only the numeric paxIndex ultimately stored for that class (below).
   const derivedPaxCodeByEntry = new Map<ParsedEntry, string>();
   for (const e of unreconciled) {
     // Only run-group section headings (single letters: M/N/S/P/X) print
@@ -119,7 +132,24 @@ export async function ingestRmsoloEvent(
   }
 
   return await client.$transaction(async (tx) => {
-    const existing = await tx.event.findUnique({ where: { slug } });
+    const league = await tx.league.findUnique({ where: { slug: leagueSlug } });
+    if (!league) {
+      throw new Error(
+        `[rmsolo-ingest] league '${leagueSlug}' not found — check --league, or run 'prisma migrate deploy' ` +
+          `to seed the default league (or 'pnpm --filter web league:create' for a new one).`,
+      );
+    }
+    const eventYear = eventDate.getUTCFullYear();
+    const season = await resolveOrCreateSeason(tx, league, eventYear);
+    const seasonId = season.id;
+    // Factors come from the season's ruleset paxTable (Task R2 — a COMPLETE
+    // table, no built-in fallback; unlisted codes resolve to 1.0 with a
+    // one-shot warning in resolveRulesetPaxIndex). Lenient parse: a
+    // malformed stored table must not crash an ingest.
+    const ruleset = await tx.scoringSystem.findUniqueOrThrow({ where: { id: season.rulesetId } });
+    const rulesetPaxTable = parseSeasonPaxTable(ruleset.paxTable);
+
+    const existing = await tx.event.findUnique({ where: { seasonId_slug: { seasonId, slug } } });
 
     if (existing && existing.sourceSha256 === sha256) {
       const entries = await tx.entry.count({ where: { eventId: existing.id } });
@@ -148,35 +178,40 @@ export async function ingestRmsoloEvent(
           data: { sourceSha256: sha256, name, date: eventDate },
         })
       : await tx.event.create({
-          data: { slug, name, date: eventDate, sourceSha256: sha256 },
+          data: { seasonId, slug, name, date: eventDate, sourceSha256: sha256 },
         });
 
     if (existing) {
       await tx.entry.deleteMany({ where: { eventId: event.id } });
     }
 
-    // CarClass: findMany existing, createMany new, update only paxIndex-changed rows, findMany to map IDs.
-    // Includes classes referenced only as a derived paxClass (see derivedPaxCodeByEntry).
+    // CarClass: league-scoped (findMany existing, createMany new, update only
+    // paxIndex-changed rows, findMany to map IDs). Includes classes referenced
+    // only as a derived paxClass (see derivedPaxCodeByEntry).
     const classCodes = Array.from(
       new Set([...parsed.classCodes, ...derivedPaxCodeByEntry.values()]),
     );
-    const existingClasses = await tx.carClass.findMany({ where: { code: { in: classCodes } } });
+    const existingClasses = await tx.carClass.findMany({
+      where: { leagueId: league.id, code: { in: classCodes } },
+    });
     const existingClassByCode = new Map(existingClasses.map((c) => [c.code, c]));
 
     const newClassData = classCodes
       .filter((code) => !existingClassByCode.has(code))
-      .map((code) => ({ code, paxIndex: getRmsoloPaxIndex(code) }));
+      .map((code) => ({ leagueId: league.id, code, paxIndex: resolveRulesetPaxIndex(code, rulesetPaxTable) }));
     if (newClassData.length > 0) {
       await tx.carClass.createMany({ data: newClassData });
     }
     for (const code of classCodes) {
       const cur = existingClassByCode.get(code);
-      const pax = getRmsoloPaxIndex(code);
+      const pax = resolveRulesetPaxIndex(code, rulesetPaxTable);
       if (cur && Number(cur.paxIndex) !== pax) {
         await tx.carClass.update({ where: { id: cur.id }, data: { paxIndex: pax } });
       }
     }
-    const allClasses = await tx.carClass.findMany({ where: { code: { in: classCodes } } });
+    const allClasses = await tx.carClass.findMany({
+      where: { leagueId: league.id, code: { in: classCodes } },
+    });
     const classIdByCode = new Map(allClasses.map((c) => [c.code, c.id]));
 
     // Driver: PCA PII posture applies to every source (project decision,
@@ -186,7 +221,9 @@ export async function ingestRmsoloEvent(
     // they store their car-number label ("#33") so they render as
     // "Unknown #33". All RMsolo drivers have a null memberNum, so
     // identityHash is effectively name-keyed already — no blank-member
-    // merge/adopt machinery needed (unlike ingestAxdb's .axdb path).
+    // merge/adopt machinery needed (unlike ingestAxdb's .axdb path). Drivers
+    // are NOT league-scoped (a human can drive in multiple leagues; see
+    // driver-history's cross-league aggregation, Task 6) — same as ingestAxdb.
     type DriverIdentity = {
       identityHash: string;
       firstName: string;
@@ -262,6 +299,14 @@ export async function ingestRmsoloEvent(
       const paxCode = derivedPaxCodeByEntry.get(e) ?? e.classCode;
       const paxClassId = classIdByCode.get(paxCode);
       if (paxClassId == null) throw new Error(`Entry references unknown pax class code '${paxCode}'`);
+      // Snapshot the factor in force at ingest. resolveRulesetPaxIndex(paxCode)
+      // is exactly what set CarClass.paxIndex for paxCode's class above, so
+      // Entry.paxClass.paxIndex === Entry.paxIndexApplied now — they diverge
+      // only if the CarClass is later edited. Covers both paths: the derived
+      // run-group class (paxCode from nearestPaxClass) and the fallback where
+      // paxCode = entered class (no match → the class's own factor, 1.0 for a
+      // bare run-group heading).
+      const paxIndexApplied = resolveRulesetPaxIndex(paxCode, rulesetPaxTable);
       const identityHash = identityByEntry.get(e)!;
       const driverId = driverIdByIdentity.get(identityHash);
       if (driverId == null) throw new Error(`Missing driver mapping for identity hash '${identityHash.slice(0, 12)}…'`);
@@ -286,6 +331,7 @@ export async function ingestRmsoloEvent(
         driverId,
         classId,
         paxClassId,
+        paxIndexApplied,
         carNumber: e.carNumber,
         carDescription: e.carDescription,
         bestCommittedRunNumber,
@@ -300,6 +346,7 @@ export async function ingestRmsoloEvent(
           driverId: e.driverId,
           classId: e.classId,
           paxClassId: e.paxClassId,
+          paxIndexApplied: e.paxIndexApplied,
           carNumber: e.carNumber,
           carDescription: e.carDescription,
           bestCommittedRunNumber: e.bestCommittedRunNumber,

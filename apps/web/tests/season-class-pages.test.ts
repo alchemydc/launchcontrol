@@ -12,6 +12,7 @@ function row(overrides: Partial<SeasonStandingsRow> = {}): SeasonStandingsRow {
     driverId: 1,
     driverName: "Alice A.",
     totalPoints: 1000,
+    averagePoints: 1000,
     eligible: true,
     eventsCountedInClass: 3,
     qualifyingEvents: 4,

@@ -11,24 +11,31 @@ datasource db {
 }
 
 model Event {
-  id         Int      @id @default(autoincrement())
-  msrEventId String?  @unique
-  slug       String   @unique
-  name       String
-  date       DateTime
-  location   String?
+  id           Int      @id @default(autoincrement())
+  seasonId     Int
+  msrEventId   String?
+  slug         String
+  name         String
+  date         DateTime
+  location     String?
   sourceSha256 String? // sha256 of the ingested source artifact (.axdb file or results PDF) — idempotency key
-  createdAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
 
+  season  Season  @relation(fields: [seasonId], references: [id])
   entries Entry[]
   videos  Video[]
+
+  @@unique([seasonId, msrEventId])
+  @@unique([seasonId, slug])
+  @@unique([seasonId, sourceSha256])
+  @@index([seasonId])
 }
 
 model Driver {
   id          Int     @id @default(autoincrement())
   msrUid      String? @unique
   firstName    String
-  lastInitial  String  // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest redaction. One exception: anonymous RMsolo entries (no printed name) store their car-number label ("#33") here so they render "Unknown #33".
+  lastInitial  String  // single uppercase letter + period (e.g. "K."), never the full last name — enforced in ingest.ts redactLastName()
   identityHash String  @unique
   memberNum    String?
   nameOnlyHash String?   // sha256(lower(first)|lower(last)) — full-name key for blank-member merging at ingest; nullable because pre-existing rows can't be backfilled (full surname is never stored)
@@ -41,11 +48,15 @@ model Driver {
 
 model CarClass {
   id       Int     @id @default(autoincrement())
-  code     String  @unique
+  leagueId Int
+  code     String
   paxIndex Decimal @default(1.0000)
 
+  league         League  @relation(fields: [leagueId], references: [id])
   enteredEntries Entry[] @relation("EnteredClass")
   paxEntries     Entry[] @relation("PaxClass")
+
+  @@unique([leagueId, code])
 }
 
 model Entry {
@@ -54,6 +65,7 @@ model Entry {
   driverId       Int
   classId        Int
   paxClassId     Int
+  paxIndexApplied Decimal? // factor actually applied at ingest (PAX snapshot; PR 3) — null only pre-backfill
   carNumber              String
   carDescription         String?
   bestCommittedRunNumber Int?    // VisualAX-authoritative best-run pointer; resolved from registrations.bestcommittedrun_id by finding the FK's position in the driver's sorted-by-id source runs (1-indexed). Null when VisualAX emits no committed best.
@@ -106,6 +118,77 @@ model Video {
   driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
   @@index([eventId])
+}
+
+model League {
+  id                    Int      @id @default(autoincrement())
+  slug                  String   @unique
+  name                  String
+  siteTitle             String
+  siteDescription       String
+  footerText            String?
+  landingDescription    String
+  accessGate            String   @default("required") // "required" | "optional" | "none"
+  msrOrgId              String?
+  smugmugUser           String?
+  smugmugDisciplinePath String?
+  logoUrl               String?
+  createdAt             DateTime @default(now())
+
+  seasons        Season[]
+  scoringSystems ScoringSystem[]
+  memberships    LeagueMembership[]
+  carClasses     CarClass[]
+}
+
+model ScoringSystem {
+  id        Int      @id @default(autoincrement())
+  leagueId  Int
+  name      String
+  policy    String // JSON ScoringPolicy v2 (SQLite has no JSON type)
+  paxTable  String   @default("{}") // COMPLETE JSON code->factor table — no built-in fallback at read time
+  createdAt DateTime @default(now())
+
+  league  League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  seasons Season[]
+
+  @@unique([leagueId, name])
+}
+
+model Season {
+  id            Int    @id @default(autoincrement())
+  leagueId      Int
+  name          String
+  slug          String // URL-safe addressing key — slugify(name) unless overridden via --slug
+  year          Int
+  plannedEvents Int    @default(0)
+  status        String @default("active") // "active" | "completed"
+  rulesetId     Int // live reference — standings read policy/paxTable via season.ruleset at render time
+
+  league  League        @relation(fields: [leagueId], references: [id])
+  ruleset ScoringSystem @relation(fields: [rulesetId], references: [id])
+  events  Event[]
+
+  @@unique([leagueId, name])
+  @@unique([leagueId, slug])
+  @@index([leagueId, year])
+}
+
+model LeagueMembership {
+  id       Int    @id @default(autoincrement())
+  leagueId Int
+  msrUid   String
+  role     String // "ADMIN" | "MEMBER"
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, msrUid])
+}
+
+model SuperUser {
+  id        Int      @id @default(autoincrement())
+  msrUid    String   @unique
+  createdAt DateTime @default(now())
 }
 
 model AdminAuditLog {

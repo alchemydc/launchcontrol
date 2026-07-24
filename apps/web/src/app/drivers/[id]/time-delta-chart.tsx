@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Brush,
   CartesianGrid,
   Line,
   LineChart,
@@ -46,14 +45,12 @@ const tickFmt = (v: number) =>
   `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
 
 export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
-  const showBrush = data.length >= 4;
-
   return (
     <div className="h-80 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={data}
-          margin={{ top: 10, right: 20, left: 10, bottom: showBrush ? 10 : 30 }}
+          margin={{ top: 10, right: 20, left: 10, bottom: 30 }}
         >
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
           <XAxis
@@ -147,15 +144,6 @@ export function TimeDeltaChart({ data }: { data: ProgressionPoint[] }) {
             connectNulls
             isAnimationActive={false}
           />
-          {showBrush && (
-            <Brush
-              dataKey="label"
-              height={24}
-              travellerWidth={8}
-              stroke="var(--muted-foreground)"
-              className="fill-muted"
-            />
-          )}
         </LineChart>
       </ResponsiveContainer>
     </div>
