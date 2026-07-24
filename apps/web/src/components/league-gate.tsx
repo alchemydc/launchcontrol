@@ -136,6 +136,10 @@ async function resolveViewerRoles(
 
 function roleBadge(role: string | undefined): React.ReactNode {
   if (!role) return null;
+  // M3: BLOCKED is a role but NOT a membership badge — labeling it "Member"
+  // would render a "Member" pill beside the "Members only" lock badge on a
+  // league the viewer is explicitly barred from. Only ADMIN/MEMBER earn a badge.
+  if (role === "BLOCKED") return null;
   const label = role === "ADMIN" ? "Admin" : "Member";
   return (
     <Badge variant={role === "ADMIN" ? "default" : "secondary"}>{label}</Badge>

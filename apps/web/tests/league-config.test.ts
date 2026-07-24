@@ -135,6 +135,30 @@ describe("getLeagueConfig — msrOrgId env fallback during transition", () => {
     expect(config.msrOrgId).toBe("org-from-db");
     await prisma.league.delete({ where: { id: league.id } });
   });
+
+  // I2: the env fallback is DEFAULT-LEAGUE-ONLY. MSR_ORG_ID names the default
+  // league's org, so a non-default league with msrOrgId unset must resolve to
+  // null (org-match off) — NOT inherit the default league's org, which would
+  // silently admit its members into an unrelated "required" league.
+  it("does NOT apply the env fallback to a non-default league (org stays null)", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "non-default-no-org",
+        name: "Non Default No Org",
+        siteTitle: "x",
+        siteDescription: "x",
+        footerText: "x",
+        landingDescription: "x",
+        accessGate: "required",
+      },
+    });
+    // DEFAULT_LEAGUE_SLUG stays "pca-rmr" (unset); this league is NOT default.
+    process.env.MSR_ORG_ID = "default-league-org";
+    process.env.MSR_RMR_ORG_ID = "default-league-legacy-org";
+    const config = await getLeagueConfigForSlug("non-default-no-org", prisma);
+    expect(config?.msrOrgId).toBeNull();
+    await prisma.league.delete({ where: { id: league.id } });
+  });
 });
 
 describe("getLeagueConfig — footerText NULL fallback", () => {

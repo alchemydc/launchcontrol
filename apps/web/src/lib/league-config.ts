@@ -82,8 +82,20 @@ export async function resolveDefaultLeague(
 function toLeagueConfig(league: League): LeagueConfig {
   const accessGate = coerceAccessGate(league.accessGate);
 
+  // msrOrgId env fallback is DEFAULT-LEAGUE-ONLY. The deployment-level
+  // MSR_ORG_ID/MSR_RMR_ORG_ID env vars name the *default* league's MSR org, so
+  // applying them to every league would silently admit the default league's
+  // org members into any other "required" league whose own msrOrgId is unset
+  // (decideLeagueAccess step 5 org-match). A non-default league therefore uses
+  // only its stored msrOrgId; unset means org-match is off and access comes
+  // solely from explicit LeagueMembership rows.
   const msrOrgId =
-    league.msrOrgId || process.env.MSR_ORG_ID || process.env.MSR_RMR_ORG_ID || null;
+    league.slug === defaultLeagueSlug()
+      ? league.msrOrgId ||
+        process.env.MSR_ORG_ID ||
+        process.env.MSR_RMR_ORG_ID ||
+        null
+      : (league.msrOrgId ?? null);
 
   return {
     id: league.id,

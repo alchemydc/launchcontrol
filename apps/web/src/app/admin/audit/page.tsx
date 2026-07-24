@@ -57,15 +57,24 @@ function auditRowLeagueFromDetail(detail: string): string | null {
 
 /**
  * Task 17 documented approximation: a row "belongs" to `slug` if its detail
- * JSON carries `"league":"<slug>"`, or its `targetSlug` equals `slug`
- * (covers `league.create`/`league.update`/`league.delete`, whose
- * `targetSlug` IS the league slug already). Rows with neither —
- * `event.update`/`event.delete`/`ingest` (targetSlug is the *event* slug,
- * not a league) and `superuser.update` (targetSlug is an msrUid) — never
- * match a specific league filter under this heuristic.
+ * JSON carries `"league":"<slug>"`, or it is a league-targeted row whose
+ * `targetSlug` equals `slug` (covers `league.create`/`league.update`/
+ * `league.delete`/`ingest-now`, whose `targetSlug` IS the league slug
+ * already). Rows with neither — `event.update`/`event.delete`/`ingest`
+ * (targetSlug is the *event* slug, not a league) and `superuser.update`
+ * (targetSlug is an msrUid) — never match a specific league filter under
+ * this heuristic. M4: the `targetSlug` branch is gated on
+ * `targetType === "league"` so an event/season/membership slug that happens
+ * to collide with a league slug can't leak that row across leagues.
  */
-function auditRowMatchesLeague(row: { detail: string; targetSlug: string | null }, slug: string): boolean {
-  return auditRowLeagueFromDetail(row.detail) === slug || row.targetSlug === slug;
+function auditRowMatchesLeague(
+  row: { detail: string; targetSlug: string | null; targetType: string },
+  slug: string,
+): boolean {
+  return (
+    auditRowLeagueFromDetail(row.detail) === slug ||
+    (row.targetType === "league" && row.targetSlug === slug)
+  );
 }
 
 export default async function AdminAuditPage({
