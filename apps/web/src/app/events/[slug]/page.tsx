@@ -3,13 +3,16 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
-import { buildLeaderboard } from "@/lib/leaderboard";
+import { buildLeaderboard, formatMs, summarizeEventClasses } from "@/lib/leaderboard";
 import { getClubConfig } from "@/lib/club-config";
 import { findSmugmugEventFolder } from "@/lib/smugmug";
-import { requireRmrMember } from "@/lib/session";
-import { LeaderboardTable } from "./leaderboard-table";
+import { gateResultsPage } from "@/lib/session";
+import { EventClassNav } from "./event-class-nav";
 
-export const dynamic = "force-dynamic";
+// ISR: rendered on demand, then cached for 5 minutes. Gated deployments
+// (ACCESS_GATE=required) read cookies inside gateResultsPage and render
+// per-request instead.
+export const revalidate = 300;
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", {
@@ -28,7 +31,7 @@ export default async function EventPage({
   const { slug } = await params;
 
   // Gate runs before notFound() so unauth viewers can't probe slug existence.
-  await requireRmrMember(`/events/${slug}`);
+  await gateResultsPage(`/events/${slug}`);
 
   const event = await prisma.event.findUnique({
     where: { slug },
@@ -53,9 +56,14 @@ export default async function EventPage({
   });
   const dateKey = event.date.toISOString().slice(0, 10);
 
+  const club = getClubConfig();
   const rows = buildLeaderboard(event.entries);
+  const summaries = summarizeEventClasses(rows, club.paxStandings);
   const photosUrl = await findSmugmugEventFolder(event.name, event.date);
-  const classCodes = Array.from(new Set(rows.map((r) => r.classCode))).sort();
+  // Synthetic PAX view is reachable only when no real class occupies the
+  // "pax" segment (case-insensitive — mirrors the class-route matching).
+  const paxAvailable =
+    club.paxStandings && !rows.some((r) => r.classCode.toLowerCase() === "pax");
 
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
@@ -100,11 +108,61 @@ export default async function EventPage({
         )}
       </header>
 
-      <LeaderboardTable
-        rows={rows}
-        classCodes={classCodes}
-        showPaxView={getClubConfig().paxStandings}
+      <EventClassNav
+        slug={slug}
+        classCodes={summaries.map((s) => s.classCode)}
+        paxAvailable={paxAvailable}
       />
+
+      <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+        <div className="bg-muted/40 px-4 py-3 border-b border-border/60">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Classes — pick one for full results
+          </h2>
+        </div>
+        <ul className="divide-y divide-border/60">
+          {paxAvailable && (
+            <li>
+              <Link
+                href={`/events/${slug}/pax`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors bg-primary/5 hover:bg-primary/10"
+              >
+                <span className="w-14 shrink-0 text-sm font-semibold uppercase tracking-wide text-primary">
+                  PAX
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  Overall standings — every entry ranked on indexed time
+                </span>
+                <span aria-hidden className="shrink-0 text-muted-foreground">→</span>
+              </Link>
+            </li>
+          )}
+          {summaries.map((s) => (
+            <li key={s.classCode}>
+              <Link
+                href={`/events/${slug}/${encodeURIComponent(s.classCode)}`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors odd:bg-background even:bg-muted/10 hover:bg-accent/40"
+              >
+                <span className="w-14 shrink-0 text-sm font-semibold uppercase tracking-wide text-foreground">
+                  {s.classCode}
+                </span>
+                <Badge variant="secondary" className="shrink-0 text-[10px] tabular-nums">
+                  {s.entryCount} {s.entryCount === 1 ? "entry" : "entries"}
+                </Badge>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {s.winner != null && (
+                    <>
+                      Winner: <span className="text-foreground">{s.winner.driverName}</span>{" "}
+                      · <span className="tabular-nums">{formatMs(s.winner.bestRawMs)}</span>
+                    </>
+                  )}
+                </span>
+                <span aria-hidden className="shrink-0 text-muted-foreground">→</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
     </main>
   );
 }

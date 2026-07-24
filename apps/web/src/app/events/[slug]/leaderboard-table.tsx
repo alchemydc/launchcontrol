@@ -8,7 +8,6 @@ import {
   type SortingState,
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
@@ -26,12 +25,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { type LeaderboardRow, formatMs, formatDelta } from "@/lib/leaderboard";
-
-const ALL_CLASSES = "__all__";
-// Overall-PAX standings view (PAX_STANDINGS=1): all classes, ranked by
-// PAX-indexed best time instead of raw. Sentinel lives beside ALL_CLASSES so
-// the two "virtual filters" stay obviously paired.
-const PAX_VIEW = "__pax__";
 
 function SortHeader({
   label,
@@ -90,31 +83,6 @@ function RunChips({ runs }: { runs: LeaderboardRow["runs"] }) {
         );
       })}
     </div>
-  );
-}
-
-function ClassChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        active
-          ? "inline-flex items-center rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-primary transition-colors"
-          : "inline-flex items-center rounded-full border border-border bg-background px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary focus-visible:outline-none"
-      }
-    >
-      {children}
-    </button>
   );
 }
 
@@ -189,51 +157,20 @@ function DriverCard({
 
 export function LeaderboardTable({
   rows,
-  classCodes,
-  showPaxView = false,
+  paxView = false,
 }: {
   rows: LeaderboardRow[];
-  classCodes: string[];
-  showPaxView?: boolean;
+  paxView?: boolean;
 }) {
+  // Rows arrive pre-filtered to one class (or the PAX view) — class selection
+  // is a server-side route concern now (/events/[slug]/[class]). paxView is
+  // true for the PAX standings page and for heterogeneous run-group classes
+  // whose official printed results are indexed (see classUsesPaxMetric).
+  const paxMetric = paxView;
   const [sorting, setSorting] = useState<SortingState>([
-    { id: "bestRawMs", desc: false },
+    { id: paxView ? "bestPaxMs" : "bestRawMs", desc: false },
   ]);
-  const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
-  const paxActive = classFilter === PAX_VIEW;
-  // Run-group class filters (M/N/S/P/X — heterogeneous per-entry factors)
-  // rank by indexed time in PAX-standings mode, matching the official printed
-  // group results. Uniform classes keep raw (identical order either way).
-  const usesPaxMetric = (filterValue: string): boolean => {
-    if (!showPaxView) return false;
-    if (filterValue === PAX_VIEW) return true;
-    if (filterValue === ALL_CLASSES) return false;
-    return (
-      new Set(rows.filter((r) => r.classCode === filterValue).map((r) => r.paxIndex)).size > 1
-    );
-  };
-  const paxMetric = usesPaxMetric(classFilter);
-  // Switching views also resets the sort to that view's natural metric —
-  // otherwise leaving the PAX view would strand the table sorted on a column
-  // that no longer exists, and heterogeneous class views would show rank
-  // pills out of row order.
-  const selectFilter = (value: string) => {
-    setClassFilter(value);
-    // Reset sorting only when the ranking metric actually changes —
-    // plain class-filter hops keep the user's chosen sort (pre-existing
-    // behavior for non-PAX deployments).
-    const nextPax = usesPaxMetric(value);
-    if (nextPax !== paxMetric) {
-      setSorting([{ id: nextPax ? "bestPaxMs" : "bestRawMs", desc: false }]);
-    }
-  };
-  const filteredRows = useMemo(
-    () =>
-      classFilter === ALL_CLASSES || classFilter === PAX_VIEW
-        ? rows
-        : rows.filter((r) => r.classCode === classFilter),
-    [rows, classFilter],
-  );
+  const filteredRows = rows;
 
   const { deltaByRow, rankByRow } = useMemo(() => {
     // Rank and gaps use the active view's metric: PAX-indexed best in the
@@ -401,60 +338,17 @@ export function LeaderboardTable({
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
   });
 
   const sortedRows = table.getRowModel().rows;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
-      {/* Filter header strip */}
-      <div className="flex flex-col gap-3 bg-muted/40 px-4 py-3 border-b border-border/60 md:flex-row md:items-center">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground shrink-0">
-          Filter class
-        </span>
-        <nav
-          aria-label="Filter by class"
-          className="-mx-1 px-1 overflow-x-auto flex-1"
-        >
-          <ul className="flex flex-wrap gap-1.5">
-            <li>
-              <ClassChip
-                active={classFilter === ALL_CLASSES}
-                onClick={() => selectFilter(ALL_CLASSES)}
-              >
-                {showPaxView ? "All Raw" : "All"}
-              </ClassChip>
-            </li>
-            {showPaxView && (
-              <li>
-                <ClassChip active={paxActive} onClick={() => selectFilter(PAX_VIEW)}>
-                  All PAX
-                </ClassChip>
-              </li>
-            )}
-            {classCodes.map((code) => (
-              <li key={code}>
-                <ClassChip
-                  active={classFilter === code}
-                  onClick={() => selectFilter(code)}
-                >
-                  {code}
-                </ClassChip>
-              </li>
-            ))}
-          </ul>
-        </nav>
-        <span className="rounded-full bg-background px-3 py-1 text-xs tabular-nums text-muted-foreground shrink-0 self-start md:self-auto md:ml-auto">
-          {filteredRows.length} of {rows.length}
-        </span>
-      </div>
-
       {/* Mobile: card list */}
       <ul className="md:hidden divide-y divide-border/60">
         {sortedRows.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-muted-foreground">
-            No entries match the current filter.
+            No entries in this class.
           </li>
         ) : (
           sortedRows.map((row) => (
@@ -492,7 +386,7 @@ export function LeaderboardTable({
                   colSpan={columns.length}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
-                  No entries match the current filter.
+                  No entries in this class.
                 </TableCell>
               </TableRow>
             ) : (
