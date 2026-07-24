@@ -511,3 +511,55 @@ export async function buildSeasonLeaderboard(
   });
   return { totalEvents, completedEvents, qualifyingEvents, countedEvents, sections };
 }
+
+// ---------------------------------------------------------------------------
+// Per-class page derivations — the season overview page and the
+// one-class-per-page routes both work from buildSeasonLeaderboard's sections
+// rather than issuing their own queries.
+// ---------------------------------------------------------------------------
+
+export type SeasonClassSummary = {
+  classCode: string;
+  driverCount: number;
+  leader: { driverId: number; driverName: string; totalPoints: number } | null;
+};
+
+/**
+ * Overview rows for `/leaderboard/[year]`: one entry per non-empty section,
+ * preserving section order (PAX pinned first). The leader is the first
+ * driver — sections arrive sorted by totalPoints desc.
+ */
+export function summarizeSeasonSections(
+  sections: SeasonStandingsByClass[],
+): SeasonClassSummary[] {
+  return sections
+    .filter((s) => s.drivers.length > 0)
+    .map((s) => {
+      const leader = s.drivers[0];
+      return {
+        classCode: s.classCode,
+        driverCount: s.drivers.length,
+        leader:
+          leader == null
+            ? null
+            : {
+                driverId: leader.driverId,
+                driverName: leader.driverName,
+                totalPoints: leader.totalPoints,
+              },
+      };
+    });
+}
+
+/**
+ * Resolve a `[class]` URL segment to its section. Case-insensitive so
+ * hand-typed URLs work; returns null (→ 404) for unknown or blank params.
+ */
+export function findSeasonSection(
+  sections: SeasonStandingsByClass[],
+  classParam: string,
+): SeasonStandingsByClass | null {
+  const wanted = classParam.trim().toLowerCase();
+  if (wanted.length === 0) return null;
+  return sections.find((s) => s.classCode.toLowerCase() === wanted) ?? null;
+}
