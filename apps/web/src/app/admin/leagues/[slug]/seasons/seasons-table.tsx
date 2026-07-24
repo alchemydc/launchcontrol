@@ -204,7 +204,7 @@ function ReapplyPaxDialog({
             <DialogHeader>
               <DialogTitle>Re-apply PAX factors for {season.name}?</DialogTitle>
               <DialogDescription>
-                Results keep the PAX factor that was in force when they were ingested. This action rewrites those stored factors for this season&apos;s entries whose class appears in the season&apos;s PAX table (i.e. overridden classes).
+                Results keep the PAX factor that was in force when they were ingested. This action rewrites those stored factors for this season&apos;s entries whose class appears in the season&apos;s PAX table (i.e. overridden classes). Entries whose class code isn&apos;t covered by the table are left untouched. This cannot be undone.
               </DialogDescription>
             </DialogHeader>
             {error && <p className="text-sm text-destructive">{error}</p>}
