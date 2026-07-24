@@ -340,7 +340,7 @@ export async function DriverPageView({
         </div>
       ))}
 
-      <EventHistory history={history} />
+      <EventHistory history={history} basePath={basePath} />
     </main>
   );
 }
