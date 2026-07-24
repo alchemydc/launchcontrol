@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
 import { buildSeasonLeaderboard, countedEventTarget } from "@/lib/season-leaderboard";
-import { ensureLeagueAndSeasons } from "./helpers/league-fixture";
+import { ensureLeagueAndSeasons, ensureRuleset } from "./helpers/league-fixture";
 
 // Unique per-file DB path — see ingest.test.ts for the rationale.
 const TEST_DB_PATH = resolve(__dirname, "..", "test-season-pax.db");
@@ -43,6 +43,13 @@ beforeAll(async () => {
 
   const { leagueId, seasonIdByYear } = await ensureLeagueAndSeasons(prisma, [YEAR]);
   seasonId = seasonIdByYear.get(YEAR)!;
+  // Dedicated ruleset per test season (Task R2: policy lives on the ruleset,
+  // read live) — so the setPolicy helpers below can't leak edits into the
+  // other season through a shared ruleset row.
+  await prisma.season.update({
+    where: { id: seasonId },
+    data: { rulesetId: await ensureRuleset(prisma, leagueId, { name: "Season Pax Rules", policy: FIXED_POLICY }) },
+  });
 
   const [as, bst, x, ds, ast] = await Promise.all([
     prisma.carClass.create({ data: { leagueId, code: "AS", paxIndex: 0.83 } }),
@@ -111,6 +118,10 @@ beforeAll(async () => {
     { year: 2027 },
   ]);
   conePenaltySeasonId = seasonIdByYear2027.get(2027)!;
+  await prisma.season.update({
+    where: { id: conePenaltySeasonId },
+    data: { rulesetId: await ensureRuleset(prisma, leagueId, { name: "Cone Penalty Rules", policy: FIXED_POLICY }) },
+  });
 
   const cs = await prisma.carClass.create({ data: { leagueId, code: "CS", paxIndex: 0.9 } });
   const conePenaltyEvent = await prisma.event.create({
@@ -157,10 +168,11 @@ afterAll(async () => {
 });
 
 async function setPolicy(policy: string) {
-  await prisma.season.update({ where: { id: seasonId }, data: { scoringPolicy: policy } });
+  const season = await prisma.season.findUniqueOrThrow({ where: { id: seasonId } });
+  await prisma.scoringSystem.update({ where: { id: season.rulesetId }, data: { policy } });
 }
 
-describe("season PAX section (Season.scoringPolicy.paxSection)", () => {
+describe("season PAX section (ruleset policy paxSection)", () => {
   // Task R1: class ranking is unconditionally on the applied-PAX-indexed
   // best time now — there's no more per-policy raw/pax toggle. A uniform-
   // factor class (AS: every entry's paxClass is AS itself) is a pure
@@ -229,7 +241,8 @@ describe("countedEventTarget (scoringPolicy.drops)", () => {
 
 describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
   async function setConePenaltyPolicy(policy: string) {
-    await prisma.season.update({ where: { id: conePenaltySeasonId }, data: { scoringPolicy: policy } });
+    const season = await prisma.season.findUniqueOrThrow({ where: { id: conePenaltySeasonId } });
+    await prisma.scoringSystem.update({ where: { id: season.rulesetId }, data: { policy } });
   }
 
   it("a season's default 2000ms policy (matching CONE_PENALTY_MS) is the parity baseline", async () => {

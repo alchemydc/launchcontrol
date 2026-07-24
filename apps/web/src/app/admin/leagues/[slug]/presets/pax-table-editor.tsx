@@ -8,10 +8,11 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { buildPaxRows, serializePaxOverrides, type PaxRow } from "@/lib/pax-table-edit";
 
 /**
- * Effective PAX factors for a season: the built-in RMSOLO_PAX_2026 table
- * merged with this season's overrides. Editing a value creates (or updates)
- * an override; only overrides are ever persisted via `onChange` — the
- * built-in table itself is never written back.
+ * Effective PAX factors for a ruleset: the built-in RMSOLO_PAX_2026 table
+ * merged with this ruleset's overrides. Editing a value creates (or updates)
+ * an override; only overrides are ever emitted via `onChange` — the server
+ * (`scoring-system.ts`) re-merges them over the built-in table so the stored
+ * ruleset table stays COMPLETE.
  */
 export function PaxTableEditor({
   value,
@@ -79,8 +80,8 @@ export function PaxTableEditor({
     <div className="flex flex-col gap-2">
       <p className="text-xs text-muted-foreground">
         Factors below are the built-in 2026 SCCA/RMsolo table. Edit a value to override it for
-        this season — only overrides are stored, and only overridden classes are touched by
-        Re-apply PAX.
+        this ruleset — every season referencing this ruleset scores with these factors on its
+        next ingest (or after Re-apply PAX on the season).
       </p>
       <div className="max-h-64 overflow-y-auto rounded-lg border">
         <Table>

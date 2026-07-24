@@ -1,10 +1,10 @@
 /**
- * ScoringPolicy v2 — the scoring knobs stored as a JSON snapshot on a Season
- * row (copied from a ScoringSystem preset at adoption time, never a live
- * reference — see schema.prisma `Season.scoringPolicy`). This is the only
- * shape in play right now: no formula DSL, no per-field defaulting. Every
- * seeded Season row carries a complete, valid policy (see the
- * league-foundation migration and `ingest.ts`'s bare-Season default), so
+ * ScoringPolicy v2 — the scoring knobs stored as JSON on a ScoringSystem
+ * ("ruleset") row, read live through `Season.rulesetId` (Task R2 — seasons
+ * no longer snapshot a policy of their own). This is the only shape in play
+ * right now: no formula DSL, no per-field defaulting. Every seeded ruleset
+ * row carries a complete, valid policy (see the league-foundation +
+ * ruleset-centric migrations and `createLeague`'s default), so
  * `parseScoringPolicy` never needs to paper over a partial row — a malformed
  * or incomplete policy is a data bug and should throw, not silently coerce.
  *
@@ -40,7 +40,7 @@ function fail(field: string, expected: string, raw: unknown): never {
 }
 
 /**
- * Strictly parse and validate a Season row's `scoringPolicy` JSON string.
+ * Strictly parse and validate a ScoringSystem row's `policy` JSON string.
  * Throws on invalid JSON, an unrecognized `v`, or any missing/malformed
  * field — naming the offending field in the error so a bad seed or a hand-
  * edited row fails loudly rather than silently scoring wrong.

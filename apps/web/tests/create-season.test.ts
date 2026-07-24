@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { rmSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
@@ -12,20 +11,12 @@ import { slugify } from "@/lib/ingest";
 // (the "season:create" CLI) and, indirectly, documents the same resolution rules
 // ingestAxdb's auto-create path follows (see tests/ingest-season-policy.test.ts).
 
-const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
-
 const TEST_DB_PATH = resolve(__dirname, "..", "test-create-season.db");
 const TEST_DB_URL = "file:./test-create-season.db";
 
 let prisma: PrismaClient;
 let leagueId: number;
-const tmpDir = mkdtempSync(join(tmpdir(), "create-season-test-"));
-
-function policyFile(name: string, contents: string): string {
-  const p = join(tmpDir, name);
-  writeFileSync(p, contents);
-  return p;
-}
+let pcaClassicId: number;
 
 beforeAll(async () => {
   rmSync(TEST_DB_PATH, { force: true });
@@ -38,16 +29,19 @@ beforeAll(async () => {
   prisma = new PrismaClient({ adapter });
   const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
   leagueId = league.id;
+  const pcaClassic = await prisma.scoringSystem.findFirstOrThrow({
+    where: { leagueId, name: "PCA Classic" },
+  });
+  pcaClassicId = pcaClassic.id;
 });
 
 afterAll(async () => {
   await prisma.$disconnect();
   rmSync(TEST_DB_PATH, { force: true });
-  rmSync(tmpDir, { recursive: true, force: true });
 });
 
 describe("createSeason", () => {
-  it("happy path: default preset (no --preset/--policy-file) uses the league's oldest ScoringSystem", async () => {
+  it("happy path: default (no --preset) points at the league's oldest ScoringSystem ruleset", async () => {
     const season = await createSeason(
       { leagueSlug: "pca-rmr", name: "2030 Default Preset Season", year: 2030 },
       prisma,
@@ -56,12 +50,11 @@ describe("createSeason", () => {
     expect(season.name).toBe("2030 Default Preset Season");
     expect(season.year).toBe(2030);
     expect(season.plannedEvents).toBe(0);
-    expect(season.scoringPolicy).toBe(PCA_POLICY);
-    expect(season.paxTable).toBe("{}");
+    expect(season.rulesetId).toBe(pcaClassicId);
     expect(season.status).toBe("active");
   });
 
-  it("happy path: --preset resolves a named ScoringSystem", async () => {
+  it("happy path: --preset resolves a named ScoringSystem ruleset by id", async () => {
     const season = await createSeason(
       {
         leagueSlug: "pca-rmr",
@@ -73,23 +66,21 @@ describe("createSeason", () => {
       prisma,
     );
     expect(season.plannedEvents).toBe(8);
-    expect(season.scoringPolicy).toBe(PCA_POLICY);
+    expect(season.rulesetId).toBe(pcaClassicId);
   });
 
-  it("happy path: --policy-file reads, validates, and canonicalizes a policy JSON file", async () => {
-    // Deliberately messy formatting/whitespace — should still canonicalize to
-    // the same shape parseScoringPolicy produces.
-    const file = policyFile(
-      "rmsolo.json",
-      '{\n  "v": 2,\n  "drops": "proportional",\n  "paxSection": true,\n  "conePenaltyMs": 2000\n}\n',
-    );
-    const season = await createSeason(
-      { leagueSlug: "pca-rmr", name: "2031 File Policy Season", year: 2031, policyFilePath: file },
-      prisma,
-    );
-    expect(season.scoringPolicy).toBe(
-      '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}',
-    );
+  it("rejects policyFilePath outright — policies live on rulesets now", async () => {
+    await expect(
+      createSeason(
+        {
+          leagueSlug: "pca-rmr",
+          name: "2031 File Policy Season",
+          year: 2031,
+          policyFilePath: "/tmp/anything.json",
+        },
+        prisma,
+      ),
+    ).rejects.toThrow(/policies live on rulesets now/);
   });
 
   it("rejects a duplicate (leagueId, name) season", async () => {
@@ -167,38 +158,6 @@ describe("createSeason", () => {
         prisma,
       ),
     ).rejects.toThrow(/no scoring system preset named 'Nonexistent Preset'/);
-  });
-
-  it("rejects an invalid --policy-file (fails parseScoringPolicy)", async () => {
-    const file = policyFile("bad.json", '{"v":2,"drops":"sideways","paxSection":false,"conePenaltyMs":2000}');
-    await expect(
-      createSeason({ leagueSlug: "pca-rmr", name: "2035 Bad Policy", year: 2035, policyFilePath: file }, prisma),
-    ).rejects.toThrow(/scoringPolicy\.drops/);
-  });
-
-  it("rejects a --policy-file that does not exist", async () => {
-    await expect(
-      createSeason(
-        { leagueSlug: "pca-rmr", name: "2036 Missing File", year: 2036, policyFilePath: join(tmpDir, "missing.json") },
-        prisma,
-      ),
-    ).rejects.toThrow(/failed to read policy file/);
-  });
-
-  it("rejects specifying both --preset and --policy-file", async () => {
-    const file = policyFile("both.json", PCA_POLICY);
-    await expect(
-      createSeason(
-        {
-          leagueSlug: "pca-rmr",
-          name: "2037 Both",
-          year: 2037,
-          presetName: "PCA Classic",
-          policyFilePath: file,
-        },
-        prisma,
-      ),
-    ).rejects.toThrow(/at most one of --preset or --policy-file/);
   });
 
   it("rejects a league with no ScoringSystem presets when no preset/policy-file is given", async () => {

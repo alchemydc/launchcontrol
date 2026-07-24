@@ -50,7 +50,7 @@ export default async function AdminPresetsPage({
     } catch {
       policy = null;
     }
-    return { id: preset.id, name: preset.name, policy };
+    return { id: preset.id, name: preset.name, policy, paxTable: preset.paxTable };
   });
 
   return (

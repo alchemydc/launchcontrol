@@ -6,13 +6,14 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { ingestAxdb } from "@/lib/ingest";
 
-// Task 7: an auto-created Season (no seeded row for the event's year) snapshots
-// the league's ScoringSystem preset instead of a hardcoded policy string. These
-// tests pin two things the league-seed suite doesn't: (1) the snapshot tracks
-// whatever the preset currently says at auto-create time, and previously
-// created seasons are untouched by a later preset edit — the "snapshot, not a
-// live reference" contract, proven at the ingest boundary; (2) a league with no
-// ScoringSystem preset at all fails loudly rather than falling back to anything.
+// Task 7 (reworked by Task R2): an auto-created Season (no seeded row for the
+// event's year) points its required rulesetId at the league's oldest
+// ScoringSystem ruleset — a LIVE reference, not a snapshot. These tests pin
+// two things the league-seed suite doesn't: (1) every auto-created season
+// lands on the same (oldest) ruleset and reads whatever that ruleset says NOW
+// — the live-reference contract, proven at the ingest boundary; (2) a league
+// with no ScoringSystem at all fails loudly rather than falling back to
+// anything.
 
 const FIXTURES_DIR = resolve(__dirname, "fixtures");
 // Task R1: the scoring-policy-v2 migration canonicalizes the league-foundation
@@ -29,7 +30,7 @@ function migrateDeploy(dbUrl: string) {
   });
 }
 
-describe("ingest snapshots the league's current ScoringSystem preset", () => {
+describe("ingest points auto-created seasons at the league's oldest ruleset", () => {
   const TEST_DB_PATH = resolve(__dirname, "..", "test-ingest-season-policy.db");
   const TEST_DB_URL = "file:./test-ingest-season-policy.db";
   let prisma: PrismaClient;
@@ -46,36 +47,50 @@ describe("ingest snapshots the league's current ScoringSystem preset", () => {
     rmSync(TEST_DB_PATH, { force: true });
   });
 
-  it("a fresh migrate+deploy carries the PCA Classic preset unmodified", async () => {
+  it("a fresh migrate+deploy carries the PCA Classic ruleset, canonicalized to v2 with a complete built-in paxTable", async () => {
     const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: league.id } });
     expect(preset.name).toBe("PCA Classic");
     expect(preset.policy).toBe(PCA_POLICY);
+    const table = JSON.parse(preset.paxTable) as Record<string, number>;
+    expect(table.CS).toBe(0.814); // ruleset-centric migration seeds the full built-in table
+    expect(table.AM).toBe(1);
   });
 
-  it("auto-creates a 2026 Season snapshotting the (still-default) preset", async () => {
+  it("auto-creates a 2026 Season pointing at the (only) ruleset", async () => {
     await ingestAxdb(resolve(FIXTURES_DIR, "synthetic.axdb"), prisma); // event_date 2026-01-01
+    const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
+    const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: league.id } });
     const season2026 = await prisma.season.findFirstOrThrow({ where: { year: 2026 } });
-    expect(season2026.scoringPolicy).toBe(PCA_POLICY);
+    expect(season2026.rulesetId).toBe(preset.id);
   });
 
-  it("editing the preset afterward changes only a LATER auto-created season, not the earlier one", async () => {
+  it("editing the ruleset flows through LIVE to every season referencing it — earlier and later alike", async () => {
     const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: league.id } });
     const editedPolicy =
       '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":1500}';
     await prisma.scoringSystem.update({ where: { id: preset.id }, data: { policy: editedPolicy } });
 
-    // A new year (2027), no Season row yet — auto-create must pick up the edit.
+    // A new year (2027), no Season row yet — auto-create lands on the same ruleset.
     await ingestAxdb(resolve(FIXTURES_DIR, "combined-event-1-opener.axdb"), prisma); // event_date 2027-03-01
 
-    const season2027 = await prisma.season.findFirstOrThrow({ where: { year: 2027 } });
-    expect(season2027.scoringPolicy).toBe(editedPolicy);
+    const season2027 = await prisma.season.findFirstOrThrow({
+      where: { year: 2027 },
+      include: { ruleset: true },
+    });
+    expect(season2027.rulesetId).toBe(preset.id);
+    expect(season2027.ruleset.policy).toBe(editedPolicy);
 
-    // The 2026 season, auto-created before the edit, must be untouched — proves
-    // scoringPolicy is a snapshot copy, never a live reference to ScoringSystem.
-    const season2026 = await prisma.season.findFirstOrThrow({ where: { year: 2026 } });
-    expect(season2026.scoringPolicy).toBe(PCA_POLICY);
+    // The 2026 season, auto-created before the edit, reads the SAME edited
+    // policy through its live ruleset reference — the old snapshot semantics
+    // are gone by design (Task R2).
+    const season2026 = await prisma.season.findFirstOrThrow({
+      where: { year: 2026 },
+      include: { ruleset: true },
+    });
+    expect(season2026.rulesetId).toBe(preset.id);
+    expect(season2026.ruleset.policy).toBe(editedPolicy);
   });
 });
 

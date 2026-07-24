@@ -3,13 +3,12 @@ import { createSeason, type CreateSeasonOptions } from "@/lib/create-season";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
-// createSeason pulls in create-season.ts, which uses node:fs (readFileSync).
 export const runtime = "nodejs";
 
 /**
- * Same REST-surface restriction as league create: no `--policy-file`
- * equivalent (arbitrary server-path read) — a caller gets the league's
- * default (oldest) preset unless `presetName` names an existing one.
+ * The created season points at a ScoringSystem ruleset (live reference —
+ * Task R2): the league's default (oldest) ruleset unless `presetName` names
+ * an existing one.
  */
 export async function POST(
   request: Request,

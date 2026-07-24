@@ -22,6 +22,8 @@ export type PresetRow = {
    *  written through createScoringSystem/updateScoringSystem, but defended against here
    *  since this reads raw data straight off the table. */
   policy: ScoringPolicy | null;
+  /** Raw COMPLETE code->factor JSON string — edited via PaxTableEditor, not parsed for display here. */
+  paxTable: string;
 };
 
 const DROPS_LABEL: Record<ScoringPolicy["drops"], string> = {

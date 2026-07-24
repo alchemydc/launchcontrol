@@ -28,9 +28,18 @@ export async function POST(
   if (typeof b.policyJson !== "string" || b.policyJson.trim().length === 0) {
     return Response.json({ error: "policyJson must be a non-empty string" }, { status: 400 });
   }
+  if (b.paxTableJson !== undefined && typeof b.paxTableJson !== "string") {
+    return Response.json({ error: "paxTableJson must be a string when given" }, { status: 400 });
+  }
+  const paxTableJson = typeof b.paxTableJson === "string" ? b.paxTableJson : undefined;
 
   try {
-    const preset = await createScoringSystem(prisma, { leagueSlug: slug, name: b.name, policyJson: b.policyJson });
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: slug,
+      name: b.name,
+      policyJson: b.policyJson,
+      paxTableJson,
+    });
     try {
       await writeAudit(prisma, {
         action: "preset.create",
@@ -38,7 +47,11 @@ export async function POST(
         actorName: g.actor.name,
         targetType: "scoringSystem",
         targetSlug: slug,
-        detail: { league: slug, name: preset.name },
+        detail: {
+          league: slug,
+          name: preset.name,
+          after: { policy: preset.policy, paxTable: preset.paxTable },
+        },
       });
     } catch (e) {
       console.error("audit write failed", e);
@@ -73,9 +86,19 @@ export async function PATCH(
   }
   const b = body as Record<string, unknown>;
 
-  const patch: { name?: string; policyJson?: string } = {};
+  const patch: { name?: string; policyJson?: string; paxTableJson?: string } = {};
   if (typeof b.name === "string") patch.name = b.name;
   if (typeof b.policyJson === "string") patch.policyJson = b.policyJson;
+  if (typeof b.paxTableJson === "string") patch.paxTableJson = b.paxTableJson;
+
+  // Snapshot the pre-update values for the audit trail: since Task R2 a
+  // ruleset is a LIVE reference for every season pointing at it, so an edit
+  // here changes standings retroactively — the log must show what the
+  // scoring config was before, not just that "policy" was patched.
+  const before = await prisma.scoringSystem.findFirst({
+    where: { league: { slug }, name },
+    select: { policy: true, paxTable: true },
+  });
 
   try {
     const preset = await updateScoringSystem(prisma, { leagueSlug: slug, name }, patch);
@@ -86,7 +109,13 @@ export async function PATCH(
         actorName: g.actor.name,
         targetType: "scoringSystem",
         targetSlug: slug,
-        detail: { league: slug, name, patch: Object.keys(patch) },
+        detail: {
+          league: slug,
+          name,
+          patch: Object.keys(patch),
+          before: before ? { policy: before.policy, paxTable: before.paxTable } : null,
+          after: { policy: preset.policy, paxTable: preset.paxTable },
+        },
       });
     } catch (e) {
       console.error("audit write failed", e);

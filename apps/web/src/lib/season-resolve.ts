@@ -16,12 +16,13 @@ import { slugify } from "@/lib/ingest";
  * main season); season-aware addressing (`resolveSeasonBySlug`,
  * `activeSeason` below) is how callers pick a specific one directly.
  *
- * The auto-created row snapshots the league's OLDEST ScoringSystem preset
- * (deterministic; seeded leagues carry exactly one) rather than any
- * hardcoded policy, so a league with a non-default preset self-heals
- * correctly too. It carries plannedEvents=0 until an operator edits it (via
- * create-season or a future admin UI) — neither ingest nor an admin date
- * edit has a signal for the season's actual event count.
+ * The auto-created row adopts the league's OLDEST ScoringSystem ruleset
+ * (deterministic; seeded leagues carry exactly one) as a LIVE reference
+ * (`rulesetId` — no policy copy is stored on the Season since Task R2), so a
+ * league with a non-default ruleset self-heals correctly too. It carries
+ * plannedEvents=0 until an operator edits it (via create-season or a future
+ * admin UI) — neither ingest nor an admin date edit has a signal for the
+ * season's actual event count.
  */
 export async function resolveOrCreateSeason(
   client: PrismaClient | Prisma.TransactionClient,
@@ -74,7 +75,7 @@ export async function resolveOrCreateSeason(
       slug,
       year,
       plannedEvents: 0,
-      scoringPolicy: preset.policy,
+      rulesetId: preset.id,
     },
   });
 }

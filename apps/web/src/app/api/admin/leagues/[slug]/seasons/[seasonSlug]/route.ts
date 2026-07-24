@@ -3,7 +3,6 @@ import { updateSeason, type UpdateSeasonPatch } from "@/lib/create-season";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
-// updateSeason pulls in create-season.ts, which uses node:fs (readFileSync).
 export const runtime = "nodejs";
 
 const PATCH_KEYS = [
@@ -12,15 +11,14 @@ const PATCH_KEYS = [
   "year",
   "plannedEvents",
   "status",
-  "paxTable",
-  "scoringPolicy",
+  "rulesetId",
 ] as const satisfies readonly (keyof UpdateSeasonPatch)[];
 
 function toPatch(body: Record<string, unknown>): UpdateSeasonPatch {
   const patch: UpdateSeasonPatch = {};
   for (const key of PATCH_KEYS) {
     if (!(key in body)) continue;
-    // updateSeason validates status/slug/paxTable shape itself; this only
+    // updateSeason validates status/slug/rulesetId itself; this only
     // narrows to the wire type, it does not re-validate values.
     (patch as Record<string, unknown>)[key] = body[key];
   }

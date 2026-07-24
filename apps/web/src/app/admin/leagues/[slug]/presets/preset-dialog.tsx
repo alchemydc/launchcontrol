@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ScoringPolicy } from "@/lib/scoring-policy";
+import { buildPaxRows, canonicalPaxJson, serializePaxOverrides } from "@/lib/pax-table-edit";
+import { PaxTableEditor } from "./pax-table-editor";
 import type { PresetRow } from "./presets-table";
 
 type Drops = ScoringPolicy["drops"];
@@ -73,6 +75,9 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
   const [drops, setDrops] = useState<Drops>(DEFAULT_POLICY.drops);
   const [paxSection, setPaxSection] = useState(DEFAULT_POLICY.paxSection);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(DEFAULT_POLICY.conePenaltyMs));
+  // Overrides-only JSON (PaxTableEditor's serialization); the server merges
+  // it over the built-in table so the stored ruleset table stays COMPLETE.
+  const [paxTable, setPaxTable] = useState("{}");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,6 +86,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
     setDrops(DEFAULT_POLICY.drops);
     setPaxSection(DEFAULT_POLICY.paxSection);
     setConePenaltyMs(String(DEFAULT_POLICY.conePenaltyMs));
+    setPaxTable("{}");
     setError(null);
   }
 
@@ -103,6 +109,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
         body: JSON.stringify({
           name,
           policyJson: serializePolicy({ drops, paxSection, conePenaltyMs: coneMs }),
+          paxTableJson: paxTable,
         }),
       });
       const json = (await res.json()) as Record<string, unknown>;
@@ -135,8 +142,8 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
         <DialogHeader>
           <DialogTitle>Create scoring ruleset</DialogTitle>
           <DialogDescription>
-            Seasons snapshot this policy at creation time — later edits here never change a
-            season that already adopted it.
+            Seasons reference a ruleset live — every season pointed at this ruleset scores with
+            its current policy and PAX table.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -184,6 +191,10 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
               required
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>PAX factors</Label>
+            <PaxTableEditor value={paxTable} onChange={setPaxTable} />
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button
@@ -210,6 +221,11 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
   const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
   const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(initialPolicy.conePenaltyMs));
+  // Overrides-only JSON, derived from the stored COMPLETE table: what the
+  // PaxTableEditor edits and what the server re-merges over the built-in
+  // table on save.
+  const [initialOverrides] = useState(() => serializePaxOverrides(buildPaxRows(preset.paxTable)));
+  const [paxTable, setPaxTable] = useState(initialOverrides);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -235,6 +251,9 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
     if (name !== preset.name) patch.name = name;
     if (policyChanged) {
       patch.policyJson = serializePolicy({ drops, paxSection, conePenaltyMs: coneMs });
+    }
+    if (canonicalPaxJson(paxTable) !== canonicalPaxJson(initialOverrides)) {
+      patch.paxTableJson = paxTable;
     }
 
     if (Object.keys(patch).length === 0) {
@@ -277,8 +296,8 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
         <DialogHeader>
           <DialogTitle>Edit scoring ruleset</DialogTitle>
           <DialogDescription>
-            Editing a ruleset never changes existing seasons. A season only ever snapshots a
-            ruleset&apos;s policy at creation (or explicit adoption) time.
+            Seasons reference a ruleset live — saving changes here recomputes standings for
+            every season pointed at this ruleset, including past seasons.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -324,6 +343,10 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
               onChange={(e) => setConePenaltyMs(e.target.value)}
               required
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>PAX factors</Label>
+            <PaxTableEditor value={paxTable} onChange={setPaxTable} />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

@@ -44,7 +44,7 @@ export async function EventPageView({
   // Server-resolved from this event's season policy (Task 7: conePenaltyMs
   // threading) — the client leaderboard table only ever sees the resulting
   // boolean/corrected-times, never the policy itself.
-  const policy = parseScoringPolicy(event.season.scoringPolicy);
+  const policy = parseScoringPolicy(event.season.ruleset.policy);
   const showPaxView = policy.paxSection;
 
   // Combined-event cross-link (M1.15): any other events sharing this event's

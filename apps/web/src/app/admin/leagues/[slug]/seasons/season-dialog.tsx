@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -21,12 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { parseScoringPolicy, type ScoringPolicy } from "@/lib/scoring-policy";
-import { canonicalPaxJson } from "@/lib/pax-table-edit";
-import { PaxTableEditor } from "./pax-table-editor";
 import type { SeasonRow } from "./seasons-table";
 
-export type PresetOption = { name: string };
+export type PresetOption = { id: number; name: string };
 
 type SeasonStatus = "active" | "completed";
 
@@ -35,22 +31,7 @@ const STATUS_OPTIONS: { value: SeasonStatus; label: string }[] = [
   { value: "completed", label: "Completed" },
 ];
 
-type Drops = ScoringPolicy["drops"];
-
-const DROPS_OPTIONS: { value: Drops; label: string }[] = [
-  { value: "fixed", label: "Fixed — best N scores count, nothing drops mid-season" },
-  { value: "proportional", label: "Proportional — drops scale with completed events" },
-];
-
-/** Fallback when a stored Season.scoringPolicy can't be parsed — mirrors preset-dialog's DEFAULT_POLICY. */
-const DEFAULT_POLICY: ScoringPolicy = {
-  v: 2,
-  drops: "fixed",
-  paxSection: false,
-  conePenaltyMs: 2000,
-};
-
-/** Sentinel for "use the league's default preset" — not a real preset name. */
+/** Sentinel for "use the league's default ruleset" — not a real ruleset name. */
 const DEFAULT_PRESET = "__league_default__";
 
 type CreateProps = {
@@ -64,6 +45,7 @@ type EditProps = {
   mode: "edit";
   leagueSlug: string;
   season: SeasonRow;
+  presets: PresetOption[];
   onClose: () => void;
   onSaved: () => void;
 };
@@ -150,9 +132,9 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
         <DialogHeader>
           <DialogTitle>Create season</DialogTitle>
           <DialogDescription>
-            Snapshots its scoring policy from the selected ruleset (or the league&apos;s oldest
-            ruleset, if none is picked) at creation time — later edits to that ruleset never change
-            this season.
+            Scores with the selected ruleset (or the league&apos;s oldest ruleset, if none is
+            picked). The reference is live — later edits to the ruleset change this
+            season&apos;s standings too.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -208,7 +190,7 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
               <SelectContent>
                 <SelectItem value={DEFAULT_PRESET}>League default (oldest ruleset)</SelectItem>
                 {presets.map((p) => (
-                  <SelectItem key={p.name} value={p.name}>
+                  <SelectItem key={p.id} value={p.name}>
                     {p.name}
                   </SelectItem>
                 ))}
@@ -235,30 +217,13 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
   );
 }
 
-function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
+function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: EditProps) {
   const [name, setName] = useState(season.name);
   const [slug, setSlug] = useState(season.slug);
   const [year, setYear] = useState(String(season.year));
   const [plannedEvents, setPlannedEvents] = useState(String(season.plannedEvents));
   const [status, setStatus] = useState<SeasonStatus>(season.status);
-  const [paxTable, setPaxTable] = useState(season.paxTable);
-  // Every Season row is written through updateSeason/createSeason, which both
-  // validate via parseScoringPolicy before persisting, so a malformed stored
-  // policy should never happen — but if a legacy/hand-edited row is bad, fall
-  // back to a default instead of throwing during render (that would crash
-  // this dialog, the one admin surface that could repair the row). Mirrors
-  // EditPresetDialog's `preset.policy ?? DEFAULT_POLICY` idiom.
-  let initialPolicy: ScoringPolicy;
-  let policyWasInvalid = false;
-  try {
-    initialPolicy = parseScoringPolicy(season.scoringPolicy);
-  } catch {
-    initialPolicy = DEFAULT_POLICY;
-    policyWasInvalid = true;
-  }
-  const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
-  const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
-  const [conePenaltyMs, setConePenaltyMs] = useState(String(initialPolicy.conePenaltyMs));
+  const [rulesetId, setRulesetId] = useState(String(season.rulesetId));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -279,9 +244,9 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
       setPending(false);
       return;
     }
-    const coneNum = Number(conePenaltyMs);
-    if (!Number.isFinite(coneNum) || coneNum < 0) {
-      setError("Cone penalty must be a non-negative number");
+    const rulesetNum = Number(rulesetId);
+    if (!Number.isInteger(rulesetNum)) {
+      setError("Pick a ruleset");
       setPending(false);
       return;
     }
@@ -296,16 +261,7 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
     if (yearNum !== season.year) patch.year = yearNum;
     if (plannedNum !== season.plannedEvents) patch.plannedEvents = plannedNum;
     if (status !== season.status) patch.status = status;
-    if (canonicalPaxJson(paxTable) !== canonicalPaxJson(season.paxTable)) patch.paxTable = paxTable;
-    const newPolicy = JSON.stringify({
-      v: 2, drops, paxSection, conePenaltyMs: coneNum,
-    });
-    // Force a canonical rewrite when the stored policy couldn't be parsed,
-    // even if the form's fields still match the fallback defaults — same as
-    // EditPresetDialog's `preset.policy === null` branch.
-    if (policyWasInvalid || newPolicy !== JSON.stringify(initialPolicy)) {
-      patch.scoringPolicy = newPolicy;
-    }
+    if (rulesetNum !== season.rulesetId) patch.rulesetId = rulesetNum;
 
     if (Object.keys(patch).length === 0) {
       setPending(false);
@@ -344,8 +300,9 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
         <DialogHeader>
           <DialogTitle>Edit season</DialogTitle>
           <DialogDescription>
-            Scoring changes here apply only to this season — rulesets in the library are never
-            modified.
+            Scoring comes from the season&apos;s ruleset (a live reference). To change how this
+            season scores, pick a different ruleset here or edit the ruleset itself in the
+            ruleset library.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -403,48 +360,25 @@ function EditSeasonDialog({ leagueSlug, season, onClose, onSaved }: EditProps) {
               </SelectContent>
             </Select>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Changing scoring recomputes this season&apos;s standings immediately — including past
-            seasons. Historical results pages will reflect the new rules.
-          </p>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-season-drops">Drops</Label>
-            <Select value={drops} onValueChange={(v) => setDrops(v as Drops)}>
-              <SelectTrigger id="edit-season-drops" className="w-full">
+            <Label htmlFor="edit-season-ruleset">Scoring ruleset</Label>
+            <Select value={rulesetId} onValueChange={(v) => setRulesetId(v ?? rulesetId)}>
+              <SelectTrigger id="edit-season-ruleset" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DROPS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
+                {presets.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center justify-between gap-4">
-            <Label htmlFor="edit-season-pax-section">Overall PAX standings section</Label>
-            <Switch
-              id="edit-season-pax-section"
-              checked={paxSection}
-              onCheckedChange={setPaxSection}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-season-cone-penalty">Cone penalty (ms)</Label>
-            <Input
-              id="edit-season-cone-penalty"
-              type="number"
-              min={0}
-              value={conePenaltyMs}
-              onChange={(e) => setConePenaltyMs(e.target.value)}
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>PAX factors</Label>
-            <PaxTableEditor value={paxTable} onChange={setPaxTable} />
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Changing the ruleset recomputes this season&apos;s standings immediately — including
+            past seasons. Historical results pages will reflect the new rules.
+          </p>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={pending}>

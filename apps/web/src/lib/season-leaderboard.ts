@@ -7,7 +7,7 @@ import { prisma as defaultClient } from "@/lib/prisma";
 
 /**
  * Synthetic class code for the overall PAX standings section
- * (Season.scoringPolicy `paxSection: true`). Rendered pinned first; never
+ * (ruleset policy `paxSection: true`). Rendered pinned first; never
  * stored in the DB.
  */
 export const PAX_SECTION_CODE = "PAX";
@@ -222,6 +222,7 @@ export async function listSeasonYears(
 }
 
 const seasonLeaderboardInclude = {
+  ruleset: { select: { policy: true } },
   events: {
     orderBy: { date: "asc" as const },
     include: {
@@ -300,8 +301,9 @@ async function resolveLeaderboardSeason(
  *
  * League Foundation: events are scoped to a Season row rather than a raw
  * date range, and every scoring knob — drop mode, synthetic PAX section,
- * class metric, planned event count — comes from that row's `scoringPolicy`
- * JSON (`parseScoringPolicy`), not env vars. A year/target with no matching
+ * planned event count — comes from the season's RULESET policy JSON
+ * (`season.ruleset.policy`, a live reference since Task R2 — parsed via
+ * `parseScoringPolicy`), not env vars. A year/target with no matching
  * Season row returns the original empty-year shape (all zero, no sections)
  * — same as a season with a Season row but zero ingested events, except
  * `totalEvents` there reflects the Season's planned count instead of 0.
@@ -344,7 +346,7 @@ export async function buildSeasonLeaderboard(
   }
 
   const year = season.year;
-  const policy = parseScoringPolicy(season.scoringPolicy);
+  const policy = parseScoringPolicy(season.ruleset.policy);
 
   // 1. Events for the season, already loaded in chronological order.
   const events: LoadedEvent[] = season.events;

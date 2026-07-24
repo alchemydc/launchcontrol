@@ -29,10 +29,9 @@ export type SeasonRow = {
   year: number;
   plannedEvents: number;
   status: "active" | "completed";
-  /** Raw JSON string (code -> factor) — edited via PaxTableEditor as per-class overrides, not parsed for display here. */
-  paxTable: string;
-  /** Raw JSON string snapshot — parsed by the edit dialog, not displayed here. */
-  scoringPolicy: string;
+  /** Live ScoringSystem reference (Task R2) — the ruleset holds policy + PAX table. */
+  rulesetId: number;
+  rulesetName: string;
   events: number;
 };
 
@@ -68,6 +67,7 @@ export function SeasonsTable({
             <TableHead>Year</TableHead>
             <TableHead>Planned events</TableHead>
             <TableHead>Events</TableHead>
+            <TableHead>Ruleset</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -82,6 +82,7 @@ export function SeasonsTable({
               <TableCell>{row.year}</TableCell>
               <TableCell>{row.plannedEvents}</TableCell>
               <TableCell>{row.events}</TableCell>
+              <TableCell>{row.rulesetName}</TableCell>
               <TableCell>
                 <Badge variant={row.status === "active" ? "default" : "secondary"}>
                   {row.status}
@@ -95,7 +96,7 @@ export function SeasonsTable({
                   <Button
                     variant="outline"
                     size="sm"
-                    title="Rewrites the frozen per-entry PAX factors for this season's already-ingested results, using this season's overridden classes only. Use after editing the PAX table mid-season."
+                    title="Rewrites the frozen per-entry PAX factors for this season's already-ingested results, using the season's ruleset PAX table. Use after editing the ruleset's PAX table mid-season."
                     onClick={() => setReapplyRow(row)}
                   >
                     Re-apply PAX
@@ -106,7 +107,7 @@ export function SeasonsTable({
           ))}
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground">
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
                 No seasons yet.
               </TableCell>
             </TableRow>
@@ -119,6 +120,7 @@ export function SeasonsTable({
           mode="edit"
           leagueSlug={leagueSlug}
           season={editingRow}
+          presets={presets}
           onClose={() => setEditingRow(null)}
           onSaved={() => {
             setEditingRow(null);
@@ -204,7 +206,7 @@ function ReapplyPaxDialog({
             <DialogHeader>
               <DialogTitle>Re-apply PAX factors for {season.name}?</DialogTitle>
               <DialogDescription>
-                Results keep the PAX factor that was in force when they were ingested. This action rewrites those stored factors for this season&apos;s entries whose class appears in the season&apos;s PAX table (i.e. overridden classes). Entries whose class code isn&apos;t covered by the table are left untouched. This cannot be undone.
+                Results keep the PAX factor that was in force when they were ingested. This action rewrites those stored factors for this season&apos;s entries whose class appears in the season&apos;s ruleset PAX table. Entries whose class code isn&apos;t covered by the table are left untouched. This cannot be undone.
               </DialogDescription>
             </DialogHeader>
             {error && <p className="text-sm text-destructive">{error}</p>}

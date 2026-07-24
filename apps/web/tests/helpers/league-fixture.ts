@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { slugify } from "@/lib/ingest";
+import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 
 // Fixture DBs run `prisma migrate deploy`, which seeds the "pca-rmr" League
 // row unconditionally (see the league-foundation migration) but seeds a
@@ -13,10 +14,41 @@ import { slugify } from "@/lib/ingest";
 
 export const DEFAULT_LEAGUE_SLUG = "pca-rmr";
 
-// Matches the "PCA Classic" preset seeded by the league-foundation migration
-// and the bare-Season default `ingestAxdb` auto-creates (apps/web/src/lib/ingest.ts).
+// Matches the "PCA Classic" ruleset seeded by the league-foundation migration
+// (canonicalized to v2 by scoring_policy_v2) — the policy every fixture
+// season scores with unless a test points it at a different ruleset.
 export const DEFAULT_SCORING_POLICY =
   '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
+
+/**
+ * Return a ScoringSystem id usable as a Season.rulesetId for `leagueId` —
+ * the league's oldest existing ruleset (the seeded "PCA Classic" on migrated
+ * fixture DBs) unless any override is given, in which case a new ruleset row
+ * is created with the given name/policy/paxTable (defaults mirroring
+ * `createLeague`'s default ruleset seed).
+ */
+export async function ensureRuleset(
+  client: PrismaClient,
+  leagueId: number,
+  opts: { name?: string; policy?: string; paxTable?: string } = {},
+): Promise<number> {
+  if (opts.name === undefined && opts.policy === undefined && opts.paxTable === undefined) {
+    const existing = await client.scoringSystem.findFirst({
+      where: { leagueId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    if (existing) return existing.id;
+  }
+  const created = await client.scoringSystem.create({
+    data: {
+      leagueId,
+      name: opts.name ?? `Test Ruleset ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      policy: opts.policy ?? DEFAULT_SCORING_POLICY,
+      paxTable: opts.paxTable ?? JSON.stringify(RMSOLO_PAX_2026),
+    },
+  });
+  return created.id;
+}
 
 export type SeasonFixtureSpec = {
   year: number;
@@ -58,6 +90,26 @@ export async function ensureLeagueAndSeasons(
     });
   }
 
+  // Seasons need a ruleset to reference (required rulesetId FK) — reuse the
+  // league's oldest ScoringSystem (the seeded "PCA Classic" for migrated
+  // fixture DBs), creating a default one only for a league that has none
+  // (same shape `createLeague` seeds).
+  let ruleset = await client.scoringSystem.findFirst({
+    where: { leagueId: league.id },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  if (!ruleset) {
+    ruleset = await client.scoringSystem.create({
+      data: {
+        leagueId: league.id,
+        name: `${league.name} Default`,
+        policy: DEFAULT_SCORING_POLICY,
+        // COMPLETE table, same as createLeague's default ruleset seed.
+        paxTable: JSON.stringify(RMSOLO_PAX_2026),
+      },
+    });
+  }
+
   const seasonIdByYear = new Map<number, number>();
   for (const spec of years) {
     const { year, plannedEvents = 0, name } =
@@ -73,7 +125,7 @@ export async function ensureLeagueAndSeasons(
           slug: slugify(seasonName),
           year,
           plannedEvents,
-          scoringPolicy: DEFAULT_SCORING_POLICY,
+          rulesetId: ruleset.id,
         },
       });
     }

@@ -4,14 +4,15 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { createLeague } from "@/lib/create-league";
 import { createSeason, updateSeason } from "@/lib/create-season";
+import { createScoringSystem } from "@/lib/scoring-system";
 import { dbTarget, migrateDeploy } from "./helpers/db";
 
-// Task 2: per-season scoringPolicy editing via updateSeason's new
-// `scoringPolicy` patch key (raw JSON string, validated/re-serialized via
-// parseScoringPolicy). Mirrors league-admin-crud.test.ts's updateSeason
-// conventions — each test builds its own scratch league+season.
+// Task R2: per-season scoring is edited by re-pointing the season's live
+// `rulesetId` reference via updateSeason's `rulesetId` patch key (validated:
+// the ruleset must exist and belong to the SAME league). Mirrors
+// league-admin-crud.test.ts's updateSeason conventions — each test builds
+// its own scratch league+season.
 
-const FIXED_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 const PROPORTIONAL_POLICY = '{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}';
 
 const { path: TEST_DB_PATH, url: TEST_DB_URL } = dbTarget("update-season-policy");
@@ -30,48 +31,69 @@ afterAll(async () => {
   rmSync(TEST_DB_PATH, { force: true });
 });
 
-describe("updateSeason scoringPolicy", () => {
-  it("updates the row's scoringPolicy and it parses back with the new values", async () => {
+describe("updateSeason rulesetId", () => {
+  it("re-points the season at another ruleset of the same league", async () => {
     const { league } = await createLeague({ slug: "usp-basic", name: "USP Basic League" }, prisma);
     const season = await createSeason({ leagueSlug: league.slug, name: "USP Season", year: 2102 }, prisma);
-    // Force a known starting policy — createSeason without preset/file snapshots
-    // whatever the league's oldest ScoringSystem preset happens to be, which
-    // this test shouldn't depend on.
-    await prisma.season.update({ where: { id: season.id }, data: { scoringPolicy: FIXED_POLICY } });
+    const other = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "USP Proportional",
+      policyJson: PROPORTIONAL_POLICY,
+    });
+    expect(season.rulesetId).not.toBe(other.id);
 
     const updated = await updateSeason(
       prisma,
       { leagueSlug: league.slug, seasonSlug: season.slug },
-      { scoringPolicy: PROPORTIONAL_POLICY },
+      { rulesetId: other.id },
     );
 
-    expect(JSON.parse(updated.scoringPolicy).drops).toBe("proportional");
-
-    const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
-    expect(JSON.parse(persisted.scoringPolicy).drops).toBe("proportional");
+    expect(updated.rulesetId).toBe(other.id);
+    const persisted = await prisma.season.findUniqueOrThrow({
+      where: { id: season.id },
+      include: { ruleset: true },
+    });
+    expect(persisted.rulesetId).toBe(other.id);
+    expect(JSON.parse(persisted.ruleset.policy).drops).toBe("proportional");
   });
 
-  it("rejects an invalid policy and leaves the row unchanged", async () => {
+  it("rejects an unknown rulesetId and leaves the row unchanged", async () => {
     const { league } = await createLeague({ slug: "usp-invalid", name: "USP Invalid League" }, prisma);
     const season = await createSeason({ leagueSlug: league.slug, name: "USP Invalid Season", year: 2103 }, prisma);
-    const before = season.scoringPolicy;
 
     await expect(
       updateSeason(
         prisma,
         { leagueSlug: league.slug, seasonSlug: season.slug },
-        { scoringPolicy: '{"v":1}' },
+        { rulesetId: 999999 },
       ),
-    ).rejects.toThrow(/scoringPolicy\./);
+    ).rejects.toThrow(/no ruleset with id 999999/);
 
     const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
-    expect(persisted.scoringPolicy).toBe(before);
+    expect(persisted.rulesetId).toBe(season.rulesetId);
   });
 
-  it("leaves scoringPolicy untouched when absent from the patch", async () => {
+  it("rejects a ruleset belonging to a DIFFERENT league", async () => {
+    const { league } = await createLeague({ slug: "usp-cross-a", name: "USP Cross League A" }, prisma);
+    const { league: leagueB } = await createLeague({ slug: "usp-cross-b", name: "USP Cross League B" }, prisma);
+    const season = await createSeason({ leagueSlug: league.slug, name: "USP Cross Season", year: 2105 }, prisma);
+    const foreign = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: leagueB.id } });
+
+    await expect(
+      updateSeason(
+        prisma,
+        { leagueSlug: league.slug, seasonSlug: season.slug },
+        { rulesetId: foreign.id },
+      ),
+    ).rejects.toThrow(/only adopt a ruleset of its own league/);
+
+    const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
+    expect(persisted.rulesetId).toBe(season.rulesetId);
+  });
+
+  it("leaves rulesetId untouched when absent from the patch", async () => {
     const { league } = await createLeague({ slug: "usp-absent", name: "USP Absent League" }, prisma);
     const season = await createSeason({ leagueSlug: league.slug, name: "USP Absent Season", year: 2104 }, prisma);
-    const before = season.scoringPolicy;
 
     const updated = await updateSeason(
       prisma,
@@ -79,8 +101,8 @@ describe("updateSeason scoringPolicy", () => {
       { plannedEvents: 3 },
     );
 
-    expect(updated.scoringPolicy).toBe(before);
+    expect(updated.rulesetId).toBe(season.rulesetId);
     const persisted = await prisma.season.findUniqueOrThrow({ where: { id: season.id } });
-    expect(persisted.scoringPolicy).toBe(before);
+    expect(persisted.rulesetId).toBe(season.rulesetId);
   });
 });

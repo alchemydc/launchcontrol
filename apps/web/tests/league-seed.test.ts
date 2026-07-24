@@ -97,14 +97,15 @@ describe("Season resolution + backfill via ingest", () => {
     await ingestAxdb(resolve(FIXTURES_DIR, "combined-event-1-opener.axdb"), prisma); // 2027
   });
 
-  it("auto-creates one Season per distinct event year, snapshotting the PCA policy", async () => {
+  it("auto-creates one Season per distinct event year, pointing at the PCA Classic ruleset", async () => {
+    const league = await prisma.league.findUniqueOrThrow({ where: { slug: "pca-rmr" } });
+    const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: league.id } });
     const seasons = await prisma.season.findMany({ orderBy: { year: "asc" } });
     expect(seasons.map((s) => s.year)).toEqual([2026, 2027]);
     for (const s of seasons) {
       expect(s.name).toBe(`${s.year} Season`);
       expect(s.slug).toBe(slugify(s.name));
-      expect(s.scoringPolicy).toBe(PCA_POLICY);
-      expect(s.paxTable).toBe("{}");
+      expect(s.rulesetId).toBe(preset.id);
       expect(s.status).toBe("active");
     }
   });
@@ -145,7 +146,7 @@ describe("composite-unique enforcement", () => {
           name: season.name,
           slug: `${season.slug}-2`,
           year: season.year,
-          scoringPolicy: PCA_POLICY,
+          rulesetId: season.rulesetId,
         },
       }),
     ).rejects.toThrow();
@@ -160,7 +161,7 @@ describe("composite-unique enforcement", () => {
           name: `${season.name} 2`,
           slug: season.slug,
           year: season.year,
-          scoringPolicy: PCA_POLICY,
+          rulesetId: season.rulesetId,
         },
       }),
     ).rejects.toThrow();

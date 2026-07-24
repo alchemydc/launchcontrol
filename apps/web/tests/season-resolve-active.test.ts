@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { resolveOrCreateSeason } from "@/lib/season-resolve";
-import { DEFAULT_SCORING_POLICY } from "./helpers/league-fixture";
+import { ensureRuleset } from "./helpers/league-fixture";
 import { dbTarget, migrateDeploy } from "./helpers/db";
 
 // resolveOrCreateSeason is ingest's (league, year) landing-spot resolver.
@@ -38,7 +38,7 @@ describe("resolveOrCreateSeason: active-season preference", () => {
         name: "2026 Winter",
         slug: "2026-winter",
         year: 2026,
-        scoringPolicy: DEFAULT_SCORING_POLICY,
+        rulesetId: await ensureRuleset(client, leagueId),
         status: "completed",
       },
     });
@@ -48,7 +48,7 @@ describe("resolveOrCreateSeason: active-season preference", () => {
         name: "2026 Summer",
         slug: "2026-summer",
         year: 2026,
-        scoringPolicy: DEFAULT_SCORING_POLICY,
+        rulesetId: await ensureRuleset(client, leagueId),
         status: "active",
       },
     });
@@ -67,7 +67,7 @@ describe("resolveOrCreateSeason: active-season preference", () => {
         name: "2027 Winter",
         slug: "2027-winter",
         year: 2027,
-        scoringPolicy: DEFAULT_SCORING_POLICY,
+        rulesetId: await ensureRuleset(client, league.id),
         status: "completed",
       },
     });
@@ -77,7 +77,7 @@ describe("resolveOrCreateSeason: active-season preference", () => {
         name: "2027 Summer",
         slug: "2027-summer",
         year: 2027,
-        scoringPolicy: DEFAULT_SCORING_POLICY,
+        rulesetId: await ensureRuleset(client, league.id),
         status: "completed",
       },
     });

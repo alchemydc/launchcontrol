@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { listLeagueDirectory } from "@/lib/league-directory";
+import { ensureRuleset } from "./helpers/league-fixture";
 
 // Task 5: /leagues public directory data fn — every League row, its active
 // season's name (per season-resolve.ts's activeSeason), and that season's
@@ -12,7 +13,6 @@ import { listLeagueDirectory } from "@/lib/league-directory";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-league-directory.db");
 const TEST_DB_URL = "file:./test-league-directory.db";
-const PCA_POLICY = '{"v":2,"drops":"fixed","paxSection":false,"conePenaltyMs":2000}';
 
 let prisma: PrismaClient;
 
@@ -81,7 +81,7 @@ describe("listLeagueDirectory", () => {
         name: "2026 Season",
         slug: "2026-season",
         year: 2026,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "active",
       },
     });
@@ -128,7 +128,7 @@ describe("listLeagueDirectory", () => {
         name: "2026 Season",
         slug: "2026-season",
         year: 2026,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "active",
       },
     });
@@ -161,7 +161,7 @@ describe("listLeagueDirectory", () => {
         name: "2020 Season",
         slug: "2020-season",
         year: 2020,
-        scoringPolicy: PCA_POLICY,
+        rulesetId: await ensureRuleset(prisma, league.id),
         status: "completed",
       },
     });
