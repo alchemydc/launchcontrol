@@ -17,7 +17,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const league = await prisma.league.findUnique({ where: { slug } });
-  return { title: league ? `Members · ${league.name}` : "Members" };
+  return { title: league ? `Admins · ${league.name}` : "Admins" };
 }
 
 export default async function AdminMembersPage({
@@ -58,7 +58,14 @@ export default async function AdminMembersPage({
             <ArrowLeft className="h-4 w-4" />
             {league.name}
           </Link>
-          <h1 className="text-xl font-semibold mt-1">Members</h1>
+          <h1 className="text-xl font-semibold mt-1">Admins &amp; access</h1>
+          <p className="mt-1 text-sm text-muted-foreground max-w-prose">
+            Membership itself comes from MotorsportReg — anyone whose MSR account matches this
+            league&apos;s club org is admitted automatically at login, with no row needed here. Use
+            this page to grant <span className="font-medium">admin</span> rights, and only reach for
+            manual member/blocked entries to override the MSR-based rule (grant someone without an
+            org match, or block someone who has one).
+          </p>
         </div>
 
         <MembersTable leagueSlug={league.slug} rows={rows} />

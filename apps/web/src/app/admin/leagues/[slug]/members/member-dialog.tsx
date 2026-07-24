@@ -54,13 +54,13 @@ export function MemberDialog(props: CreateProps | EditProps) {
 function CreateMemberDialog({ leagueSlug, onCreated }: CreateProps) {
   const [open, setOpen] = useState(false);
   const [msrUid, setMsrUid] = useState("");
-  const [role, setRole] = useState<MembershipRole>("MEMBER");
+  const [role, setRole] = useState<MembershipRole>("ADMIN");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function reset() {
     setMsrUid("");
-    setRole("MEMBER");
+    setRole("ADMIN");
     setError(null);
   }
 
