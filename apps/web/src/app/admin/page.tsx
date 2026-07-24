@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getSession } from "@/lib/session";
 import { administeredLeagues } from "@/lib/admin";
+import { isSuperUser } from "@/lib/super-user";
 import { CreateLeagueDialog } from "./create-league-dialog";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,10 @@ export const metadata: Metadata = {
 
 export default async function AdminPage() {
   const session = await getSession();
-  const leagues = await administeredLeagues(session.msrUid);
+  const [leagues, canManageUsers] = await Promise.all([
+    administeredLeagues(session.msrUid),
+    isSuperUser(session.msrUid),
+  ]);
 
   return (
     <main className="flex flex-1 items-center justify-center px-6 py-16">
@@ -110,6 +114,23 @@ export default async function AdminPage() {
                 </CardContent>
               </Card>
             </Link>
+            {canManageUsers && (
+              <Link href="/admin/users">
+                <Card className="cursor-pointer hover:border-primary/40 transition-colors">
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      Users
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Every league&apos;s memberships, plus superuser grants.
+                    </p>
+                  </CardContent>
+                </Card>
+              </Link>
+            )}
           </div>
         </div>
       </div>
