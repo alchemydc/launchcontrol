@@ -294,6 +294,14 @@ export async function ingestRmsoloEvent(
       const paxCode = derivedPaxCodeByEntry.get(e) ?? e.classCode;
       const paxClassId = classIdByCode.get(paxCode);
       if (paxClassId == null) throw new Error(`Entry references unknown pax class code '${paxCode}'`);
+      // Snapshot the factor in force at ingest. resolveSeasonPaxIndex(paxCode)
+      // is exactly what set CarClass.paxIndex for paxCode's class above, so
+      // Entry.paxClass.paxIndex === Entry.paxIndexApplied now — they diverge
+      // only if the CarClass is later edited. Covers both paths: the derived
+      // run-group class (paxCode from nearestPaxClass) and the fallback where
+      // paxCode = entered class (no match → the class's own factor, 1.0 for a
+      // bare run-group heading).
+      const paxIndexApplied = resolveSeasonPaxIndex(paxCode, seasonPaxTable);
       const identityHash = identityByEntry.get(e)!;
       const driverId = driverIdByIdentity.get(identityHash);
       if (driverId == null) throw new Error(`Missing driver mapping for identity hash '${identityHash.slice(0, 12)}…'`);
@@ -318,6 +326,7 @@ export async function ingestRmsoloEvent(
         driverId,
         classId,
         paxClassId,
+        paxIndexApplied,
         carNumber: e.carNumber,
         carDescription: e.carDescription,
         bestCommittedRunNumber,
@@ -332,6 +341,7 @@ export async function ingestRmsoloEvent(
           driverId: e.driverId,
           classId: e.classId,
           paxClassId: e.paxClassId,
+          paxIndexApplied: e.paxIndexApplied,
           carNumber: e.carNumber,
           carDescription: e.carDescription,
           bestCommittedRunNumber: e.bestCommittedRunNumber,

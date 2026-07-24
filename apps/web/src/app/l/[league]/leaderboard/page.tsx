@@ -31,6 +31,7 @@ export default async function LeagueLeaderboardPage({
   const season = await activeSeason(prisma, league.id);
 
   return renderLeagueSeasonLeaderboard({
+    leagueSlug: slug,
     leagueName: league.name,
     season,
     activeClassCode,

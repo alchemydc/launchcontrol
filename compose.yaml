@@ -20,6 +20,9 @@ services:
     env_file: deploy/launchcontrol.env
     environment:
       DATABASE_URL: "file:/data/launchcontrol.db"
+      # Enables the capability-gated admin "Ingest now" button. Safe on this
+      # image: poppler (pdftotext) is installed, so the capability probe passes.
+      INGEST_NOW_ENABLED: "1"
     volumes:
       - lc-data:/data
     restart: unless-stopped

@@ -31,7 +31,22 @@ function formatSignedPercent(value: number | null): string {
   return `${sign}${(value * 100).toFixed(2)}%`;
 }
 
-export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
+export function EventHistory({
+  history,
+  basePath = "",
+}: {
+  history: DriverHistoryRow[];
+  /** Prefixes each row's event `href` ("" for the legacy route -- byte-identical
+   *  to pre-existing rendering; "/l/[slug]" for league-scoped, Task 20 follow-up).
+   *  Safe to apply unconditionally: on the locked `/l/[league]/drivers/[id]`
+   *  page every row (single-event or combined) is guaranteed to belong to that
+   *  same league -- `buildDriverHistory`'s scoped query only returns in-league
+   *  events, and a combined row's sessions are grouped by (leagueId, dateKey),
+   *  so a combined row can never straddle two leagues. The legacy all-leagues
+   *  page passes basePath="" so a cross-league row there still resolves to the
+   *  correct (unprefixed) legacy event route. */
+  basePath?: string;
+}) {
   // Only true for an "All leagues" filter selection that actually spans more
   // than one league -- every legacy, no-filter (single-league) render keeps
   // this false, so the badge never appears there.
@@ -74,7 +89,7 @@ export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Link
-                      href={row.href}
+                      href={`${basePath}${row.href}`}
                       className="block text-sm font-medium hover:underline truncate"
                     >
                       {row.eventName}
@@ -201,7 +216,7 @@ export function EventHistory({ history }: { history: DriverHistoryRow[] }) {
                 </TableCell>
                 <TableCell className="px-3">
                   <div className="flex items-center gap-1.5">
-                    <Link href={row.href} className="hover:underline">
+                    <Link href={`${basePath}${row.href}`} className="hover:underline">
                       {row.eventName}
                     </Link>
                     {row.combined && (

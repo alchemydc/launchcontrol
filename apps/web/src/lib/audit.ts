@@ -1,12 +1,27 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
-export type AuditAction = "ingest" | "event.update" | "event.delete";
+export type AuditAction =
+  | "ingest"
+  | "ingest.now"
+  | "event.update"
+  | "event.delete"
+  | "league.create"
+  | "league.update"
+  | "league.delete"
+  | "season.create"
+  | "season.update"
+  | "preset.create"
+  | "preset.update"
+  | "membership.update"
+  | "superuser.update";
+
+export type AuditTargetType = "event" | "league" | "season" | "scoringSystem" | "membership" | "superUser";
 
 export type AuditEntry = {
   action: AuditAction;
   actorMsrUid: string;
   actorName: string;
-  targetType: "event";
+  targetType: AuditTargetType;
   targetId?: number;
   targetSlug?: string;
   detail: unknown;

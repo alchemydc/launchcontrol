@@ -8,7 +8,10 @@ import { createLeague } from "@/lib/create-league";
 import { buildDriverHistory } from "@/lib/driver-history";
 import { findEventBySlug } from "@/lib/event-queries";
 import { ingestAxdb } from "@/lib/ingest";
+import { decideLeagueAccess } from "@/lib/league-access";
+import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { listLeagueDirectory } from "@/lib/league-directory";
+import { getMembershipRole, setLeagueMembership } from "@/lib/membership";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
 import type { ParsedRmsoloEvent } from "@/lib/rmsolo-parse";
 import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
@@ -303,5 +306,145 @@ describe("legacy routes remain default-league-only (findEventBySlug)", () => {
   it("rmsolo-test's own league does find that same slug when scoped to itself", async () => {
     const event = await findEventBySlug(rmsoloTestLeagueId, RMSOLO_TEST_EVENT_SLUG, prisma);
     expect(event).not.toBeNull();
+  });
+});
+
+// Task 7: per-league membership gating end-to-end. rmsolo-test becomes a
+// non-default "required" league gated on MSR org "ORG-X". Decisions are made
+// through the pure decideLeagueAccess fed by real LeagueMembership rows
+// (getMembershipRole), rather than the redirect wrapper (which needs cookies).
+describe("gated non-default league (decideLeagueAccess through real DB rows)", () => {
+  const ORG = "ORG-X";
+
+  beforeAll(async () => {
+    await prisma.league.update({
+      where: { id: rmsoloTestLeagueId },
+      data: { accessGate: "required", msrOrgId: ORG },
+    });
+  });
+
+  // Mirrors checkLeagueAccess's decision (superuser omitted — no rows/env in
+  // this suite) using the league's real config + this viewer's real role row.
+  async function decide(session: { msrUid?: string; msrOrgIds?: string[] }) {
+    const league = await getLeagueConfigForSlug("rmsolo-test", prisma);
+    if (!league) throw new Error("rmsolo-test config missing");
+    const membershipRole = session.msrUid
+      ? await getMembershipRole(prisma, league.id, session.msrUid)
+      : null;
+    return decideLeagueAccess({
+      accessGate: league.accessGate,
+      msrOrgId: league.msrOrgId,
+      membershipRole,
+      superUser: false,
+      session,
+    });
+  }
+
+  it("org-matched visitor allowed (no membership row)", async () => {
+    expect(await decide({ msrUid: "V1", msrOrgIds: [ORG] })).toBe("allow");
+  });
+
+  it("stranger redirected (wrong org, no membership row)", async () => {
+    expect(await decide({ msrUid: "V2", msrOrgIds: ["ORG-Z"] })).toBe("redirect");
+  });
+
+  it("BLOCKED denied despite matching org", async () => {
+    await setLeagueMembership(prisma, {
+      leagueId: rmsoloTestLeagueId,
+      msrUid: "B1",
+      role: "BLOCKED",
+    });
+    expect(await decide({ msrUid: "B1", msrOrgIds: [ORG] })).toBe("deny");
+  });
+
+  it("MEMBER row allowed without any org match", async () => {
+    await setLeagueMembership(prisma, {
+      leagueId: rmsoloTestLeagueId,
+      msrUid: "M1",
+      role: "MEMBER",
+    });
+    expect(await decide({ msrUid: "M1", msrOrgIds: [] })).toBe("allow");
+  });
+
+  it("required gate on a non-default league no longer throws in toLeagueConfig", async () => {
+    const league = await getLeagueConfigForSlug("rmsolo-test", prisma);
+    expect(league?.accessGate).toBe("required");
+    expect(league?.msrOrgId).toBe(ORG);
+  });
+});
+
+// I2: the msrOrgId env fallback (MSR_ORG_ID / MSR_RMR_ORG_ID) names the
+// DEFAULT league's org. A non-default "required" league that leaves msrOrgId
+// unset must NOT inherit that env org through toLeagueConfig — otherwise
+// decideLeagueAccess step 5 (org match) would silently admit every member of
+// the DEFAULT league's org into this unrelated league. With the fix,
+// getLeagueConfigForSlug resolves this league's msrOrgId to null, so org-match
+// is off and access comes solely from explicit LeagueMembership rows.
+describe("I2: non-default required league does not inherit the default league's env org", () => {
+  const DEFAULT_ORG = "DEFAULT-LEAGUE-ORG";
+  let savedMsrOrgId: string | undefined;
+  let savedMsrRmrOrgId: string | undefined;
+  let noOrgLeagueId: number;
+
+  beforeAll(async () => {
+    savedMsrOrgId = process.env.MSR_ORG_ID;
+    savedMsrRmrOrgId = process.env.MSR_RMR_ORG_ID;
+    process.env.MSR_ORG_ID = DEFAULT_ORG;
+    delete process.env.MSR_RMR_ORG_ID;
+    const created = await createLeague(
+      { slug: "no-org-required", name: "No Org Required League" },
+      prisma,
+    );
+    noOrgLeagueId = created.league.id;
+    // Required gate, msrOrgId deliberately left NULL.
+    await prisma.league.update({
+      where: { id: noOrgLeagueId },
+      data: { accessGate: "required", msrOrgId: null },
+    });
+  });
+
+  afterAll(() => {
+    if (savedMsrOrgId === undefined) delete process.env.MSR_ORG_ID;
+    else process.env.MSR_ORG_ID = savedMsrOrgId;
+    if (savedMsrRmrOrgId === undefined) delete process.env.MSR_RMR_ORG_ID;
+    else process.env.MSR_RMR_ORG_ID = savedMsrRmrOrgId;
+  });
+
+  async function decide(session: { msrUid?: string; msrOrgIds?: string[] }) {
+    const league = await getLeagueConfigForSlug("no-org-required", prisma);
+    if (!league) throw new Error("no-org-required config missing");
+    const membershipRole = session.msrUid
+      ? await getMembershipRole(prisma, league.id, session.msrUid)
+      : null;
+    return decideLeagueAccess({
+      accessGate: league.accessGate,
+      msrOrgId: league.msrOrgId,
+      membershipRole,
+      superUser: false,
+      session,
+    });
+  }
+
+  it("resolves msrOrgId to null despite MSR_ORG_ID being set (env fallback is default-league-only)", async () => {
+    const league = await getLeagueConfigForSlug("no-org-required", prisma);
+    expect(league?.accessGate).toBe("required");
+    expect(league?.msrOrgId).toBeNull();
+  });
+
+  it("redirects a session carrying the DEFAULT league's org (no membership row)", async () => {
+    expect(await decide({ msrUid: "D1", msrOrgIds: [DEFAULT_ORG] })).toBe(
+      "redirect",
+    );
+  });
+
+  it("still allows an explicit MEMBER row user", async () => {
+    await setLeagueMembership(prisma, {
+      leagueId: noOrgLeagueId,
+      msrUid: "D2",
+      role: "MEMBER",
+    });
+    expect(await decide({ msrUid: "D2", msrOrgIds: [DEFAULT_ORG] })).toBe(
+      "allow",
+    );
   });
 });

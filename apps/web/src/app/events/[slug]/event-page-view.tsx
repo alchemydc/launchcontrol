@@ -99,7 +99,12 @@ export async function EventPageView({
         )}
       </header>
 
-      <LeaderboardTable rows={rows} classCodes={classCodes} showPaxView={showPaxView} />
+      <LeaderboardTable
+        rows={rows}
+        classCodes={classCodes}
+        showPaxView={showPaxView}
+        driverBasePath={basePath}
+      />
     </main>
   );
 }

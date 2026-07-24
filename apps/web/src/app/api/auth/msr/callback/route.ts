@@ -10,7 +10,8 @@
  *  6. Apply PII rule: compute lastInitial via redactLastName; discard full lastName.
  *  7. Compute isRmrMember from org list.
  *  8. Persist the SessionData fields in the main session cookie.
- *  9. 302 / (events home).
+ *  9. 302 to a re-validated returnTo (members) or "/" — which is now the
+ *     league gate (card grid), not the old events home.
  *
  * On error, redirects to /login?error=<reason>. Full last name is never
  * logged, stored in a cookie, or written to any persistent layer.
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
   session.accessToken = accessToken;
   session.accessTokenSecret = accessSecret;
   session.isRmrMember = isRmrMember;
+  session.msrOrgIds = profile.organizations.map((o) => o.id);
   await session.save();
 
   // 9. Redirect: RMR members go to returnTo (re-validated) or home; non-members

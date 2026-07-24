@@ -135,6 +135,30 @@ describe("getLeagueConfig — msrOrgId env fallback during transition", () => {
     expect(config.msrOrgId).toBe("org-from-db");
     await prisma.league.delete({ where: { id: league.id } });
   });
+
+  // I2: the env fallback is DEFAULT-LEAGUE-ONLY. MSR_ORG_ID names the default
+  // league's org, so a non-default league with msrOrgId unset must resolve to
+  // null (org-match off) — NOT inherit the default league's org, which would
+  // silently admit its members into an unrelated "required" league.
+  it("does NOT apply the env fallback to a non-default league (org stays null)", async () => {
+    const league = await prisma.league.create({
+      data: {
+        slug: "non-default-no-org",
+        name: "Non Default No Org",
+        siteTitle: "x",
+        siteDescription: "x",
+        footerText: "x",
+        landingDescription: "x",
+        accessGate: "required",
+      },
+    });
+    // DEFAULT_LEAGUE_SLUG stays "pca-rmr" (unset); this league is NOT default.
+    process.env.MSR_ORG_ID = "default-league-org";
+    process.env.MSR_RMR_ORG_ID = "default-league-legacy-org";
+    const config = await getLeagueConfigForSlug("non-default-no-org", prisma);
+    expect(config?.msrOrgId).toBeNull();
+    await prisma.league.delete({ where: { id: league.id } });
+  });
 });
 
 describe("getLeagueConfig — footerText NULL fallback", () => {
@@ -270,13 +294,12 @@ describe("getLeagueConfigForSlug — Task 5 arbitrary-league resolution", () => 
   });
 });
 
-// Final-review fix: toLeagueConfig is the single choke point every League row
-// passes through, so this is where a non-default league configured with
-// accessGate "required" is refused outright — a non-default "required" league
-// would otherwise silently gate on the DEFAULT league's MSR membership (login
-// is not per-league yet; PR 3 territory).
-describe("toLeagueConfig (via getLeagueConfigForSlug/getLeagueConfig) — non-default 'required' guard", () => {
-  it("throws a clear, league-naming error for a non-default league with accessGate 'required'", async () => {
+// Task 7: per-league membership gating (decideLeagueAccess) now backs every
+// "required" gate, so toLeagueConfig no longer refuses a non-default league
+// configured with accessGate "required" — it maps it through like any other
+// gate. Membership resolution happens at request time (session.ts), not here.
+describe("toLeagueConfig (via getLeagueConfigForSlug/getLeagueConfig) — non-default 'required' is accepted", () => {
+  it("accepts a non-default league with accessGate 'required' and returns its config", async () => {
     const league = await prisma.league.create({
       data: {
         slug: "required-non-default",
@@ -288,9 +311,9 @@ describe("toLeagueConfig (via getLeagueConfigForSlug/getLeagueConfig) — non-de
         accessGate: "required",
       },
     });
-    await expect(getLeagueConfigForSlug("required-non-default", prisma)).rejects.toThrow(
-      /required-non-default[\s\S]*only the default league[\s\S]*may use "required"/,
-    );
+    const config = await getLeagueConfigForSlug("required-non-default", prisma);
+    expect(config?.slug).toBe("required-non-default");
+    expect(config?.accessGate).toBe("required");
     await prisma.league.delete({ where: { id: league.id } });
   });
 

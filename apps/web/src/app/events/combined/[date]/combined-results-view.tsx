@@ -56,7 +56,7 @@ export function CombinedResultsView({
         </div>
       </header>
 
-      <CombinedTable results={results} />
+      <CombinedTable results={results} driverBasePath={basePath} />
     </main>
   );
 }

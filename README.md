@@ -53,7 +53,7 @@ pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo" \
   [--gate required|optional|none] [--preset-name <name>] [--policy-file ./policy.json]
 ```
 
-`--gate` defaults to `"required"` (same as the seeded `pca-rmr` league) — **explicitly pass `--gate optional` or `--gate none` for any new league**, since per-league membership isn't wired up yet (see "Operational note" below). A brand-new league has no `ScoringSystem` preset of its own, so `league:create` always creates one alongside the `League` row: `--policy-file` if given, else a PCA-shaped default (fixed drops, no PAX section, raw class metric, 2000ms cone penalty) — this is what `season:create`/ingest auto-create fall back to when no `--preset`/`--policy-file` is given.
+`--gate` defaults to `"optional"` when omitted. `--gate required` is now accepted for any league, not just the seeded `pca-rmr` default — per-league membership gating (`LeagueMembership` roles, MSR org match against `session.msrOrgIds`) resolves access correctly per league, so a non-default `"required"` league no longer mis-gates on the wrong org (see "Operational note" below, now describing the current behavior rather than a restriction). A brand-new league has no `ScoringSystem` preset of its own, so `league:create` always creates one alongside the `League` row: `--policy-file` if given, else a PCA-shaped default (fixed drops, no PAX section, raw class metric, 2000ms cone penalty) — this is what `season:create`/ingest auto-create fall back to when no `--preset`/`--policy-file` is given.
 
 Create a new season with:
 
@@ -89,7 +89,8 @@ The exact commands to stand up a second league (RMsolo) alongside the default `p
 
 ```sh
 # 1. Create the RMsolo league. --gate defaults to optional; --gate required
-#    is refused for any league created here — see "Operational note" below.
+#    is allowed too (per-league membership gating resolves it correctly) —
+#    see "Operational note" below.
 pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo"
 
 # 2. Write a scoring policy for the season (proportional drops + PAX standings,
@@ -109,7 +110,7 @@ pnpm --filter web dev
 # open http://localhost:3000/leagues
 ```
 
-**Operational note:** only the seeded default league (`pca-rmr`) may run with `accessGate: "required"` — per-login MSR membership is checked against the *default* league's org only (`isRmrMember` is computed at sign-in time, not per-league), so a non-default league would mis-gate on the wrong org's membership. This is enforced, not just documented: `league:create` refuses `--gate required` outright, and `league-config.ts`'s League-row-to-config resolver throws for any non-default league whose `accessGate` is `"required"` however it got there. Use `--gate optional` or `--gate none` (the default) for every non-default league until per-league membership ships (PR 3).
+**Operational note:** any league — default or not — may run with `accessGate: "required"`. Per-league membership gating resolves access independently for each league: a `LeagueMembership` row (`ADMIN`/`MEMBER` allows, `BLOCKED` denies) takes precedence, and failing that, an MSR org match checks the *viewer's* `session.msrOrgIds` (captured at login) against *that specific league's* `msrOrgId` — not just the default league's, as in earlier PRs. `--gate` still defaults to `"optional"` on `league:create` since most self-hosted leagues won't want a login wall, but passing `--gate required` is no longer refused.
 
 **`SESSION_SECRET` is required** whenever the *default* league's `accessGate` is `"required"` — that's the seeded `pca-rmr` config, so any deployment serving it (including this local walkthrough, since `pca-rmr` stays the default league) needs `SESSION_SECRET` set in `apps/web/.env`, or every gated page 500s. Generate one with `openssl rand -hex 32`.
 

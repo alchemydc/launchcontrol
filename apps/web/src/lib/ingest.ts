@@ -273,6 +273,11 @@ export async function ingestAxdb(
         where: { leagueId: league.id, code: { in: srcClassCodes } },
       });
       const classIdByCode = new Map(allClasses.map((c) => [c.code, c.id]));
+      // Source pax factor by source class id — the same per-class value the
+      // CarClass diff above writes as CarClass.paxIndex. Used to snapshot
+      // Entry.paxIndexApplied at creation (PR 3), decoupling scoring from later
+      // CarClass.paxIndex edits.
+      const paxBySrcClassId = new Map(srcClasses.map((c) => [c.id, c.pax]));
       const classIdBySrc = new Map<number, number>();
       for (const c of srcClasses) {
         const id = classIdByCode.get(c.class_name);
@@ -461,7 +466,14 @@ export async function ingestAxdb(
       const entriesData = srcDrivers.map((d) => {
         const classId = classIdBySrc.get(d.class_id);
         const paxClassId = classIdBySrc.get(d.paxmult_id);
-        if (classId == null || paxClassId == null) {
+        // paxIndexApplied mirrors the paxClass's source factor exactly (same
+        // map that fed CarClass.paxIndex), so Entry.paxClass.paxIndex ===
+        // Entry.paxIndexApplied at ingest — the two diverge only if the
+        // CarClass is later edited. AxWare entries usually have paxClass ===
+        // class, but the paxmult_id key is used regardless so a distinct
+        // paxmult class snapshots its own factor.
+        const paxIndexApplied = paxBySrcClassId.get(d.paxmult_id);
+        if (classId == null || paxClassId == null || paxIndexApplied == null) {
           throw new Error(
             `Driver ${d.id} references unknown class (class_id=${d.class_id}, paxmult_id=${d.paxmult_id})`,
           );
@@ -486,6 +498,7 @@ export async function ingestAxdb(
           driverId,
           classId,
           paxClassId,
+          paxIndexApplied,
           carNumber: d.number,
           carDescription: d.car_model,
           bestCommittedRunNumber,

@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { resolveDefaultLeague } from "@/lib/league-config";
+import { appliedPaxIndex } from "@/lib/pax-applied";
 import { prisma } from "@/lib/prisma";
 import { combinedEventLabel } from "@/lib/season-leaderboard";
 
@@ -51,6 +52,7 @@ export type EntryForHistory = {
   driverId: number;
   carNumber: string;
   bestCommittedRunNumber: number | null;
+  paxIndexApplied: unknown;
   class: { code: string };
   paxClass: { code: string; paxIndex: { toString(): string } };
   runs: Array<{
@@ -67,7 +69,7 @@ export function bestPaxMsForEntry(entry: EntryForHistory): {
 } {
   const bestRawMs = bestCorrectedMsForEntry(entry);
   if (bestRawMs == null) return { bestRawMs: null, bestPaxMs: null };
-  const paxIndex = Number(entry.paxClass.paxIndex.toString());
+  const paxIndex = appliedPaxIndex(entry);
   return { bestRawMs, bestPaxMs: Math.round(bestRawMs * paxIndex) };
 }
 
@@ -110,7 +112,12 @@ function loadEventsForDates(
     include: {
       season: { select: { leagueId: true, league: { select: { slug: true, name: true } } } },
       entries: {
-        include: {
+        select: {
+          id: true,
+          driverId: true,
+          carNumber: true,
+          bestCommittedRunNumber: true,
+          paxIndexApplied: true,
           class: { select: { code: true } },
           paxClass: { select: { code: true, paxIndex: true } },
           runs: {

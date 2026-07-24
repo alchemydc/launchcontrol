@@ -138,6 +138,37 @@ export function parseSeasonPaxTable(raw: string): Record<string, number> {
 }
 
 /**
+ * Strict variant of `parseSeasonPaxTable` for admin *write* validation (the
+ * per-season "re-apply factors" action, `src/lib/pax-reapply.ts`) — where a
+ * malformed table must reject the write outright rather than silently drop
+ * entries, since the whole point of that path is a deliberate, admin-owned
+ * history rewrite. Throws on non-object JSON (including arrays/null), and on
+ * any entry whose value isn't a positive finite number (0 and negative
+ * factors are physically meaningless PAX indices, so they're rejected here
+ * too, unlike the lenient read-side parser which only checks "is a finite
+ * number").
+ */
+export function parseSeasonPaxTableStrict(json: string): Record<string, number> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error("paxTable: invalid JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("paxTable: must be a JSON object of code -> factor");
+  }
+  const out: Record<string, number> = {};
+  for (const [code, v] of Object.entries(parsed)) {
+    if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
+      throw new Error(`paxTable.${code}: factor must be a positive finite number`);
+    }
+    out[code] = v;
+  }
+  return out;
+}
+
+/**
  * PAX index precedence for a class code during RMsolo ingest (see
  * docs/superpowers/specs/2026-07-23-league-multiclub-design.md "paxTable
  * precedence"): the season's own paxTable overrides the built-in 2026 table,

@@ -140,6 +140,15 @@ describe("ingestAxdb(synthetic.axdb)", () => {
       expect(e.bestCommittedRunNumber, `entry ${e.id} should have bestCommittedRunNumber set`).not.toBeNull();
     }
   });
+
+  it("stamps paxIndexApplied from the source file's class factor", async () => {
+    const entries = await prisma.entry.findMany({ include: { paxClass: true } });
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.paxIndexApplied).not.toBeNull();
+      expect(Number(e.paxIndexApplied)).toBeCloseTo(Number(e.paxClass.paxIndex), 6);
+    }
+  });
 });
 
 describe("normalizeMemberNum", () => {
