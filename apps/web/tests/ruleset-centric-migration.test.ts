@@ -132,12 +132,19 @@ afterAll(() => {
 });
 
 type SeasonRow = { id: number; leagueId: number; rulesetId: number };
+type SeasonFullRow = { id: number; slug: string; status: string };
 type RulesetRow = { id: number; leagueId: number; name: string; policy: string; paxTable: string };
 
 function season(id: number): SeasonRow {
   return db
     .prepare(`SELECT id, leagueId, rulesetId FROM "Season" WHERE id = ?`)
     .get(id) as SeasonRow;
+}
+
+function seasonFull(id: number): SeasonFullRow {
+  return db
+    .prepare(`SELECT id, slug, status FROM "Season" WHERE id = ?`)
+    .get(id) as SeasonFullRow;
 }
 
 function ruleset(id: number): RulesetRow {
@@ -155,6 +162,14 @@ describe("20260725010000_ruleset_centric_scoring migration", () => {
     expect(cols).not.toContain("scoringPolicy");
     expect(cols).not.toContain("paxTable");
     expect(cols).toContain("rulesetId");
+  });
+
+  it("keeps a rebuilt season's non-key columns (slug, status) intact", () => {
+    // Season 1 was inserted "completed" with slug "2025-season"; season 4
+    // was inserted "active" with slug "2026-season" (a different league,
+    // guarding against a leagueId mixup in the rebuild's column carry-over).
+    expect(seasonFull(1)).toEqual({ id: 1, slug: "2025-season", status: "completed" });
+    expect(seasonFull(4)).toEqual({ id: 4, slug: "2026-season", status: "active" });
   });
 
   it("seeds every pre-existing ScoringSystem row's paxTable with the complete built-in table", () => {

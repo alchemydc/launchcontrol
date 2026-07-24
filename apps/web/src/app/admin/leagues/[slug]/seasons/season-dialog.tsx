@@ -31,9 +31,6 @@ const STATUS_OPTIONS: { value: SeasonStatus; label: string }[] = [
   { value: "completed", label: "Completed" },
 ];
 
-/** Sentinel for "use the league's default ruleset" — not a real ruleset name. */
-const DEFAULT_PRESET = "__league_default__";
-
 type CreateProps = {
   mode: "create";
   leagueSlug: string;
@@ -61,7 +58,9 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [slug, setSlug] = useState("");
   const [plannedEvents, setPlannedEvents] = useState("0");
-  const [presetName, setPresetName] = useState<string>(DEFAULT_PRESET);
+  // Required — no "league default" sentinel: the season must name a ruleset
+  // explicitly (Task R3). Defaults to the first available ruleset.
+  const [presetName, setPresetName] = useState<string>(presets[0]?.name ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,7 +69,7 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
     setYear(String(new Date().getFullYear()));
     setSlug("");
     setPlannedEvents("0");
-    setPresetName(DEFAULT_PRESET);
+    setPresetName(presets[0]?.name ?? "");
     setError(null);
   }
 
@@ -91,10 +90,19 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
       setPending(false);
       return;
     }
+    if (!presetName) {
+      setError("Pick a ruleset — create one on the Rulesets page first");
+      setPending(false);
+      return;
+    }
 
-    const body: Record<string, unknown> = { name, year: yearNum, plannedEvents: plannedNum };
+    const body: Record<string, unknown> = {
+      name,
+      year: yearNum,
+      plannedEvents: plannedNum,
+      presetName,
+    };
     if (slug.trim()) body.slug = slug.trim();
-    if (presetName !== DEFAULT_PRESET) body.presetName = presetName;
 
     try {
       const res = await fetch(`/api/admin/leagues/${leagueSlug}/seasons`, {
@@ -132,9 +140,8 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
         <DialogHeader>
           <DialogTitle>Create season</DialogTitle>
           <DialogDescription>
-            Scores with the selected ruleset (or the league&apos;s oldest ruleset, if none is
-            picked). The reference is live — later edits to the ruleset change this
-            season&apos;s standings too.
+            The season follows this ruleset — editing the ruleset changes this season&apos;s
+            standings.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -179,16 +186,15 @@ function CreateSeasonDialog({ leagueSlug, presets, onCreated }: CreateProps) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="season-preset">Scoring ruleset</Label>
+            <Label htmlFor="season-preset">Ruleset</Label>
             <Select
               value={presetName}
-              onValueChange={(v) => setPresetName(v ?? DEFAULT_PRESET)}
+              onValueChange={(v) => setPresetName(v ?? presetName)}
             >
               <SelectTrigger id="season-preset" className="w-full">
-                <SelectValue />
+                <SelectValue placeholder="Select a ruleset" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={DEFAULT_PRESET}>League default (oldest ruleset)</SelectItem>
                 {presets.map((p) => (
                   <SelectItem key={p.id} value={p.name}>
                     {p.name}
@@ -300,9 +306,8 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
         <DialogHeader>
           <DialogTitle>Edit season</DialogTitle>
           <DialogDescription>
-            Scoring comes from the season&apos;s ruleset (a live reference). To change how this
-            season scores, pick a different ruleset here or edit the ruleset itself in the
-            ruleset library.
+            The season follows this ruleset — editing the ruleset changes this season&apos;s
+            standings. Reassign it below, or edit the ruleset itself in the ruleset library.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -361,7 +366,7 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-season-ruleset">Scoring ruleset</Label>
+            <Label htmlFor="edit-season-ruleset">Ruleset</Label>
             <Select value={rulesetId} onValueChange={(v) => setRulesetId(v ?? rulesetId)}>
               <SelectTrigger id="edit-season-ruleset" className="w-full">
                 <SelectValue />
@@ -376,8 +381,8 @@ function EditSeasonDialog({ leagueSlug, season, presets, onClose, onSaved }: Edi
             </Select>
           </div>
           <p className="text-xs text-muted-foreground">
-            Changing the ruleset recomputes this season&apos;s standings immediately — including
-            past seasons. Historical results pages will reflect the new rules.
+            Reassigning recomputes this season&apos;s standings immediately — including past
+            seasons. Historical results pages will reflect the new rules.
           </p>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

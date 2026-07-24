@@ -22,7 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ScoringPolicy } from "@/lib/scoring-policy";
-import { buildPaxRows, canonicalPaxJson, serializePaxOverrides } from "@/lib/pax-table-edit";
+import { canonicalPaxJson } from "@/lib/pax-table-edit";
+import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 import { PaxTableEditor } from "./pax-table-editor";
 import type { PresetRow } from "./presets-table";
 
@@ -50,6 +51,22 @@ function serializePolicy(fields: {
   return JSON.stringify(policy);
 }
 
+type SeedChoice = "scca" | "empty";
+
+const SEED_OPTIONS: { value: SeedChoice; label: string }[] = [
+  { value: "scca", label: "SCCA 2026 factors" },
+  { value: "empty", label: "Empty" },
+];
+
+function seedTableJson(choice: SeedChoice): string {
+  return choice === "scca" ? JSON.stringify(RMSOLO_PAX_2026) : "{}";
+}
+
+function seasonsSummary(seasons: { name: string; slug: string }[]): string {
+  const n = seasons.length;
+  return `Used by ${n} season${n === 1 ? "" : "s"}: ${seasons.map((s) => s.name).join(", ")}.`;
+}
+
 type CreateProps = {
   mode: "create";
   leagueSlug: string;
@@ -75,9 +92,10 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
   const [drops, setDrops] = useState<Drops>(DEFAULT_POLICY.drops);
   const [paxSection, setPaxSection] = useState(DEFAULT_POLICY.paxSection);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(DEFAULT_POLICY.conePenaltyMs));
-  // Overrides-only JSON (PaxTableEditor's serialization); the server merges
-  // it over the built-in table so the stored ruleset table stays COMPLETE.
-  const [paxTable, setPaxTable] = useState("{}");
+  const [seedChoice, setSeedChoice] = useState<SeedChoice>("scca");
+  // The COMPLETE table (Task R3 — the editor owns the full table, not just
+  // overrides); starts at the chosen seed and is freely editable from there.
+  const [paxTable, setPaxTable] = useState(() => seedTableJson("scca"));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,8 +104,14 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
     setDrops(DEFAULT_POLICY.drops);
     setPaxSection(DEFAULT_POLICY.paxSection);
     setConePenaltyMs(String(DEFAULT_POLICY.conePenaltyMs));
-    setPaxTable("{}");
+    setSeedChoice("scca");
+    setPaxTable(seedTableJson("scca"));
     setError(null);
+  }
+
+  function handleSeedChoiceChange(next: SeedChoice) {
+    setSeedChoice(next);
+    setPaxTable(seedTableJson(next));
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -192,8 +216,23 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>PAX factors</Label>
-            <PaxTableEditor value={paxTable} onChange={setPaxTable} />
+            <Label htmlFor="preset-pax-seed">PAX factors — start from</Label>
+            <Select
+              value={seedChoice}
+              onValueChange={(v) => handleSeedChoiceChange(v as SeedChoice)}
+            >
+              <SelectTrigger id="preset-pax-seed" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SEED_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <PaxTableEditor key={seedChoice} value={paxTable} onChange={setPaxTable} />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
@@ -221,13 +260,14 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
   const [drops, setDrops] = useState<Drops>(initialPolicy.drops);
   const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(initialPolicy.conePenaltyMs));
-  // Overrides-only JSON, derived from the stored COMPLETE table: what the
-  // PaxTableEditor edits and what the server re-merges over the built-in
-  // table on save.
-  const [initialOverrides] = useState(() => serializePaxOverrides(buildPaxRows(preset.paxTable)));
-  const [paxTable, setPaxTable] = useState(initialOverrides);
+  // The COMPLETE table, editable in full (Task R3 — no override semantics).
+  const [initialPaxTable] = useState(preset.paxTable);
+  const [paxTable, setPaxTable] = useState(initialPaxTable);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reapplySeasons, setReapplySeasons] = useState<{ name: string; slug: string }[] | null>(
+    null,
+  );
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -247,12 +287,14 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
       coneMs !== initialPolicy.conePenaltyMs ||
       preset.policy === null; // unparseable stored row — always rewrite it in canonical form
 
+    const paxTableChanged = canonicalPaxJson(paxTable) !== canonicalPaxJson(initialPaxTable);
+
     const patch: Record<string, unknown> = {};
     if (name !== preset.name) patch.name = name;
     if (policyChanged) {
       patch.policyJson = serializePolicy({ drops, paxSection, conePenaltyMs: coneMs });
     }
-    if (canonicalPaxJson(paxTable) !== canonicalPaxJson(initialOverrides)) {
+    if (paxTableChanged) {
       patch.paxTableJson = paxTable;
     }
 
@@ -274,7 +316,15 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
       const json = (await res.json()) as Record<string, unknown>;
       if (res.ok) {
         setPending(false);
-        onSaved();
+        if (paxTableChanged && preset.seasons.length > 0) {
+          // Follow-up prompt: the ruleset's PAX table just changed, and one or
+          // more seasons already reference it — offer a per-season Re-apply
+          // so already-ingested entries can pick up the new factors now,
+          // rather than waiting for the next ingest.
+          setReapplySeasons(preset.seasons);
+        } else {
+          onSaved();
+        }
       } else {
         setError((json["error"] as string) ?? "Update failed");
         setPending(false);
@@ -293,72 +343,166 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
       }}
     >
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit scoring ruleset</DialogTitle>
-          <DialogDescription>
-            Seasons reference a ruleset live — saving changes here recomputes standings for
-            every season pointed at this ruleset, including past seasons.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-preset-name">Name</Label>
-            <Input
-              id="edit-preset-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-preset-drops">Drops</Label>
-            <Select value={drops} onValueChange={(v) => setDrops(v as Drops)}>
-              <SelectTrigger id="edit-preset-drops" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {DROPS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <Label htmlFor="edit-preset-pax-section">Overall PAX standings section</Label>
-            <Switch
-              id="edit-preset-pax-section"
-              checked={paxSection}
-              onCheckedChange={setPaxSection}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-preset-cone-penalty">Cone penalty (ms)</Label>
-            <Input
-              id="edit-preset-cone-penalty"
-              type="number"
-              min={0}
-              value={conePenaltyMs}
-              onChange={(e) => setConePenaltyMs(e.target.value)}
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>PAX factors</Label>
-            <PaxTableEditor value={paxTable} onChange={setPaxTable} />
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </form>
+        {reapplySeasons ? (
+          <ReapplyPromptView leagueSlug={leagueSlug} seasons={reapplySeasons} onDone={onSaved} />
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Edit scoring ruleset</DialogTitle>
+              <DialogDescription>
+                Seasons reference a ruleset live — saving changes here recomputes standings for
+                every season pointed at this ruleset, including past seasons.
+                {preset.seasons.length > 0 && <> {seasonsSummary(preset.seasons)}</>}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-preset-name">Name</Label>
+                <Input
+                  id="edit-preset-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-preset-drops">Drops</Label>
+                <Select value={drops} onValueChange={(v) => setDrops(v as Drops)}>
+                  <SelectTrigger id="edit-preset-drops" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DROPS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label htmlFor="edit-preset-pax-section">Overall PAX standings section</Label>
+                <Switch
+                  id="edit-preset-pax-section"
+                  checked={paxSection}
+                  onCheckedChange={setPaxSection}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-preset-cone-penalty">Cone penalty (ms)</Label>
+                <Input
+                  id="edit-preset-cone-penalty"
+                  type="number"
+                  min={0}
+                  value={conePenaltyMs}
+                  onChange={(e) => setConePenaltyMs(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>PAX factors</Label>
+                <PaxTableEditor value={paxTable} onChange={setPaxTable} />
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={pending}>
+                  {pending ? "Saving..." : "Save"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+type ReapplyStatus = "idle" | "pending" | "done" | "error";
+
+/**
+ * Follow-up prompt shown after a ruleset save that changed the PAX table:
+ * one "Re-apply" button per season currently assigned to the ruleset, each
+ * independently POSTing the season's existing pax-reapply route. Purely
+ * additive — closing without re-applying anything is fine, since the next
+ * ingest (or a later manual Re-apply from the Seasons page) picks up the new
+ * table regardless.
+ */
+function ReapplyPromptView({
+  leagueSlug,
+  seasons,
+  onDone,
+}: {
+  leagueSlug: string;
+  seasons: { name: string; slug: string }[];
+  onDone: () => void;
+}) {
+  const [status, setStatus] = useState<Record<string, ReapplyStatus>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  async function reapply(seasonSlug: string) {
+    setStatus((s) => ({ ...s, [seasonSlug]: "pending" }));
+    try {
+      const res = await fetch(
+        `/api/admin/leagues/${leagueSlug}/seasons/${seasonSlug}/pax-reapply`,
+        { method: "POST" },
+      );
+      const json = (await res.json()) as Record<string, unknown>;
+      if (res.ok) {
+        setStatus((s) => ({ ...s, [seasonSlug]: "done" }));
+      } else {
+        setStatus((s) => ({ ...s, [seasonSlug]: "error" }));
+        setErrors((e) => ({ ...e, [seasonSlug]: (json["error"] as string) ?? "Re-apply failed" }));
+      }
+    } catch {
+      setStatus((s) => ({ ...s, [seasonSlug]: "error" }));
+      setErrors((e) => ({ ...e, [seasonSlug]: "Network error — could not reach the server" }));
+    }
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Re-apply updated PAX factors?</DialogTitle>
+        <DialogDescription>
+          This ruleset&apos;s PAX table changed. Seasons keep the factor that was in force when
+          their results were ingested — re-apply below to rewrite already-ingested entries to the
+          new table. Optional: this can also be done later from each season&apos;s Re-apply PAX
+          button on the Seasons page.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex flex-col gap-2">
+        {seasons.map((season) => {
+          const st = status[season.slug] ?? "idle";
+          return (
+            <div
+              key={season.slug}
+              className="flex items-center justify-between gap-4 rounded-md border px-3 py-2"
+            >
+              <span className="text-sm">{season.name}</span>
+              <div className="flex items-center gap-2">
+                {st === "error" && (
+                  <span className="text-xs text-destructive">{errors[season.slug]}</span>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={st === "pending" || st === "done"}
+                  onClick={() => reapply(season.slug)}
+                >
+                  {st === "pending" ? "Re-applying..." : st === "done" ? "Re-applied" : "Re-apply"}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <DialogFooter>
+        <Button onClick={onDone}>Done</Button>
+      </DialogFooter>
+    </>
   );
 }

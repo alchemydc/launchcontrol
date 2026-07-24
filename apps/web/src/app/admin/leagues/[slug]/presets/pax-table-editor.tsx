@@ -1,18 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { buildPaxRows, serializePaxOverrides, type PaxRow } from "@/lib/pax-table-edit";
+import { rowsToTable, tableToRows, type PaxRow } from "@/lib/pax-table-edit";
 
 /**
- * Effective PAX factors for a ruleset: the built-in RMSOLO_PAX_2026 table
- * merged with this ruleset's overrides. Editing a value creates (or updates)
- * an override; only overrides are ever emitted via `onChange` — the server
- * (`scoring-system.ts`) re-merges them over the built-in table so the stored
- * ruleset table stays COMPLETE.
+ * Full-table PAX factor editor for a ruleset. Since Task R3 the stored
+ * `ScoringSystem.paxTable` is the ONLY table (no built-in fallback, no
+ * override semantics) — every row here is a real code+factor pair the admin
+ * can edit, add, or remove outright, and `onChange` always emits the
+ * COMPLETE table (see `pax-table-edit.ts`'s `rowsToTable`). A code removed
+ * here is genuinely gone from the emitted table, not merged back in by the
+ * caller.
  */
 export function PaxTableEditor({
   value,
@@ -21,31 +22,19 @@ export function PaxTableEditor({
   value: string;
   onChange: (json: string) => void;
 }) {
-  const [rows, setRows] = useState<PaxRow[]>(() => buildPaxRows(value));
+  const [rows, setRows] = useState<PaxRow[]>(() => tableToRows(value));
   const [newCode, setNewCode] = useState("");
   const [newValue, setNewValue] = useState("1.000");
   const [addError, setAddError] = useState<string | null>(null);
 
   function commit(nextRows: PaxRow[]) {
     setRows(nextRows);
-    onChange(serializePaxOverrides(nextRows));
+    onChange(rowsToTable(nextRows));
   }
 
   function handleValueChange(code: string, raw: number) {
     if (Number.isNaN(raw)) return;
-    commit(
-      rows.map((r) =>
-        r.code === code ? { ...r, value: raw, overridden: r.builtin === null || raw !== r.builtin } : r,
-      ),
-    );
-  }
-
-  function handleReset(code: string) {
-    commit(
-      rows.map((r) =>
-        r.code === code && r.builtin !== null ? { ...r, value: r.builtin, overridden: false } : r,
-      ),
-    );
+    commit(rows.map((r) => (r.code === code ? { ...r, value: raw } : r)));
   }
 
   function handleRemove(code: string) {
@@ -68,9 +57,7 @@ export function PaxTableEditor({
       return;
     }
     setAddError(null);
-    const nextRows = [...rows, { code, builtin: null, value: parsed, overridden: true }].sort((a, b) =>
-      a.code.localeCompare(b.code),
-    );
+    const nextRows = [...rows, { code, value: parsed }].sort((a, b) => a.code.localeCompare(b.code));
     commit(nextRows);
     setNewCode("");
     setNewValue("1.000");
@@ -79,9 +66,9 @@ export function PaxTableEditor({
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-muted-foreground">
-        Factors below are the built-in 2026 SCCA/RMsolo table. Edit a value to override it for
-        this ruleset — every season referencing this ruleset scores with these factors on its
-        next ingest (or after Re-apply PAX on the season).
+        The complete set of PAX/RTP factors for this ruleset. Every season referencing it scores
+        with these factors on its next ingest (or after Re-apply PAX on the season). Remove a row
+        to drop that class entirely — an unlisted class resolves to 1.0.
       </p>
       <div className="max-h-64 overflow-y-auto rounded-lg border">
         <Table>
@@ -101,39 +88,24 @@ export function PaxTableEditor({
                   />
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2">
-                    {row.builtin !== null && (
-                      <span className="text-xs text-muted-foreground">
-                        built-in {row.builtin.toFixed(3)}
-                      </span>
-                    )}
-                    {row.overridden && <Badge variant="secondary">Overridden</Badge>}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {row.overridden && row.builtin !== null && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleReset(row.code)}
-                    >
-                      Reset
-                    </Button>
-                  )}
-                  {row.builtin === null && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemove(row.code)}
-                    >
-                      Remove
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemove(row.code)}
+                  >
+                    Remove
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
+            {rows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={3} className="text-center text-muted-foreground">
+                  No PAX factors — every class resolves to 1.0.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>

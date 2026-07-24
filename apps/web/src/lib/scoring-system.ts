@@ -17,25 +17,34 @@ import { parseScoringPolicy } from "@/lib/scoring-policy";
  * per-entry `Entry.paxIndexApplied` snapshots are untouched — see
  * pax-reapply.ts for the explicit rewrite action).
  *
- * `paxTable` is stored COMPLETE (no built-in fallback at read time): a
- * create without an explicit table seeds the full built-in RMSOLO_PAX_2026
- * table, and any provided table is strict-validated then MERGED over the
- * built-in — mirroring the migration's json_patch(built-in, overrides)
- * semantics, so clients may send just overrides (the pax-table editor's
- * serialization) or a full table with identical results. Extra codes are
- * inert for leagues whose ingest never reads the table (AxWare).
+ * `paxTable` is stored COMPLETE (no built-in fallback at read time) with
+ * different semantics for create vs. update:
+ *  - **create**: a table absent from the request seeds the full built-in
+ *    RMSOLO_PAX_2026 table (the "SCCA 2026 factors" seed choice in the
+ *    admin UI); an explicit table — including `{}` (the "Empty" seed
+ *    choice) — is strict-validated and stored AS-IS.
+ *  - **update**: authoritative-replace. The caller (the ruleset editor, which
+ *    now edits the FULL table, not just overrides) sends the complete table
+ *    it wants stored; it is strict-validated and stored AS-IS, with no
+ *    built-in merge. This matters because removing a code is a real,
+ *    intentional edit — Re-apply PAX's blast radius is "codes present in the
+ *    table" — and a merge-on-write would silently resurrect any built-in
+ *    code the admin tried to delete.
+ * Extra codes are inert for leagues whose ingest never reads the table
+ * (AxWare).
  */
 
-function mergedPaxTableJson(paxTableJson: string | undefined): string {
-  const overrides = paxTableJson === undefined ? {} : parseSeasonPaxTableStrict(paxTableJson);
-  return JSON.stringify({ ...RMSOLO_PAX_2026, ...overrides });
+function seedOrValidatePaxTableJson(paxTableJson: string | undefined): string {
+  if (paxTableJson === undefined) return JSON.stringify(RMSOLO_PAX_2026);
+  return JSON.stringify(parseSeasonPaxTableStrict(paxTableJson));
 }
 
 export type CreateScoringSystemOptions = {
   leagueSlug: string;
   name: string;
   policyJson: string;
-  /** Optional code->factor JSON; strict-validated and merged over the built-in table. */
+  /** Optional code->factor JSON. Absent seeds the full built-in table; given
+   *  (including `{}`) is strict-validated and stored as-is. */
   paxTableJson?: string;
 };
 
@@ -61,7 +70,7 @@ export async function createScoringSystem(
   // policy shape — never write a ScoringSystem row with a policy scoring
   // code can't parse. Same contract for the paxTable (strict parser).
   const policy = parseScoringPolicy(policyJson);
-  const paxTable = mergedPaxTableJson(paxTableJson);
+  const paxTable = seedOrValidatePaxTableJson(paxTableJson);
 
   return client.scoringSystem.create({
     data: { leagueId: league.id, name, policy: JSON.stringify(policy), paxTable },
@@ -73,7 +82,7 @@ export type ScoringSystemRef = { leagueSlug: string; name: string };
 export type UpdateScoringSystemPatch = Partial<{
   name: string;
   policyJson: string;
-  /** Code->factor JSON; strict-validated and merged over the built-in table (send only overrides). */
+  /** Code->factor JSON — the COMPLETE table (authoritative-replace: strict-validated and stored as-is, no built-in merge). */
   paxTableJson: string;
 }>;
 
@@ -115,7 +124,10 @@ export async function updateScoringSystem(
   }
 
   if (patch.paxTableJson !== undefined) {
-    data.paxTable = mergedPaxTableJson(patch.paxTableJson);
+    // Authoritative-replace: no built-in merge (see the module docstring) —
+    // whatever table the caller sends becomes the ruleset's stored table,
+    // so removing a code actually removes it.
+    data.paxTable = JSON.stringify(parseSeasonPaxTableStrict(patch.paxTableJson));
   }
 
   return client.scoringSystem.update({ where: { id: preset.id }, data });

@@ -1,24 +1,32 @@
-import { RMSOLO_PAX_2026, parseSeasonPaxTable } from "@/lib/rmsolo-pax";
+import { parseSeasonPaxTable } from "@/lib/rmsolo-pax";
 
-export type PaxRow = { code: string; builtin: number | null; value: number; overridden: boolean };
+export type PaxRow = { code: string; value: number };
 
-/** Union of built-in 2026 codes and ruleset overrides, sorted by code. */
-export function buildPaxRows(overridesJson: string): PaxRow[] {
-  const overrides = parseSeasonPaxTable(overridesJson);
-  const codes = [...new Set([...Object.keys(RMSOLO_PAX_2026), ...Object.keys(overrides)])].sort();
-  return codes.map((code) => {
-    const builtin = RMSOLO_PAX_2026[code] ?? null;
-    const value = overrides[code] ?? builtin ?? 1.0;
-    return { code, builtin, value, overridden: builtin === null || value !== builtin };
-  });
+/**
+ * COMPLETE ruleset paxTable JSON -> editable rows, sorted by code. Since
+ * Task R3 the editor owns the FULL table (no built-in/override split) —
+ * every row is just a code+factor pair the admin can edit, add, or remove.
+ * Parsing is lenient (`parseSeasonPaxTable`): a malformed stored table
+ * renders as no rows rather than crashing the editor, and an entry whose
+ * value isn't a finite number is silently dropped.
+ */
+export function tableToRows(tableJson: string): PaxRow[] {
+  const table = parseSeasonPaxTable(tableJson);
+  return Object.entries(table)
+    .map(([code, value]) => ({ code, value }))
+    .sort((a, b) => a.code.localeCompare(b.code));
 }
 
-/** Only differences from the built-in table (plus custom codes) persist as overrides. */
-export function serializePaxOverrides(rows: PaxRow[]): string {
+/**
+ * Rows -> a COMPLETE code->factor JSON object, sorted by code for stable
+ * diffs. This is authoritative: a code missing from `rows` is genuinely
+ * absent from the output — there is no built-in table to fall back on or
+ * merge against (see scoring-system.ts's update semantics).
+ */
+export function rowsToTable(rows: PaxRow[]): string {
+  const sorted = [...rows].sort((a, b) => a.code.localeCompare(b.code));
   const out: Record<string, number> = {};
-  for (const r of rows) {
-    if (r.builtin === null || r.value !== r.builtin) out[r.code] = r.value;
-  }
+  for (const r of sorted) out[r.code] = r.value;
   return JSON.stringify(out);
 }
 

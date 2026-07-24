@@ -24,6 +24,10 @@ export type PresetRow = {
   policy: ScoringPolicy | null;
   /** Raw COMPLETE code->factor JSON string — edited via PaxTableEditor, not parsed for display here. */
   paxTable: string;
+  /** Seasons currently pointing at this ruleset (live reference) — drives the
+   *  "Used by N seasons" column and the edit dialog's affected-season warning
+   *  and post-save Re-apply prompt. */
+  seasons: { name: string; slug: string }[];
 };
 
 const DROPS_LABEL: Record<ScoringPolicy["drops"], string> = {
@@ -48,6 +52,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
             <TableHead>Drops</TableHead>
             <TableHead>PAX section</TableHead>
             <TableHead>Cone penalty</TableHead>
+            <TableHead>Used by</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -70,6 +75,13 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
                   Stored policy could not be parsed — edit to fix.
                 </TableCell>
               )}
+              <TableCell
+                title={row.seasons.length > 0 ? row.seasons.map((s) => s.name).join(", ") : undefined}
+              >
+                {row.seasons.length === 0
+                  ? "No seasons"
+                  : `${row.seasons.length} season${row.seasons.length === 1 ? "" : "s"}`}
+              </TableCell>
               <TableCell>
                 <Button variant="outline" size="sm" onClick={() => setEditingRow(row)}>
                   Edit
@@ -79,7 +91,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
           ))}
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
+              <TableCell colSpan={6} className="text-center text-muted-foreground">
                 No scoring rulesets yet.
               </TableCell>
             </TableRow>

@@ -38,6 +38,7 @@ export default async function AdminPresetsPage({
   const presets = await prisma.scoringSystem.findMany({
     where: { leagueId: league.id },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    include: { seasons: { select: { name: true, slug: true }, orderBy: { name: "asc" } } },
   });
 
   const rows: PresetRow[] = presets.map((preset) => {
@@ -50,7 +51,13 @@ export default async function AdminPresetsPage({
     } catch {
       policy = null;
     }
-    return { id: preset.id, name: preset.name, policy, paxTable: preset.paxTable };
+    return {
+      id: preset.id,
+      name: preset.name,
+      policy,
+      paxTable: preset.paxTable,
+      seasons: preset.seasons,
+    };
   });
 
   return (

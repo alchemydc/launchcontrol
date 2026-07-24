@@ -1,52 +1,62 @@
 import { describe, expect, it } from "vitest";
-import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
-import { buildPaxRows, canonicalPaxJson, serializePaxOverrides } from "@/lib/pax-table-edit";
+import { canonicalPaxJson, rowsToTable, tableToRows } from "@/lib/pax-table-edit";
 
-describe("buildPaxRows", () => {
-  it("with no overrides, every builtin code is present and unoverridden", () => {
-    const rows = buildPaxRows("{}");
-    const builtinCodes = Object.keys(RMSOLO_PAX_2026).sort();
-    expect(rows.map((r) => r.code)).toEqual(builtinCodes);
-    for (const row of rows) {
-      expect(row.overridden).toBe(false);
-      expect(row.value).toBe(row.builtin);
-    }
+// Task R3: the ruleset editor now edits the FULL paxTable directly — no
+// built-in/override distinction (that provisional semantics from Task R2 is
+// gone, along with buildPaxRows/serializePaxOverrides). tableToRows/rowsToTable
+// are a plain table<->rows mapping; canonicalPaxJson is unchanged.
+
+describe("tableToRows", () => {
+  it("an empty table produces no rows", () => {
+    expect(tableToRows("{}")).toEqual([]);
   });
 
-  it("an override produces a row reflecting the overridden value", () => {
-    const rows = buildPaxRows(JSON.stringify({ CS: 0.9 }));
-    const cs = rows.find((r) => r.code === "CS");
-    expect(cs).toBeDefined();
-    expect(cs!.value).toBe(0.9);
-    expect(cs!.overridden).toBe(true);
-    expect(serializePaxOverrides(rows)).toBe(JSON.stringify({ CS: 0.9 }));
+  it("every code in the table becomes a row, sorted by code", () => {
+    const rows = tableToRows(JSON.stringify({ CS: 0.814, AS: 0.83 }));
+    expect(rows).toEqual([
+      { code: "AS", value: 0.83 },
+      { code: "CS", value: 0.814 },
+    ]);
   });
 
-  it("a custom (non-builtin) code round-trips through build + serialize", () => {
-    const rows = buildPaxRows(JSON.stringify({ ZZZ: 0.5 }));
-    const zzz = rows.find((r) => r.code === "ZZZ");
-    expect(zzz).toBeDefined();
-    expect(zzz!.builtin).toBeNull();
-    expect(zzz!.value).toBe(0.5);
-    expect(zzz!.overridden).toBe(true);
-    expect(serializePaxOverrides(rows)).toBe(JSON.stringify({ ZZZ: 0.5 }));
+  it("a malformed table JSON produces no rows rather than throwing", () => {
+    expect(tableToRows("not json")).toEqual([]);
   });
 
-  it("a stored override equal to the builtin value is not reported as overridden", () => {
-    const builtinCs = RMSOLO_PAX_2026["CS"];
-    expect(builtinCs).toBeDefined();
-    const rows = buildPaxRows(JSON.stringify({ CS: builtinCs }));
-    const cs = rows.find((r) => r.code === "CS");
-    expect(cs).toBeDefined();
-    expect(cs!.overridden).toBe(false);
+  it("drops an entry whose value isn't a finite number, keeping the rest", () => {
+    const rows = tableToRows(JSON.stringify({ CS: 0.814, BAD: "0.9" }));
+    expect(rows).toEqual([{ code: "CS", value: 0.814 }]);
+  });
+});
+
+describe("rowsToTable", () => {
+  it("an empty row list serializes to an empty object", () => {
+    expect(rowsToTable([])).toBe("{}");
   });
 
-  it("editing a row's value back to its builtin drops it from serialization", () => {
-    const rows = buildPaxRows(JSON.stringify({ CS: 0.9 }));
-    const reverted = rows.map((r) =>
-      r.code === "CS" ? { ...r, value: r.builtin!, overridden: false } : r,
-    );
-    expect(serializePaxOverrides(reverted)).toBe("{}");
+  it("serializes rows to a code->factor object, key order sorted", () => {
+    const json = rowsToTable([
+      { code: "CS", value: 0.9 },
+      { code: "AS", value: 0.83 },
+    ]);
+    expect(JSON.parse(json)).toEqual({ AS: 0.83, CS: 0.9 });
+    // Sorted key order for stable diffs / equality with canonicalPaxJson.
+    expect(json).toBe(JSON.stringify({ AS: 0.83, CS: 0.9 }));
+  });
+
+  it("round-trips through tableToRows for an arbitrary table, including a non-builtin code", () => {
+    const original = JSON.stringify({ CS: 0.9, ZZZ: 0.5 });
+    const rows = tableToRows(original);
+    expect(canonicalPaxJson(rowsToTable(rows))).toBe(canonicalPaxJson(original));
+  });
+
+  it("a removed row is genuinely absent from the serialized table — no built-in resurrection", () => {
+    // Simulates removing a builtin-covered code (e.g. "CS") from the editor:
+    // rowsToTable must not re-add it from anywhere.
+    const rows = tableToRows(JSON.stringify({ CS: 0.9, AS: 0.83 })).filter((r) => r.code !== "CS");
+    const table = JSON.parse(rowsToTable(rows)) as Record<string, number>;
+    expect(table).toEqual({ AS: 0.83 });
+    expect(table).not.toHaveProperty("CS");
   });
 });
 
