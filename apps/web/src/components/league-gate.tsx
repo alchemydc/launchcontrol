@@ -17,11 +17,25 @@
  * SESSION_SECRET configured (login-less) skip the session read entirely and
  * render no role badges — this page must stay reachable even when session
  * infrastructure isn't set up.
+ *
+ * A "Members only" lock badge (lucide-react `Lock`) renders on any card the
+ * current viewer can't get into — a "required"-gated league with no allowing
+ * membership/superuser/org match, per the SAME `decideLeagueAccess` decision
+ * the league's own landing page enforces. Unlike role badges, this is
+ * computed for every viewer including anonymous/login-less ones (an
+ * anonymous viewer is just `decideLeagueAccess`'s empty-session case). Purely
+ * informational — the card stays a normal clickable link; the league landing
+ * page is what actually redirects.
  */
 
 import Link from "next/link";
+import { Lock } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { listLeagueDirectory, type LeagueDirectoryEntry } from "@/lib/league-directory";
+import { getLeagueConfigForSlug } from "@/lib/league-config";
+import { decideLeagueAccess, type LeagueAccessDecision } from "@/lib/league-access";
+import { getMembershipRole } from "@/lib/membership";
+import { isSuperUser } from "@/lib/super-user";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 
@@ -60,35 +74,64 @@ function initials(name: string): string {
 }
 
 /**
- * Per-league viewer role, keyed by league id — `null` when no session (or no
- * SESSION_SECRET configured) rather than doing a per-league membership
- * lookup for an anonymous viewer. Small-N (single-digit league counts), same
- * trade-off as `listLeagueDirectory`'s per-league queries.
+ * Per-league viewer role AND access decision, both keyed by league id.
+ * Roles are `undefined` when no session (or no SESSION_SECRET configured)
+ * rather than doing a per-league membership lookup for an anonymous viewer —
+ * small-N (single-digit league counts), same trade-off as
+ * `listLeagueDirectory`'s per-league queries.
+ *
+ * Access decisions ARE computed even for anonymous/login-less viewers — an
+ * anonymous session is just `decideLeagueAccess`'s empty-session case, which
+ * resolves to "redirect" for any "required" gate with no DB read needed
+ * beyond the league's own config. That's what drives the lock badge below:
+ * informational only (the league landing page still owns the real gate), but
+ * it must reflect the SAME decision that landing would reach, so this reuses
+ * `decideLeagueAccess` + `getLeagueConfigForSlug`'s msrOrgId fallback chain
+ * rather than reading `League.msrOrgId` raw off `listLeagueDirectory`'s rows
+ * (which doesn't carry it).
  */
 async function resolveViewerRoles(
   leagues: LeagueDirectoryEntry[],
-): Promise<Map<number, string>> {
+): Promise<{ roles: Map<number, string>; access: Map<number, LeagueAccessDecision> }> {
   const roles = new Map<number, string>();
+  const access = new Map<number, LeagueAccessDecision>();
 
   // getSession() requires SESSION_SECRET (>= 32 chars) or throws — guard so
-  // login-less deployments can still render this public page.
+  // login-less deployments can still render this public page. No session
+  // infra just means every viewer is anonymous for access-decision purposes
+  // too (msrUid/msrOrgIds undefined below).
   const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) return roles;
+  const hasSessionSecret = Boolean(secret && secret.length >= 32);
+  const session = hasSessionSecret ? await getSession() : null;
+  const msrUid = session?.msrUid;
 
-  const session = await getSession();
-  const msrUid = session.msrUid;
-  if (!msrUid) return roles;
+  const superUser = msrUid ? await isSuperUser(msrUid) : false;
 
   await Promise.all(
     leagues.map(async (league) => {
-      const membership = await prisma.leagueMembership.findUnique({
-        where: { leagueId_msrUid: { leagueId: league.id, msrUid } },
-      });
-      if (membership) roles.set(league.id, membership.role);
+      const [config, membershipRole] = await Promise.all([
+        getLeagueConfigForSlug(league.slug),
+        msrUid
+          ? getMembershipRole(prisma, league.id, msrUid)
+          : Promise.resolve(null),
+      ]);
+
+      if (membershipRole) roles.set(league.id, membershipRole);
+
+      access.set(
+        league.id,
+        decideLeagueAccess({
+          accessGate: config?.accessGate ?? "required",
+          msrOrgId: config?.msrOrgId ?? null,
+          membershipRole,
+          superUser,
+          session: { msrUid, msrOrgIds: session?.msrOrgIds },
+        }),
+      );
     }),
   );
 
-  return roles;
+  return { roles, access };
 }
 
 function roleBadge(role: string | undefined): React.ReactNode {
@@ -99,9 +142,26 @@ function roleBadge(role: string | undefined): React.ReactNode {
   );
 }
 
+/**
+ * Lock badge for a gated league the current viewer can't get into —
+ * informational only (the card stays a normal clickable link; the league
+ * landing page is what actually enforces the gate). Renders for any
+ * non-"allow" decision, including "deny" (an explicitly BLOCKED member):
+ * from the directory's point of view that card is equally inaccessible.
+ */
+function lockBadge(decision: LeagueAccessDecision | undefined): React.ReactNode {
+  if (!decision || decision === "allow") return null;
+  return (
+    <Badge variant="outline">
+      <Lock />
+      Members only
+    </Badge>
+  );
+}
+
 export async function LeagueGate() {
   const leagues = await listLeagueDirectory();
-  const roles = await resolveViewerRoles(leagues);
+  const { roles, access } = await resolveViewerRoles(leagues);
 
   return (
     <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12">
@@ -166,6 +226,7 @@ export async function LeagueGate() {
                   <Badge variant="outline">{league.eventCount} events</Badge>
                   <Badge variant="outline">{league.driverCount} drivers</Badge>
                   {roleBadge(roles.get(league.id))}
+                  {lockBadge(access.get(league.id))}
                 </div>
               </div>
             </Link>
