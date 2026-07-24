@@ -33,8 +33,8 @@ Open http://localhost:3000. See [docs/BUILD.md](docs/BUILD.md) for ingest CLI, s
 Tenant config lives in the database, not environment variables. A deployment's branding, access rule, and scoring all resolve from `League`/`Season`/`ScoringSystem` rows — see `apps/web/.env.example` for connection/secrets config (DB, MSR, SmugMug, session).
 
 - **`League`** — one row per club/tenant: site branding (name, title, description, footer), the MSR access gate and org, and SmugMug lookup defaults. `DEFAULT_LEAGUE_SLUG` (env, default `pca-rmr`) names which `League` row the **legacy, unprefixed routes** (`/`, `/leaderboard[/year]`, `/events/[slug]`, `/drivers/[id]`) serve — a fresh DB seeds the `pca-rmr` row via the League Foundation migration, reproducing the original production deployment byte-for-byte. A deployment isn't limited to one league, though: every `League` row is also publicly browsable at its own `/l/[league]` URLs (see "Multi-league browsing" below), so one deployment can host several clubs side by side.
-- **`ScoringSystem`** — named scoring presets owned by a league (e.g. "PCA Classic").
-- **`Season`** — one per league-year, addressed by a `slug` unique within its league (defaults to `slugify(name)`; multiple seasons in the same year are allowed — each gets its own slug, e.g. a "2026 Summer Series" and a later "2026 Winter Series"). Its `scoringPolicy` is a **snapshot** copy of a `ScoringSystem` preset's policy, taken at creation time — never a live reference — so editing a preset later never reshapes a past season's standings.
+- **`ScoringSystem`** (UI: **Ruleset**) — named scoring configuration owned by a league (e.g. "PCA Classic"), including its policy and complete PAX-factor table.
+- **`Season`** — one per league-year, addressed by a `slug` unique within its league (defaults to `slugify(name)`; multiple seasons in the same year are allowed — each gets its own slug, e.g. a "2026 Summer Series" and a later "2026 Winter Series"). Each season points to a Ruleset by live reference, so policy edits immediately affect every assigned season. Existing entries retain their applied PAX factors until an admin explicitly re-applies the edited table to that season.
 
 ### Multi-league browsing
 
@@ -53,16 +53,16 @@ pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo" \
   [--gate required|optional|none] [--preset-name <name>] [--policy-file ./policy.json]
 ```
 
-`--gate` defaults to `"optional"` when omitted. `--gate required` is now accepted for any league, not just the seeded `pca-rmr` default — per-league membership gating (`LeagueMembership` roles, MSR org match against `session.msrOrgIds`) resolves access correctly per league, so a non-default `"required"` league no longer mis-gates on the wrong org (see "Operational note" below, now describing the current behavior rather than a restriction). A brand-new league has no `ScoringSystem` preset of its own, so `league:create` always creates one alongside the `League` row: `--policy-file` if given, else a PCA-shaped default (fixed drops, no PAX section, raw class metric, 2000ms cone penalty) — this is what `season:create`/ingest auto-create fall back to when no `--preset`/`--policy-file` is given.
+`--gate` defaults to `"optional"` when omitted. `--gate required` is now accepted for any league, not just the seeded `pca-rmr` default — per-league membership gating (`LeagueMembership` roles, MSR org match against `session.msrOrgIds`) resolves access correctly per league, so a non-default `"required"` league no longer mis-gates on the wrong org (see "Operational note" below, now describing the current behavior rather than a restriction). `league:create` also creates the league's first Ruleset: `--policy-file` if given, else a PCA-shaped default (fixed drops, no PAX section, 2000ms cone penalty). Season creation and ingest auto-creation use the league's oldest Ruleset when none is named.
 
 Create a new season with:
 
 ```sh
 pnpm --filter web season:create --league pca-rmr --name "2027 Season" --year 2027 --planned 6 \
-  [--slug 2027-season] [--preset "PCA Classic" | --policy-file ./policy.json]
+  [--slug 2027-season] [--preset "PCA Classic"]
 ```
 
-`--slug` defaults to `slugify(name)`. Multiple seasons per (league, year) are allowed as long as their slugs differ within that league — this is what makes a mid-year second series (e.g. a Winter Series alongside a Summer Series) addressable.
+`--slug` defaults to `slugify(name)`. `--preset` selects an existing Ruleset by name (the option name is retained for CLI compatibility). Multiple seasons per (league, year) are allowed as long as their slugs differ within that league — this is what makes a mid-year second series (e.g. a Winter Series alongside a Summer Series) addressable.
 
 Ingest supports a `--league <slug>` flag on both pipelines (defaults to `DEFAULT_LEAGUE_SLUG` when omitted):
 
@@ -72,14 +72,14 @@ pnpm --filter web ingest:rmsolo --league rmsolo --file <pdf> --date YYYY-MM-DD [
 pnpm --filter web ingest:rmsolo --league rmsolo   # no --file: scrapes the RMsolo results index instead
 ```
 
-**ScoringPolicy v1** (the JSON shape snapshotted onto `Season.scoringPolicy`):
+**ScoringPolicy v2** (stored on `ScoringSystem.policy`):
 
 | Field | Values | Meaning |
 |---|---|---|
+| `v` | `2` | Policy schema version. |
 | `drops` | `"fixed"` \| `"proportional"` | fixed: best-N-of-M scores count regardless of season progress (PCA). proportional: the drop count scales with events completed (RMsolo). |
 | `paxSection` | boolean | Render a synthetic overall-PAX standings section, pinned first. |
-| `classMetric` | `"raw"` \| `"pax"` | Rank class sections on best corrected time, or on PAX-adjusted time. |
-| `conePenaltyMs` | number | Milliseconds added per cone struck (PCA convention: 2000). Threaded end-to-end into per-entry corrected-time math — a season configured with a different value scores its own events using that value. |
+| `conePenaltyMs` | number | Milliseconds added per cone struck (PCA convention: 2000). Threaded end-to-end into per-entry corrected-time math. |
 
 `League.footerText` renders verbatim in the site footer when set; a league with `footerText` left `null` falls back to the generic **"Powered by Launch Control"** string.
 
@@ -88,18 +88,16 @@ pnpm --filter web ingest:rmsolo --league rmsolo   # no --file: scrapes the RMsol
 The exact commands to stand up a second league (RMsolo) alongside the default `pca-rmr` league in your local DB:
 
 ```sh
-# 1. Create the RMsolo league. --gate defaults to optional; --gate required
-#    is allowed too (per-league membership gating resolves it correctly) —
-#    see "Operational note" below.
-pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo"
-
-# 2. Write a scoring policy for the season (proportional drops + PAX standings,
-#    a common RMsolo-style preset) and create the season from it.
+# 1. Create an RMsolo-style ruleset policy, then create the league with it.
 cat > /tmp/rmsolo-policy.json <<'EOF'
-{"v":1,"drops":"proportional","paxSection":true,"classMetric":"pax","conePenaltyMs":2000}
+{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}
 EOF
+pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo" \
+  --preset-name "RMsolo Rules" --policy-file /tmp/rmsolo-policy.json
+
+# 2. Create the season with that live ruleset reference.
 pnpm --filter web season:create --league rmsolo --name "2026 Summer Series" --year 2026 \
-  --planned 10 --policy-file /tmp/rmsolo-policy.json
+  --planned 10 --preset "RMsolo Rules"
 
 # 3. Ingest RMsolo results into that league (scrapes the RMsolo results index;
 #    pass --file/--date instead to ingest one PDF).

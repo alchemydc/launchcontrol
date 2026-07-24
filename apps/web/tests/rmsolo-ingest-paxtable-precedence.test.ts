@@ -56,17 +56,17 @@ afterAll(async () => {
   rmSync(TEST_DB_PATH, { force: true });
 });
 
-describe("paxTable precedence, end-to-end through ingestRmsoloEvent", () => {
-  it("uses the seeded built-in factor when the season's ruleset table has no override", async () => {
+describe("ruleset paxTable, end-to-end through ingestRmsoloEvent", () => {
+  it("uses the factor stored in the season's seeded ruleset table", async () => {
     await ingestRmsoloEvent({ parsed: eventFor("1", "AS"), sha256: "no-override", date: "2026-06-01" }, prisma);
     const cls = await prisma.carClass.findFirstOrThrow({ where: { leagueId, code: "AS" } });
     expect(Number(cls.paxIndex)).toBe(RMSOLO_PAX_2026.AS);
   });
 
-  it("prefers the ruleset's paxTable override over the built-in value", async () => {
+  it("uses a custom factor from the season's authoritative ruleset table", async () => {
     // A distinct season (2027) so this doesn't collide with the no-override
     // 2026 season/class above — same class code, deliberately different
-    // override value (0.5, unmistakable from RMSOLO_PAX_2026.AS).
+    // custom value (0.5, unmistakable from RMSOLO_PAX_2026.AS).
     const ruleset = await createScoringSystem(prisma, {
       leagueSlug: "pca-rmr",
       name: "2027 Override Rules",

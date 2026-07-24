@@ -220,7 +220,7 @@ describe("season PAX section (ruleset policy paxSection)", () => {
   });
 });
 
-describe("countedEventTarget (scoringPolicy.drops)", () => {
+describe("countedEventTarget (ruleset policy drops)", () => {
   it("fixed mode counts the qualifying threshold regardless of progress", () => {
     expect(countedEventTarget(10, 6, 5, "fixed")).toBe(6);
     expect(countedEventTarget(6, 4, 3, "fixed")).toBe(4);
@@ -269,7 +269,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
     expect(cs.drivers[1]!.totalPoints).toBe(981); // round(1000 × 52000 / 53000)
   });
 
-  it("the same 1000ms penalty also flips the synthetic overall-PAX section (scoringPolicy.paxSection)", async () => {
+  it("the same 1000ms penalty also flips the ruleset's synthetic overall-PAX section", async () => {
     await setConePenaltyPolicy(
       '{"v":2,"drops":"fixed","paxSection":true,"conePenaltyMs":1000}',
     );

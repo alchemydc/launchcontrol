@@ -47,7 +47,7 @@ export type LeaderboardRow = {
 /**
  * `penaltyMs` (League Foundation PR 2 Task 7): defaults to the shared
  * `CONE_PENALTY_MS` constant, so existing call sites are unchanged (parity).
- * Event pages pass their event's season `scoringPolicy.conePenaltyMs`.
+ * Event pages pass their event's assigned ruleset `policy.conePenaltyMs`.
  */
 export function buildLeaderboard(
   entries: EntryWithRelations[],
