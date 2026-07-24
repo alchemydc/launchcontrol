@@ -198,10 +198,10 @@ export async function LeagueGate() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {leagues.map((league) => (
-            <div key={league.slug} className="relative">
+            <div key={league.slug} className="relative flex">
               <Link
                 href={`/l/${league.slug}`}
-                className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+                className="group relative flex w-full flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
               >
                 <div className="relative aspect-[16/10] w-full bg-muted/40 flex items-center justify-center overflow-hidden">
                   {league.logoUrl ? (
