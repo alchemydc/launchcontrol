@@ -41,8 +41,8 @@ describe("reapplySeasonPaxFactors", () => {
 
     // Task R2: the re-apply table lives on the season's RULESET. Each season
     // gets a dedicated ruleset whose paxTable is exactly what the test needs
-    // (raw create, bypassing createScoringSystem's built-in merge — season A
-    // must cover ONLY "AS" so the CS entry stays untouched below).
+    // (raw create keeps this fixture explicit; season A must cover ONLY "AS"
+    // so the CS entry stays untouched below).
     const rulesetA = await client.scoringSystem.create({
       data: { leagueId, name: "Reapply A Rules", policy: DEFAULT_SCORING_POLICY, paxTable: '{"AS":0.850}' },
     });

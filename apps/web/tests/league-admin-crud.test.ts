@@ -4,6 +4,7 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { createLeague, deleteLeague, updateLeague } from "@/lib/create-league";
 import { createSeason, updateSeason } from "@/lib/create-season";
+import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 import { createScoringSystem, updateScoringSystem } from "@/lib/scoring-system";
 import { dbTarget, migrateDeploy } from "./helpers/db";
 
@@ -316,6 +317,44 @@ describe("scoring systems", () => {
     ).rejects.toThrow(/scoringPolicy\.drops/);
   });
 
+  it("create seeds the complete built-in PAX table when paxTableJson is absent", async () => {
+    const { league } = await createLeague({ slug: "ss-seed-default", name: "SS Seed Default League" }, prisma);
+
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "Default Seed",
+      policyJson: PCA_POLICY,
+    });
+
+    expect(JSON.parse(preset.paxTable)).toEqual(RMSOLO_PAX_2026);
+  });
+
+  it("create stores an explicitly empty PAX table as empty", async () => {
+    const { league } = await createLeague({ slug: "ss-seed-empty", name: "SS Seed Empty League" }, prisma);
+
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "Empty Seed",
+      policyJson: PCA_POLICY,
+      paxTableJson: "{}",
+    });
+
+    expect(preset.paxTable).toBe("{}");
+  });
+
+  it("create stores a provided PAX table without merging built-in factors", async () => {
+    const { league } = await createLeague({ slug: "ss-seed-custom", name: "SS Seed Custom League" }, prisma);
+
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "Custom Seed",
+      policyJson: PCA_POLICY,
+      paxTableJson: '{"ZZ":0.75}',
+    });
+
+    expect(preset.paxTable).toBe('{"ZZ":0.75}');
+  });
+
   it("update validates policy; duplicate name rejected; unknown preset rejected", async () => {
     const { league } = await createLeague({ slug: "ss-update", name: "SS Update League" }, prisma);
     const presetA = await createScoringSystem(prisma, {
@@ -347,6 +386,26 @@ describe("scoring systems", () => {
     await expect(
       updateScoringSystem(prisma, { leagueSlug: league.slug, name: "Nonexistent" }, { policyJson: PCA_POLICY }),
     ).rejects.toThrow(/no scoring system preset named 'Nonexistent'/);
+  });
+
+  it("update replaces the complete PAX table and removes omitted built-in codes", async () => {
+    const { league } = await createLeague({ slug: "ss-update-pax", name: "SS Update PAX League" }, prisma);
+    const preset = await createScoringSystem(prisma, {
+      leagueSlug: league.slug,
+      name: "Replace PAX",
+      policyJson: PCA_POLICY,
+    });
+    expect(JSON.parse(preset.paxTable)).toHaveProperty("AS");
+
+    const updated = await updateScoringSystem(
+      prisma,
+      { leagueSlug: league.slug, name: preset.name },
+      { paxTableJson: '{"ZZ":0.75}' },
+    );
+
+    expect(JSON.parse(updated.paxTable)).toEqual({ ZZ: 0.75 });
+    const persisted = await prisma.scoringSystem.findUniqueOrThrow({ where: { id: preset.id } });
+    expect(JSON.parse(persisted.paxTable)).toEqual({ ZZ: 0.75 });
   });
 
   it("editing a ruleset flows through to an adopted season (live reference)", async () => {

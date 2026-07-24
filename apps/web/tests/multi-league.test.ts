@@ -123,7 +123,7 @@ beforeAll(async () => {
   // difference from pca-rmr's AS value (RMSOLO_PAX_2026.AS = 0.830, seeded
   // complete on every ruleset); this is operator config (a custom ruleset),
   // not something either ingest path produces itself. createScoringSystem
-  // merges the override over the built-in table (Task R2 semantics).
+  // stores the supplied complete table as-is (Task R3 semantics).
   const rmsoloTestPreset = await prisma.scoringSystem.findFirstOrThrow({
     where: { leagueId: rmsoloTestLeagueId },
   });
