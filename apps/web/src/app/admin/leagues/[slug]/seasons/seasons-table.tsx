@@ -92,7 +92,12 @@ export function SeasonsTable({
                   <Button variant="outline" size="sm" onClick={() => setEditingRow(row)}>
                     Edit
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setReapplyRow(row)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="Rewrites the frozen per-entry PAX factors for this season's already-ingested results, using this season's overridden classes only. Use after editing the PAX table mid-season."
+                    onClick={() => setReapplyRow(row)}
+                  >
                     Re-apply PAX
                   </Button>
                 </div>
@@ -199,9 +204,7 @@ function ReapplyPaxDialog({
             <DialogHeader>
               <DialogTitle>Re-apply PAX factors for {season.name}?</DialogTitle>
               <DialogDescription>
-                This rewrites applied factors for this season&apos;s entries whose class appears
-                in the table. Entries whose class code isn&apos;t covered by the table are left
-                untouched. This cannot be undone.
+                Results keep the PAX factor that was in force when they were ingested. This action rewrites those stored factors for this season&apos;s entries whose class appears in the season&apos;s PAX table (i.e. overridden classes).
               </DialogDescription>
             </DialogHeader>
             {error && <p className="text-sm text-destructive">{error}</p>}
