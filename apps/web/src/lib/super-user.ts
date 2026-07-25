@@ -31,5 +31,21 @@ export async function setSuperUser(
   if (superUserEnvAllowlist().includes(msrUid)) {
     throw new Error(`Cannot revoke ${msrUid}: listed in ADMIN_MSR_UIDS env bootstrap`);
   }
+  // Last-superuser guard (mirrors the league tier's wouldOrphanLastAdmin):
+  // with no ADMIN_MSR_UIDS bootstrap configured, deleting the final SuperUser
+  // row would permanently lock out every superuser-gated surface (league
+  // DELETE, /admin/users, this very route) with no in-app recovery path.
+  // Env-allowlisted uids are irrevocable superusers, so any bootstrap entry
+  // means revoking the last row is safe.
+  const target = await client.superUser.findUnique({ where: { msrUid } });
+  if (target == null) return; // nothing to revoke
+  if (superUserEnvAllowlist().length === 0) {
+    const others = await client.superUser.count({ where: { msrUid: { not: msrUid } } });
+    if (others === 0) {
+      throw new Error(
+        `Cannot revoke ${msrUid}: they are the last superuser and no ADMIN_MSR_UIDS bootstrap is configured`,
+      );
+    }
+  }
   await client.superUser.deleteMany({ where: { msrUid } });
 }

@@ -143,6 +143,20 @@ describe("buildSeasonLeaderboard(2026)", () => {
     }
   });
 
+  // Score hrefs are league-RELATIVE suffixes by contract — views prefix them
+  // with the page's league base path (src/lib/event-links.ts). An absolute or
+  // pre-prefixed href here would double-prefix on /l/[league] leaderboards.
+  it("emits league-relative event hrefs on every score", async () => {
+    const result = await buildSeasonLeaderboard(2026, prisma);
+    for (const section of result.sections) {
+      for (const driver of section.drivers) {
+        for (const score of driver.scores) {
+          expect(score.href).toMatch(/^\/events\//);
+        }
+      }
+    }
+  });
+
   // Assertion 2: Fractional scoring math.
   // Event 1 / C1: fastest=50000ms (Alex), Bea=55000ms → round(1000*50000/55000) = 909
   it("fractional scoring: Bea at event 1 earns 909 pts", async () => {

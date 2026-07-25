@@ -34,8 +34,14 @@
 --
 -- The Season rebuild is the 2026-07-23 incident pattern: keep the
 -- league_foundation PRAGMA bracketing (defer_foreign_keys=ON +
--- foreign_keys=OFF, restored at the end) so FK cascades can never fire
--- mid-rebuild even when the migration runs inside a transaction.
+-- foreign_keys=OFF, restored at the end) so FK cascades cannot fire
+-- mid-rebuild. CAUTION: `PRAGMA foreign_keys` is a NO-OP inside a
+-- transaction — the exact misconception behind the incident — so this
+-- bracketing only protects because the runner applies the script with NO
+-- wrapping transaction (scripts/migrate-turso.ts `applyMigration`, which
+-- asserts it). Defense in depth: Event.seasonId is ON DELETE RESTRICT, so
+-- were cascades somehow live, this rebuild would abort loudly rather than
+-- silently delete dependent rows.
 
 PRAGMA defer_foreign_keys=ON;
 PRAGMA foreign_keys=OFF;

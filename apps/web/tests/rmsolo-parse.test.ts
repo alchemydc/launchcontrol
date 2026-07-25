@@ -61,7 +61,7 @@ describe("parseRmsoloFullText", () => {
   it("splits concatenated DNF tokens: marker binds to the PRECEDING time (44.715 DNF), digits are the next clean run", () => {
     // "45.233   44.715 DNF45.993": the DNF is a suffix of 44.715 (that run
     // DNF'd at 44.715 elapsed); 45.993 is the next, clean run. Verified
-    // against real data (Patryk Matecki, Summer 2026#2): the prefix reading
+    // against real data (Summer 2026#2, class AST): the prefix reading
     // would create a phantom clean run faster than the printed Best.
     const harper = parsed.entries.find((e) => e.firstName === "Harper")!;
     expect(harper.runs[4]).toEqual({ seconds: 44.715, cones: 0, disposition: "DNF" });

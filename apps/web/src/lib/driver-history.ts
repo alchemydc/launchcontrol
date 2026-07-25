@@ -3,6 +3,7 @@ import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { resolveDefaultLeague } from "@/lib/league-config";
 import { appliedPaxIndex } from "@/lib/pax-applied";
 import { prisma } from "@/lib/prisma";
+import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { combinedEventLabel } from "@/lib/season-leaderboard";
 
 export type DriverHistoryRow = {
@@ -63,11 +64,21 @@ export type EntryForHistory = {
   }>;
 };
 
-export function bestPaxMsForEntry(entry: EntryForHistory): {
+/**
+ * `penaltyMs` is the owning season's ruleset `policy.conePenaltyMs` —
+ * omitting it falls back to `bestCorrectedMsForEntry`'s shared default.
+ * `buildDriverHistory` always passes the resolved per-event value so a league
+ * with a non-default penalty shows the same best times here as on its event
+ * and season-leaderboard pages.
+ */
+export function bestPaxMsForEntry(
+  entry: EntryForHistory,
+  penaltyMs?: number,
+): {
   bestRawMs: number | null;
   bestPaxMs: number | null;
 } {
-  const bestRawMs = bestCorrectedMsForEntry(entry);
+  const bestRawMs = bestCorrectedMsForEntry(entry, penaltyMs);
   if (bestRawMs == null) return { bestRawMs: null, bestPaxMs: null };
   const paxIndex = appliedPaxIndex(entry);
   return { bestRawMs, bestPaxMs: Math.round(bestRawMs * paxIndex) };
@@ -110,7 +121,13 @@ function loadEventsForDates(
     where: { date: { in: dates }, ...scopeWhere },
     orderBy: { date: "asc" },
     include: {
-      season: { select: { leagueId: true, league: { select: { slug: true, name: true } } } },
+      season: {
+        select: {
+          leagueId: true,
+          league: { select: { slug: true, name: true } },
+          ruleset: { select: { policy: true } },
+        },
+      },
       entries: {
         select: {
           id: true,
@@ -138,8 +155,11 @@ type LoadedEvent = Awaited<ReturnType<typeof loadEventsForDates>>[number];
  * the per-class season leaderboard).
  */
 function buildSingleEventRow(event: LoadedEvent, driverId: number): DriverHistoryRow {
+  // Same ruleset threading as season-leaderboard.ts / leaderboard.ts: cone
+  // math must use this event's season policy, not the global default.
+  const penaltyMs = parseScoringPolicy(event.season.ruleset.policy).conePenaltyMs;
   const ranked = event.entries
-    .map((e) => ({ entry: e, ...bestPaxMsForEntry(e) }))
+    .map((e) => ({ entry: e, ...bestPaxMsForEntry(e, penaltyMs) }))
     .filter((r): r is typeof r & { bestPaxMs: number } => r.bestPaxMs != null)
     .sort((a, b) => a.bestPaxMs - b.bestPaxMs);
 
@@ -228,12 +248,15 @@ function buildCombinedHistoryRow(
   // Per-session, per-driver best PAX (fastest entry per session -- co-drive
   // safe, mirrors buildSingleEventRow / combined-event.ts's own dedupe).
   const bestBySessionByDriver = sessions.map((session) => {
+    // Resolved per session: same-league sessions on one date can in principle
+    // belong to different seasons (and thus different rulesets).
+    const penaltyMs = parseScoringPolicy(session.season.ruleset.policy).conePenaltyMs;
     const byDriver = new Map<
       number,
       { bestRawMs: number; bestPaxMs: number; classCode: string }
     >();
     for (const entry of session.entries) {
-      const { bestRawMs, bestPaxMs } = bestPaxMsForEntry(entry);
+      const { bestRawMs, bestPaxMs } = bestPaxMsForEntry(entry, penaltyMs);
       if (bestRawMs == null || bestPaxMs == null) continue;
       const existing = byDriver.get(entry.driverId);
       if (existing == null || bestPaxMs < existing.bestPaxMs) {

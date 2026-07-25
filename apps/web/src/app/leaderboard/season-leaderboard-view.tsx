@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { composeEventHref } from "@/lib/event-links";
 import type {
   SeasonClassSummary,
   SeasonStandingsByClass,
@@ -39,8 +40,10 @@ interface SeasonLeaderboardViewProps {
    *  show the CHAMPIONSHIP position (by points) regardless of sort. */
   sortBy?: string | null;
   /** "" for the legacy route (byte-identical to pre-Task-20 driver hrefs),
-   *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` below. */
-  driverBasePath?: string;
+   *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` AND every
+   *  event-score chip below (score `href`s are league-relative suffixes; see
+   *  src/lib/event-links.ts). */
+  basePath?: string;
 }
 
 type SortKey = "points" | "avg";
@@ -59,12 +62,12 @@ function formatDate(date: Date): string {
   });
 }
 
-function EventScoreChip({ score }: { score: EventScore }) {
+function EventScoreChip({ score, basePath }: { score: EventScore; basePath: string }) {
   const dropped = score.dropped;
   const title = `${score.eventName} — ${formatDate(score.eventDate)}${score.combined ? " (combined)" : ""}${dropped ? " (dropped)" : ""}`;
   return (
     <Link
-      href={score.href}
+      href={composeEventHref(basePath, score.href)}
       title={title}
       className={
         "relative flex min-w-[3rem] flex-col items-center rounded-md px-1.5 py-1 text-center transition-colors " +
@@ -88,12 +91,12 @@ function EventScoreChip({ score }: { score: EventScore }) {
   );
 }
 
-function EventScoreStrip({ scores }: { scores: EventScore[] }) {
+function EventScoreStrip({ scores, basePath }: { scores: EventScore[]; basePath: string }) {
   if (scores.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
       {scores.map((s) => (
-        <EventScoreChip key={s.key} score={s} />
+        <EventScoreChip key={s.key} score={s} basePath={basePath} />
       ))}
     </div>
   );
@@ -102,11 +105,11 @@ function EventScoreStrip({ scores }: { scores: EventScore[] }) {
 function DriverCard({
   driver,
   rank,
-  driverBasePath,
+  basePath,
 }: {
   driver: SeasonStandingsRow;
   rank: number;
-  driverBasePath?: string;
+  basePath?: string;
 }) {
   return (
     <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
@@ -117,7 +120,7 @@ function DriverCard({
             driverId={driver.driverId}
             name={driver.driverName}
             className="block truncate"
-            basePath={driverBasePath}
+            basePath={basePath}
           />
           {!driver.eligible && (
             <Badge variant="outline" className="mt-1 text-[10px]">
@@ -137,7 +140,7 @@ function DriverCard({
       </div>
       {driver.scores.length > 0 && (
         <div className="mt-3">
-          <EventScoreStrip scores={driver.scores} />
+          <EventScoreStrip scores={driver.scores} basePath={basePath ?? ""} />
         </div>
       )}
     </li>
@@ -147,11 +150,11 @@ function DriverCard({
 function DriverTableRow({
   driver,
   rank,
-  driverBasePath,
+  basePath,
 }: {
   driver: SeasonStandingsRow;
   rank: number;
-  driverBasePath?: string;
+  basePath?: string;
 }) {
   return (
     <TableRow
@@ -166,7 +169,7 @@ function DriverTableRow({
       </TableCell>
       <TableCell className="px-3 py-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <DriverLink driverId={driver.driverId} name={driver.driverName} basePath={driverBasePath} />
+          <DriverLink driverId={driver.driverId} name={driver.driverName} basePath={basePath} />
           {!driver.eligible && (
             <Badge variant="outline" className="text-xs">
               Provisional · {driver.eventsCountedInClass}/
@@ -182,7 +185,7 @@ function DriverTableRow({
         {formatAvg(driver.averagePoints)}
       </TableCell>
       <TableCell className="px-3 py-3">
-        <EventScoreStrip scores={driver.scores} />
+        <EventScoreStrip scores={driver.scores} basePath={basePath ?? ""} />
       </TableCell>
     </TableRow>
   );
@@ -240,7 +243,7 @@ function ClassSection({
   countedEvents,
   sort,
   classHref,
-  driverBasePath,
+  basePath,
 }: {
   section: SeasonStandingsByClass;
   totalEvents: number;
@@ -248,7 +251,7 @@ function ClassSection({
   countedEvents: number;
   sort: SortKey;
   classHref: string;
-  driverBasePath?: string;
+  basePath?: string;
 }) {
   if (section.drivers.length === 0) return null;
   const leader = section.drivers[0];
@@ -283,7 +286,7 @@ function ClassSection({
             <DriverLink
               driverId={leader.driverId}
               name={leader.driverName}
-              basePath={driverBasePath}
+              basePath={basePath}
             />{" "}
             · <span className="tabular-nums">{leader.totalPoints}</span> pts
           </p>
@@ -297,7 +300,7 @@ function ClassSection({
             key={d.driverId}
             driver={d}
             rank={rankByDriverId.get(d.driverId)!}
-            driverBasePath={driverBasePath}
+            basePath={basePath}
           />
         ))}
       </ul>
@@ -344,7 +347,7 @@ function ClassSection({
                 key={d.driverId}
                 driver={d}
                 rank={rankByDriverId.get(d.driverId)!}
-                driverBasePath={driverBasePath}
+                basePath={basePath}
               />
             ))}
           </TableBody>
@@ -413,7 +416,7 @@ export function SeasonLeaderboardView({
   finalCountedEvents,
   countedEvents,
   sortBy,
-  driverBasePath,
+  basePath,
 }: SeasonLeaderboardViewProps) {
   const sort = resolveSort(sortBy);
   const classHref = `${classBasePath}/${encodeURIComponent(section.classCode)}`;
@@ -444,7 +447,7 @@ export function SeasonLeaderboardView({
         countedEvents={countedEvents}
         sort={sort}
         classHref={classHref}
-        driverBasePath={driverBasePath}
+        basePath={basePath}
       />
     </main>
   );

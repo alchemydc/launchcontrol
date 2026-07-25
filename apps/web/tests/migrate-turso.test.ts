@@ -64,4 +64,30 @@ describe("applyMigration", () => {
 
     c.close();
   });
+
+  it("refuses a Transaction handle (structural check)", async () => {
+    const c = createClient({ url: `file:${DB}` });
+    const tx = await c.transaction("write");
+    try {
+      await expect(
+        applyMigration(tx as never, "20990101000000_nope", "SELECT 1;"),
+      ).rejects.toThrow(/inside a transaction/);
+    } finally {
+      await tx.rollback();
+      c.close();
+    }
+  });
+
+  it("fails fast when the connection already has an open transaction", async () => {
+    const c = createClient({ url: `file:${DB}` });
+    try {
+      await c.execute("BEGIN");
+      await expect(
+        applyMigration(c, "20990101000000_nope", "SELECT 1;"),
+      ).rejects.toThrow(/transaction/i);
+    } finally {
+      await c.execute("ROLLBACK").catch(() => {});
+      c.close();
+    }
+  });
 });

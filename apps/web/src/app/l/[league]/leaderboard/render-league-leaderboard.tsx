@@ -29,8 +29,8 @@ export async function renderLeagueSeasonLeaderboard({
   classParam?: string;
   sortBy?: string | null;
 }) {
-  const driverBasePath = `/l/${leagueSlug}`;
-  const activeSeasonPath = `${driverBasePath}/leaderboard`;
+  const leagueBasePath = `/l/${leagueSlug}`;
+  const activeSeasonPath = `${leagueBasePath}/leaderboard`;
   const classBasePath = season
     ? `${activeSeasonPath}/s/${season.slug}`
     : activeSeasonPath;
@@ -94,7 +94,7 @@ export async function renderLeagueSeasonLeaderboard({
       qualifyingEvents={result.qualifyingEvents}
       finalCountedEvents={result.finalCountedEvents}
       countedEvents={result.countedEvents}
-      driverBasePath={driverBasePath}
+      basePath={leagueBasePath}
     />
   );
 }

@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { historyRowEventHref } from "@/lib/event-links";
 import { formatMs } from "@/lib/leaderboard";
 import type { DriverHistoryRow } from "@/lib/driver-history";
 
@@ -34,18 +35,20 @@ function formatSignedPercent(value: number | null): string {
 export function EventHistory({
   history,
   basePath = "",
+  defaultLeagueSlug,
 }: {
   history: DriverHistoryRow[];
-  /** Prefixes each row's event `href` ("" for the legacy route -- byte-identical
-   *  to pre-existing rendering; "/l/[slug]" for league-scoped, Task 20 follow-up).
-   *  Safe to apply unconditionally: on the locked `/l/[league]/drivers/[id]`
-   *  page every row (single-event or combined) is guaranteed to belong to that
-   *  same league -- `buildDriverHistory`'s scoped query only returns in-league
-   *  events, and a combined row's sessions are grouped by (leagueId, dateKey),
-   *  so a combined row can never straddle two leagues. The legacy all-leagues
-   *  page passes basePath="" so a cross-league row there still resolves to the
-   *  correct (unprefixed) legacy event route. */
+  /** "/l/[slug]" on the locked `/l/[league]/drivers/[id]` page — safe to apply
+   *  to every row there, since `buildDriverHistory`'s scoped query only returns
+   *  in-league events and combined groups key on (leagueId, dateKey), so no row
+   *  can straddle leagues. "" on the legacy route, where rows CAN span leagues
+   *  (`?league=all` / a non-default `?league=` filter) — each row then links
+   *  into its own league via `historyRowEventHref`, unprefixed only for
+   *  `defaultLeagueSlug` rows (byte-identical to the pre-league rendering). */
   basePath?: string;
+  /** The deployment default league's slug — the league whose events are served
+   *  unprefixed at `/events/...`. Unused when `basePath` is non-empty. */
+  defaultLeagueSlug: string;
 }) {
   // Only true for an "All leagues" filter selection that actually spans more
   // than one league -- every legacy, no-filter (single-league) render keeps
@@ -89,7 +92,7 @@ export function EventHistory({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Link
-                      href={`${basePath}${row.href}`}
+                      href={historyRowEventHref(row, basePath, defaultLeagueSlug)}
                       className="block text-sm font-medium hover:underline truncate"
                     >
                       {row.eventName}
@@ -216,7 +219,7 @@ export function EventHistory({
                 </TableCell>
                 <TableCell className="px-3">
                   <div className="flex items-center gap-1.5">
-                    <Link href={`${basePath}${row.href}`} className="hover:underline">
+                    <Link href={historyRowEventHref(row, basePath, defaultLeagueSlug)} className="hover:underline">
                       {row.eventName}
                     </Link>
                     {row.combined && (

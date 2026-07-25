@@ -50,4 +50,23 @@ describe("setSuperUser", () => {
     process.env.ADMIN_MSR_UIDS = "ENVY";
     await expect(setSuperUser(client, "ENVY", false)).rejects.toThrow(/env/i);
   });
+  it("refuses to revoke the last superuser row when no env bootstrap is configured", async () => {
+    process.env.ADMIN_MSR_UIDS = "";
+    await client.superUser.deleteMany({});
+    await setSuperUser(client, "LAST-1", true);
+    await expect(setSuperUser(client, "LAST-1", false)).rejects.toThrow(/last superuser/i);
+    expect(await isSuperUser("LAST-1", client)).toBe(true);
+  });
+  it("allows revoking the last row when an env bootstrap uid exists", async () => {
+    process.env.ADMIN_MSR_UIDS = "ENVY";
+    await client.superUser.deleteMany({});
+    await setSuperUser(client, "LAST-2", true);
+    await setSuperUser(client, "LAST-2", false);
+    expect(await isSuperUser("LAST-2", client)).toBe(false);
+  });
+  it("revoking a uid with no row is a no-op even when rows are empty", async () => {
+    process.env.ADMIN_MSR_UIDS = "";
+    await client.superUser.deleteMany({});
+    await expect(setSuperUser(client, "GHOST", false)).resolves.not.toThrow();
+  });
 });

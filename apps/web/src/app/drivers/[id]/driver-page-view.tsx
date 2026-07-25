@@ -360,7 +360,14 @@ export async function DriverPageView({
         </div>
       ))}
 
-      <EventHistory history={history} basePath={basePath} />
+      {/* defaultLeagueSlug: on the legacy (basePath="") page `defaultLeague`
+          IS the deployment default; on locked pages it's the locked league,
+          but there basePath is non-empty and the slug goes unused. */}
+      <EventHistory
+        history={history}
+        basePath={basePath}
+        defaultLeagueSlug={defaultLeague.slug}
+      />
     </main>
   );
 }

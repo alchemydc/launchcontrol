@@ -14,7 +14,7 @@
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getLeagueConfig, type AccessGate, type LeagueConfig } from "@/lib/league-config";
+import { getLeagueConfig, type LeagueConfig } from "@/lib/league-config";
 import { decideLeagueAccess, type LeagueAccessDecision } from "@/lib/league-access";
 import { getMembershipRole } from "@/lib/membership";
 import { isSuperUser } from "@/lib/super-user";
@@ -147,22 +147,6 @@ export function sanitizeReturnTo(raw: string | string[] | null | undefined): str
 // Gate runs before any data fetch so unauthorized viewers cannot probe slug
 // existence via 404 vs redirect behavior.
 // ---------------------------------------------------------------------------
-
-/**
- * Pure gate-selection decision behind `requireMember`: given a league's
- * accessGate and the session fields membership depends on, decide whether
- * the viewer is let through or bounced. Extracted from `requireMember` so
- * gate SELECTION is unit-testable without mocking next/navigation's
- * redirect()/cookies() — the impure wrapper below only needs to act on the
- * result.
- */
-export function decideMemberGate(
-  accessGate: AccessGate,
-  session: Pick<SessionData, "msrUid" | "isRmrMember">,
-): "allow" | "redirect" {
-  if (accessGate !== "required") return "allow";
-  return session.msrUid && session.isRmrMember ? "allow" : "redirect";
-}
 
 /**
  * Resolve one league's access decision for the current session, without

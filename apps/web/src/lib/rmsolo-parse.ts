@@ -63,7 +63,7 @@ function tokenize(line: string): Token[] {
       // belongs to the PRECEDING time — see the merge rule below) and the
       // NEXT run's time. Split into two logical tokens so the marker merges
       // backward and the digits stand alone as their own (clean) run slot.
-      // Proven against real data (RMsolo Summer 2026#2, AST, Patryk Matecki):
+      // Proven against real data (RMsolo Summer 2026#2, class AST): the row
       // "50.151  29.153 DNF46.403  46.751+1" with printed Best 46.403 — only
       // the split reading (29.153 DNF'd; 46.403 clean) reconciles, since a
       // clean 29.153 would have to BE the Best.
@@ -88,7 +88,7 @@ function tokenize(line: string): Token[] {
   for (const token of rawTokens) {
     // The DNF marker is a SUFFIX of the run it belongs to: RMsolo PDFs print
     // a run's elapsed time, then "DNF" — either space-delimited ("47.188 DNF
-    // 47.253", Summer 2026#1, CST, Micah Schaubroeck) or with the following
+    // 47.253", Summer 2026#1, class CST) or with the following
     // run's time squeezed against it ("29.153 DNF46.403", split into marker +
     // time tokens above). Either way the bare marker is not its own run slot —
     // it retroactively marks the immediately preceding untagged time as the

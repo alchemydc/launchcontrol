@@ -159,6 +159,19 @@ describe("bestPaxMsForEntry", () => {
     expect(result.bestRawMs).toBe(52000);
   });
 
+  it("honors an explicit per-ruleset penaltyMs instead of the 2000ms default", () => {
+    // 50000 + 1*5000 = 55000; vs 53000 clean → the clean run now wins,
+    // where the 2000ms default would have picked the coned run (52000).
+    const result = bestPaxMsForEntry(
+      entry(1.0, [
+        { rawTimeMs: 50000, cones: 1 },
+        { rawTimeMs: 53000, cones: 0 },
+      ]),
+      5000,
+    );
+    expect(result.bestRawMs).toBe(53000);
+  });
+
   it("applies pax multiplier and rounds", () => {
     const result = bestPaxMsForEntry(
       entry(0.92, [{ rawTimeMs: 50000 }]),
@@ -286,6 +299,39 @@ describe("buildDriverHistory", () => {
     expect(history[4]!.position).toBe(2);
     expect(history[4]!.entrantCount).toBe(4);
     expect(history[4]!.diffFromLeaderPct).toBeCloseTo((56000 - 55200) / 55200, 6);
+  });
+
+  it("scores with the season ruleset's conePenaltyMs, not the 2000ms default", async () => {
+    // Alex's only event-5 run is 54000 + 1 cone. Raise the season ruleset's
+    // penalty to 5000ms and the driver-history row must follow (54000 + 5000),
+    // matching what the event and season-leaderboard pages would show.
+    const event5 = await prisma.event.findFirstOrThrow({
+      where: { name: "Season Event 5" },
+      select: { season: { select: { rulesetId: true } } },
+    });
+    const ruleset = await prisma.scoringSystem.findUniqueOrThrow({
+      where: { id: event5.season.rulesetId },
+      select: { policy: true },
+    });
+    const patched = JSON.stringify({
+      ...(JSON.parse(ruleset.policy) as Record<string, unknown>),
+      conePenaltyMs: 5000,
+    });
+    try {
+      await prisma.scoringSystem.update({
+        where: { id: event5.season.rulesetId },
+        data: { policy: patched },
+      });
+      const history = await buildDriverHistory(alexId, {}, prisma);
+      const e5 = history.find((h) => h.eventName === "Season Event 5")!;
+      expect(e5.bestRawMs).toBe(59000);
+      expect(e5.bestPaxMs).toBe(59000);
+    } finally {
+      await prisma.scoringSystem.update({
+        where: { id: event5.season.rulesetId },
+        data: { policy: ruleset.policy },
+      });
+    }
   });
 
   it("computes Bea's leader-delta at event 1", async () => {

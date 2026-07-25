@@ -64,6 +64,17 @@ export async function applyMigration(
   migrationName: string,
   sql: string
 ): Promise<void> {
+  // Enforce — not merely document — the invariant above. A libSQL Transaction
+  // handle is structurally close enough to Client (execute/executeMultiple/
+  // close all exist) to be passed here by mistake; refuse it outright.
+  if ("commit" in client || "rollback" in client) {
+    throw new Error(
+      `refusing to apply ${migrationName} inside a transaction: PRAGMA foreign_keys=OFF is a no-op there, so a table-rebuild migration could cascade-delete child rows`
+    );
+  }
+  // Probe the connection itself: a nested BEGIN fails fast ("cannot start a
+  // transaction within a transaction") if one is somehow already open.
+  await client.executeMultiple("BEGIN; ROLLBACK;");
   await client.executeMultiple(sql);
   await client.execute({
     sql: `INSERT INTO _prisma_migrations
