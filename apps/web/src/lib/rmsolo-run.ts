@@ -36,7 +36,7 @@ const DEFAULT_LEAGUE_SLUG = process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr"
 // the env read), so a deployment can flip INGEST_NOW_ENABLED without a probe
 // re-run and tests can toggle the flag between assertions.
 let pdftotextResolvable: boolean | undefined;
-function hasPdftotext(): boolean {
+export function pdftotextCapability(): { enabled: boolean; reason?: string } {
   if (pdftotextResolvable === undefined) {
     try {
       execFileSync("pdftotext", ["-v"], { stdio: "ignore" });
@@ -45,7 +45,12 @@ function hasPdftotext(): boolean {
       pdftotextResolvable = false;
     }
   }
-  return pdftotextResolvable;
+  return pdftotextResolvable
+    ? { enabled: true }
+    : {
+        enabled: false,
+        reason: "pdftotext (poppler) was not found on PATH — install poppler-utils (Debian/Ubuntu) or poppler (Homebrew)",
+      };
 }
 
 /**
@@ -58,13 +63,7 @@ export function ingestNowCapability(): { enabled: boolean; reason?: string } {
   if (process.env.INGEST_NOW_ENABLED !== "1") {
     return { enabled: false, reason: "INGEST_NOW_ENABLED is not set to 1 on this deployment" };
   }
-  if (!hasPdftotext()) {
-    return {
-      enabled: false,
-      reason: "pdftotext (poppler) was not found on PATH — install poppler to enable on-demand ingest",
-    };
-  }
-  return { enabled: true };
+  return pdftotextCapability();
 }
 
 // --- Per-league in-process mutex -------------------------------------------

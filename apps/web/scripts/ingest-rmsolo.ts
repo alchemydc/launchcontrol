@@ -8,11 +8,19 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { prisma } from "@/lib/prisma";
-import { ingestBuffer, runRmsoloIngest } from "@/lib/rmsolo-run";
+import { ingestBuffer, pdftotextCapability, runRmsoloIngest } from "@/lib/rmsolo-run";
 
 function argValue(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
   return i >= 0 ? process.argv[i + 1] : undefined;
+}
+
+function requirePdftotext(): void {
+  const capability = pdftotextCapability();
+  if (!capability.enabled) {
+    console.error(`[ingest:rmsolo] ${capability.reason ?? "pdftotext is unavailable"}`);
+    process.exit(2);
+  }
 }
 
 async function main() {
@@ -31,10 +39,12 @@ async function main() {
       console.error(`File not found: ${path}`);
       process.exit(2);
     }
+    requirePdftotext();
     await ingestBuffer(readFileSync(path), basename(path), date, argValue("--name"), leagueSlug);
     return;
   }
 
+  requirePdftotext();
   const counts = await runRmsoloIngest({ leagueSlug });
   if (counts.failed > 0) process.exitCode = 1;
 }

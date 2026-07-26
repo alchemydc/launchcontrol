@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { acquireIngestLock, ingestNowCapability } from "@/lib/rmsolo-run";
+import { acquireIngestLock, ingestNowCapability, pdftotextCapability } from "@/lib/rmsolo-run";
 
 // Capability probe + per-league mutex only — the scrape loop itself
 // (runRmsoloIngest) hits the live network and is intentionally NOT tested here.
+describe("pdftotextCapability", () => {
+  it("reports whether the Poppler system executable is available", () => {
+    const cap = pdftotextCapability();
+    if (cap.enabled) {
+      expect(cap.reason).toBeUndefined();
+    } else {
+      expect(cap.reason).toMatch(/pdftotext/i);
+      expect(cap.reason).toMatch(/poppler-utils/i);
+    }
+  });
+});
+
 describe("ingestNowCapability", () => {
   it("disabled without env flag", () => {
     delete process.env.INGEST_NOW_ENABLED;
