@@ -348,6 +348,7 @@ describe("duplicate driver-in-class collapse (shared-car anomaly)", () => {
   };
 
   it("keeps the row with runs and drops the all-DNS duplicate for the same driver and class", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const result = await ingestRmsoloEvent({ parsed: duplicateDriver, sha256: "dupe1", date: "2026-07-26" }, prisma);
     expect(result.status).toBe("ingested");
 
@@ -358,6 +359,16 @@ describe("duplicate driver-in-class collapse (shared-car anomaly)", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.carNumber).toBe("76");
     expect(entries[0]!.runs).toHaveLength(2);
+
+    // Warning must be readable without a DB lookup: class code and a driver
+    // label, not just the numeric ids (PR #101 review finding).
+    const collapseWarnings = warnSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("collapsed"),
+    );
+    expect(collapseWarnings).toHaveLength(1);
+    expect(collapseWarnings[0]![0]).toContain("SS");
+    expect(collapseWarnings[0]![0]).toContain("Casey T.");
+    warnSpy.mockRestore();
   });
 
   it("still rejects when both duplicate rows carry real runs (genuine anomaly)", async () => {
@@ -403,5 +414,54 @@ describe("duplicate driver-in-class collapse (shared-car anomaly)", () => {
     expect(duplicateEntries).toHaveLength(1);
     expect(duplicateEntries[0]!.carNumber).toBe("76"); // first row wins, order preserved
     expect(duplicateEntries[0]!.runs).toHaveLength(0);
+  });
+
+  it("labels a collapsed anonymous duplicate group with its car-number identity, not a redacted name", async () => {
+    // Two blank-name rows sharing a car number resolve to the same synthetic
+    // identity ("Unknown", "#176"), same as the named-duplicate case above,
+    // and can hit the same shared-car printing anomaly.
+    const duplicateAnonymousDriver: ParsedRmsoloEvent = {
+      title: "Summer 2026#7",
+      classCodes: ["SS"],
+      entries: [
+        {
+          classCode: "SS", position: 1, trophy: true, carNumber: "176", altCarNumber: null,
+          firstName: "", lastName: "", carDescription: "2020 Porsche Cayman", hometown: null,
+          bestSeconds: 37.903,
+          runs: [
+            { seconds: 38.5, cones: 0, disposition: "CLEAN" },
+            { seconds: 37.903, cones: 0, disposition: "CLEAN" },
+          ],
+        },
+        {
+          classCode: "SS", position: 2, trophy: false, carNumber: "176", altCarNumber: null,
+          firstName: "", lastName: "", carDescription: null, hometown: null,
+          bestSeconds: null,
+          runs: [],
+        },
+      ],
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await ingestRmsoloEvent(
+      { parsed: duplicateAnonymousDriver, sha256: "dupe4", date: "2026-07-26" },
+      prisma,
+    );
+    expect(result.status).toBe("ingested");
+
+    const entries = await prisma.entry.findMany({
+      where: { event: { slug: result.event.slug } },
+      include: { runs: true },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.runs).toHaveLength(2);
+
+    const collapseWarnings = warnSpy.mock.calls.filter(
+      ([msg]) => typeof msg === "string" && msg.includes("collapsed"),
+    );
+    expect(collapseWarnings).toHaveLength(1);
+    expect(collapseWarnings[0]![0]).toContain("SS");
+    expect(collapseWarnings[0]![0]).toContain("Unknown #176"); // car number is the identity, not redacted
+    warnSpy.mockRestore();
   });
 });

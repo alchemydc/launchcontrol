@@ -64,6 +64,17 @@ function identityNameFor(e: Pick<ParsedEntry, "firstName" | "lastName" | "carNum
   return { firstName: e.firstName, lastName: e.lastName };
 }
 
+// Human-readable driver label for log lines, e.g. "Jane S." or "Unknown #176".
+// Applies the same redaction the stored Driver row gets (lastInitial, below):
+// an anonymous row's car-number identity is shown in full since it IS the
+// identity, but a named row's last name is redacted so a log line is never
+// more identifying than the database.
+function driverLabelFor(e: Pick<ParsedEntry, "firstName" | "lastName" | "carNumber">): string {
+  const anonymous = e.firstName.trim() === "" && e.lastName.trim() === "";
+  const { firstName, lastName } = identityNameFor(e);
+  return anonymous ? `${firstName} ${lastName}` : `${firstName} ${redactLastName(lastName)}`;
+}
+
 export async function ingestRmsoloEvent(
   input: RmsoloIngestInput,
   client: PrismaClient = defaultClient,
@@ -372,7 +383,9 @@ export async function ingestRmsoloEvent(
       const keep = withRuns[0] ?? group[0]!;
       const droppedCount = group.length - 1;
       console.warn(
-        `[rmsolo-ingest] collapsed ${group.length} entries for driver ${keep.driverId} in class ${keep.classId} at event ${event.id} into one (kept car ${keep.carNumber}, dropped ${droppedCount} with zero runs)`,
+        `[rmsolo-ingest] collapsed ${group.length} entries for driver ${keep.driverId} (${driverLabelFor(keep._entry)}) ` +
+          `in class ${keep.classId} (${keep._entry.classCode}) at event ${event.id} (${event.slug}) into one ` +
+          `(kept car ${keep.carNumber}, dropped ${droppedCount} with zero runs)`,
       );
       dedupedEntriesData.push(keep);
     }
