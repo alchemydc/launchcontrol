@@ -365,9 +365,14 @@ describe("duplicate driver-in-class collapse (shared-car anomaly)", () => {
     bothWithRuns.entries[1]!.bestSeconds = 40.0;
     bothWithRuns.entries[1]!.runs = [{ seconds: 40.0, cones: 0, disposition: "CLEAN" }];
 
+    // Pin the pre-insert throw's own wording ("entries with runs"), not just
+    // /data anomaly/. The pre-existing post-createMany guard (still present
+    // further down in rmsolo-ingest.ts) also throws a "data anomaly" message
+    // for any duplicate (driverId, classId), so a bare /data anomaly/ match
+    // would pass even if the dedup block above never ran.
     await expect(
       ingestRmsoloEvent({ parsed: bothWithRuns, sha256: "dupe2", date: "2026-07-26" }, prisma),
-    ).rejects.toThrow(/data anomaly/);
+    ).rejects.toThrow(/Multiple entries with runs for driver \d+ in class \d+ at event \d+ \(data anomaly\)/);
   });
 
   it("keeps the first row when all duplicate rows are all-DNS", async () => {
