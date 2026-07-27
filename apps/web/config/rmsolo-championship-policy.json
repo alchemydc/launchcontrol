@@ -1,0 +1,7 @@
+{
+  "v": 3,
+  "dropCount": 4,
+  "dropTiming": "proportional",
+  "paxSection": true,
+  "conePenaltyMs": 2000
+}

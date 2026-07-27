@@ -45,6 +45,9 @@ Tenant config lives in the database, not environment variables. A deployment's b
 
 ### CLIs
 
+For a complete fresh-database walkthrough, including the required Poppler
+system package, see [RMsolo local setup and ingest](docs/RMSOLO.md).
+
 Create a new league (a fresh tenant — site branding, access gate, and a default scoring preset in one step):
 
 ```sh
@@ -72,12 +75,13 @@ pnpm --filter web ingest:rmsolo --league rmsolo --file <pdf> --date YYYY-MM-DD [
 pnpm --filter web ingest:rmsolo --league rmsolo   # no --file: scrapes the RMsolo results index instead
 ```
 
-**ScoringPolicy v2** (stored on `ScoringSystem.policy`):
+**ScoringPolicy v3** (stored on `ScoringSystem.policy`):
 
 | Field | Values | Meaning |
 |---|---|---|
-| `v` | `2` | Policy schema version. |
-| `drops` | `"fixed"` \| `"proportional"` | fixed: best-N-of-M scores count regardless of season progress (PCA). proportional: the drop count scales with events completed (RMsolo). |
+| `v` | `3` | Policy schema version. |
+| `dropCount` | non-negative integer | Number of lowest season scores discarded once the season is complete. |
+| `dropTiming` | `"fixed"` \| `"proportional"` | fixed: use the season-end counted target throughout the season (PCA). proportional: scale drops with events completed (RMsolo). |
 | `paxSection` | boolean | Render a synthetic overall-PAX standings section, pinned first. |
 | `conePenaltyMs` | number | Milliseconds added per cone struck (PCA convention: 2000). Threaded end-to-end into per-entry corrected-time math. |
 
@@ -85,19 +89,18 @@ pnpm --filter web ingest:rmsolo --league rmsolo   # no --file: scrapes the RMsol
 
 ### Two-league local bring-up walkthrough
 
-The exact commands to stand up a second league (RMsolo) alongside the default `pca-rmr` league in your local DB:
+Migrations seed only the default `pca-rmr` league. The exact commands to stand
+up RMsolo alongside it are:
 
 ```sh
-# 1. Create an RMsolo-style ruleset policy, then create the league with it.
-cat > /tmp/rmsolo-policy.json <<'EOF'
-{"v":2,"drops":"proportional","paxSection":true,"conePenaltyMs":2000}
-EOF
+# 1. Create the league and its RMsolo championship ruleset.
 pnpm --filter web league:create --slug rmsolo --name "Rocky Mountain Solo" \
-  --preset-name "RMsolo Rules" --policy-file /tmp/rmsolo-policy.json
+  --gate optional --preset-name "RMsolo Championship" \
+  --policy-file apps/web/config/rmsolo-championship-policy.json
 
 # 2. Create the season with that live ruleset reference.
-pnpm --filter web season:create --league rmsolo --name "2026 Summer Series" --year 2026 \
-  --planned 10 --preset "RMsolo Rules"
+pnpm --filter web season:create --league rmsolo --name "2026 Championship Series" --year 2026 \
+  --planned 10 --minimum-events 6 --preset "RMsolo Championship"
 
 # 3. Ingest RMsolo results into that league (scrapes the RMsolo results index;
 #    pass --file/--date instead to ingest one PDF).
@@ -107,6 +110,12 @@ pnpm --filter web ingest:rmsolo --league rmsolo
 pnpm --filter web dev
 # open http://localhost:3000/leagues
 ```
+
+RMsolo ingest requires the `pdftotext` executable from Poppler. It is a system
+dependency (`poppler-utils` on Debian/Ubuntu, `poppler` via Homebrew on macOS),
+not a Node package. See [the RMsolo runbook](docs/RMSOLO.md) for installation,
+verification, idempotency, supported formats, and how the authenticated admin
+ingest route relates to the CLI.
 
 **Operational note:** any league — default or not — may run with `accessGate: "required"`. Per-league membership gating resolves access independently for each league: a `LeagueMembership` row (`ADMIN`/`MEMBER` allows, `BLOCKED` denies) takes precedence, and failing that, an MSR org match checks the *viewer's* `session.msrOrgIds` (captured at login) against *that specific league's* `msrOrgId` — not just the default league's, as in earlier PRs. `--gate` still defaults to `"optional"` on `league:create` since most self-hosted leagues won't want a login wall, but passing `--gate required` is no longer refused.
 

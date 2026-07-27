@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { createLeague } from "@/lib/create-league";
+import { createSeason } from "@/lib/create-season";
+import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 
 // Unit tests for createLeague() — used by scripts/create-league.ts (the
 // "league:create" CLI). Mirrors tests/create-season.test.ts's structure and
@@ -134,6 +136,41 @@ describe("createLeague", () => {
     expect(preset.policy).toBe(
       '{"v":3,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1000}',
     );
+  });
+
+  it("the documented RMsolo policy creates the intended league ruleset and season", async () => {
+    const result = await createLeague(
+      {
+        slug: "rmsolo-runbook",
+        name: "Rocky Mountain Solo Runbook",
+        gate: "optional",
+        presetName: "RMsolo Championship",
+        policyFilePath: resolve(__dirname, "..", "config", "rmsolo-championship-policy.json"),
+      },
+      prisma,
+    );
+    const preset = await prisma.scoringSystem.findFirstOrThrow({
+      where: { leagueId: result.league.id, name: "RMsolo Championship" },
+    });
+    expect(preset.policy).toBe(
+      '{"v":3,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":2000}',
+    );
+    expect(JSON.parse(preset.paxTable)).toEqual(RMSOLO_PAX_2026);
+
+    const season = await createSeason(
+      {
+        leagueSlug: result.league.slug,
+        name: "2026 Championship Series",
+        year: 2026,
+        plannedEvents: 10,
+        minimumEvents: 6,
+        presetName: preset.name,
+      },
+      prisma,
+    );
+    expect(season.plannedEvents).toBe(10);
+    expect(season.minimumEvents).toBe(6);
+    expect(season.rulesetId).toBe(preset.id);
   });
 
   it("rejects a duplicate slug", async () => {
