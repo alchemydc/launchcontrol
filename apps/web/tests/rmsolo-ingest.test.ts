@@ -317,3 +317,86 @@ describe("Entry.paxIndexApplied snapshot", () => {
     expect(Number(after.paxIndexApplied)).toBe(before); // frozen — decoupled from the live CarClass
   });
 });
+
+describe("duplicate driver-in-class collapse (shared-car anomaly)", () => {
+  // RMsolo publishes no MSR uid, so Driver identity is name-only. Real source
+  // PDFs occasionally print the same driver twice in one class on a shared
+  // car (observed on event SS7): car #76 with real times (won the class,
+  // 37.903) and car #176 all-DNS for the same name. Both rows resolve to the
+  // same (driverId, classId) and, without collapsing, trip the
+  // one-entry-per-driver-per-class guard on every ingest of that event.
+  const duplicateDriver: ParsedRmsoloEvent = {
+    title: "Summer 2026#7",
+    classCodes: ["SS"],
+    entries: [
+      {
+        classCode: "SS", position: 1, trophy: true, carNumber: "76", altCarNumber: null,
+        firstName: "Casey", lastName: "Twin", carDescription: "2020 Porsche Cayman", hometown: null,
+        bestSeconds: 37.903,
+        runs: [
+          { seconds: 38.5, cones: 0, disposition: "CLEAN" },
+          { seconds: 37.903, cones: 0, disposition: "CLEAN" },
+        ],
+      },
+      {
+        classCode: "SS", position: 2, trophy: false, carNumber: "176", altCarNumber: null,
+        firstName: "Casey", lastName: "Twin", carDescription: null, hometown: null,
+        bestSeconds: null,
+        runs: [],
+      },
+    ],
+  };
+
+  it("keeps the row with runs and drops the all-DNS duplicate for the same driver and class", async () => {
+    const result = await ingestRmsoloEvent({ parsed: duplicateDriver, sha256: "dupe1", date: "2026-07-26" }, prisma);
+    expect(result.status).toBe("ingested");
+
+    const entries = await prisma.entry.findMany({
+      where: { event: { slug: result.event.slug } },
+      include: { runs: true },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.carNumber).toBe("76");
+    expect(entries[0]!.runs).toHaveLength(2);
+  });
+
+  it("still rejects when both duplicate rows carry real runs (genuine anomaly)", async () => {
+    const bothWithRuns = structuredClone(duplicateDriver);
+    bothWithRuns.entries[1]!.bestSeconds = 40.0;
+    bothWithRuns.entries[1]!.runs = [{ seconds: 40.0, cones: 0, disposition: "CLEAN" }];
+
+    await expect(
+      ingestRmsoloEvent({ parsed: bothWithRuns, sha256: "dupe2", date: "2026-07-26" }, prisma),
+    ).rejects.toThrow(/data anomaly/);
+  });
+
+  it("keeps the first row when all duplicate rows are all-DNS", async () => {
+    const bothAllDns = structuredClone(duplicateDriver);
+    bothAllDns.entries[0]!.bestSeconds = null;
+    bothAllDns.entries[0]!.runs = [];
+    // A best-bearing bystander entry, so reconcileTimes has something to
+    // anchor an interpretation on (an event where every entry is all-DNS has
+    // no printed Best at all to reconcile against, which is a different,
+    // unrelated failure mode from the one under test here).
+    bothAllDns.entries.push({
+      classCode: "SS", position: 3, trophy: false, carNumber: "9", altCarNumber: null,
+      firstName: "Jamie", lastName: "Solo", carDescription: null, hometown: null,
+      bestSeconds: 30.0,
+      runs: [{ seconds: 30.0, cones: 0, disposition: "CLEAN" }],
+    });
+
+    const result = await ingestRmsoloEvent({ parsed: bothAllDns, sha256: "dupe3", date: "2026-07-26" }, prisma);
+    expect(result.status).toBe("ingested");
+
+    const allEntries = await prisma.entry.findMany({ where: { event: { slug: result.event.slug } } });
+    expect(allEntries).toHaveLength(2); // collapsed duplicate (Casey Twin) + bystander (Jamie Solo)
+
+    const duplicateEntries = await prisma.entry.findMany({
+      where: { event: { slug: result.event.slug }, carNumber: { in: ["76", "176"] } },
+      include: { runs: true },
+    });
+    expect(duplicateEntries).toHaveLength(1);
+    expect(duplicateEntries[0]!.carNumber).toBe("76"); // first row wins, order preserved
+    expect(duplicateEntries[0]!.runs).toHaveLength(0);
+  });
+});

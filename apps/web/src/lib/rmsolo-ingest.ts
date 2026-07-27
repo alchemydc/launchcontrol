@@ -339,9 +339,47 @@ export async function ingestRmsoloEvent(
       };
     });
 
-    if (entriesData.length > 0) {
+    // Dedup entriesData before createMany, keyed on driverId:classId. RMsolo
+    // has no MSR uid, so Driver identity is name-only, and real source PDFs
+    // occasionally print the same driver twice in one class on a shared car
+    // (observed on event SS7): one row with real runs, one all-DNS. Both
+    // resolve to the same (driverId, classId) key here. Runs are the tell for
+    // which row is real: an all-DNS row has runs.length === 0 (DNS slots are
+    // never emitted by rmsolo-parse.ts). Two or more rows in a group both
+    // carrying runs is a genuine data anomaly and still throws below.
+    const entryGroups = new Map<string, typeof entriesData>();
+    for (const e of entriesData) {
+      const key = `${e.driverId}:${e.classId}`;
+      const group = entryGroups.get(key);
+      if (group) group.push(e);
+      else entryGroups.set(key, [e]);
+    }
+    const dedupedEntriesData: typeof entriesData = [];
+    for (const group of entryGroups.values()) {
+      if (group.length === 1) {
+        dedupedEntriesData.push(group[0]!);
+        continue;
+      }
+      const withRuns = group.filter((e) => e._entry.runs.length > 0);
+      if (withRuns.length > 1) {
+        const first = group[0]!;
+        throw new Error(
+          `Multiple entries with runs for driver ${first.driverId} in class ${first.classId} at event ${event.id} (data anomaly)`,
+        );
+      }
+      // Exactly one row has runs: keep it. Zero rows have runs (all-DNS
+      // duplicates carrying no results): keep the first, order preserved.
+      const keep = withRuns[0] ?? group[0]!;
+      const droppedCount = group.length - 1;
+      console.warn(
+        `[rmsolo-ingest] collapsed ${group.length} entries for driver ${keep.driverId} in class ${keep.classId} at event ${event.id} into one (kept car ${keep.carNumber}, dropped ${droppedCount} with zero runs)`,
+      );
+      dedupedEntriesData.push(keep);
+    }
+
+    if (dedupedEntriesData.length > 0) {
       await tx.entry.createMany({
-        data: entriesData.map((e) => ({
+        data: dedupedEntriesData.map((e) => ({
           eventId: e.eventId,
           driverId: e.driverId,
           classId: e.classId,
@@ -374,7 +412,7 @@ export async function ingestRmsoloEvent(
       cones: number;
       disposition: RunDisposition;
     }> = [];
-    for (const { driverId, classId, _entry } of entriesData) {
+    for (const { driverId, classId, _entry } of dedupedEntriesData) {
       const entryId = entryIdByDriverAndClass.get(`${driverId}:${classId}`);
       if (entryId == null) throw new Error(`Missing entry for driver ${driverId} in class ${classId}`);
       let runNumber = 1;
@@ -401,7 +439,7 @@ export async function ingestRmsoloEvent(
       counts: {
         classes: classCodes.length,
         drivers: uniqueDriverIdentities.size,
-        entries: entriesData.length,
+        entries: dedupedEntriesData.length,
         runs: runsData.length,
       },
       sourceSha256: sha256,
