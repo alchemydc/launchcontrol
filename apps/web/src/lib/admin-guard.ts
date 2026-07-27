@@ -1,7 +1,7 @@
 import type { League } from "@/generated/prisma/client";
 import { getSession } from "@/lib/session";
 import { isSuperUser } from "@/lib/super-user";
-import { isLeagueAdmin, isAnyLeagueAdmin } from "@/lib/admin";
+import { isLeagueAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -52,10 +52,3 @@ export async function guardLeagueAdmin(
   return { actor, league };
 }
 
-/** Coarse gate for league creation: superuser, or ADMIN of ANY league. */
-export async function guardAnyLeagueAdmin(): Promise<{ actor: AdminActor } | Response> {
-  const actor = await actorFromSession();
-  if (!actor) return notFound();
-  if (!(await isAnyLeagueAdmin(actor.msrUid, prisma))) return notFound();
-  return { actor };
-}

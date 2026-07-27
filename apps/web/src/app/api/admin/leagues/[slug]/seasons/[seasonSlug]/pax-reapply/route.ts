@@ -2,6 +2,7 @@ import { guardLeagueAdmin } from "@/lib/admin-guard";
 import { reapplySeasonPaxFactors } from "@/lib/pax-reapply";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
+import { expireResultsCache } from "@/lib/results-cache";
 
 export async function POST(
   _request: Request,
@@ -17,19 +18,20 @@ export async function POST(
   }
 
   try {
-    const res = await reapplySeasonPaxFactors(prisma, season.id);
-    try {
-      await writeAudit(prisma, {
+    // The audit row rides inside reapplySeasonPaxFactors' own transaction —
+    // this bounded history rewrite must not land without a durable record.
+    const res = await reapplySeasonPaxFactors(prisma, season.id, async (tx, result) => {
+      await writeAudit(tx, {
         action: "season.update",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
         targetType: "season",
         targetSlug: seasonSlug,
-        detail: { league: slug, season: seasonSlug, reapplied: res },
+        detail: { league: slug, season: seasonSlug, reapplied: result },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+    });
+    // PAX standings render on public pages — make the rewrite visible now.
+    expireResultsCache();
     return Response.json({ reapplied: res });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "re-apply failed" }, { status: 400 });

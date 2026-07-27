@@ -2,6 +2,7 @@ import { guardLeagueAdmin, guardSuperUser } from "@/lib/admin-guard";
 import { updateLeague, deleteLeague, type UpdateLeaguePatch } from "@/lib/create-league";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
+import { expireResultsCache } from "@/lib/results-cache";
 
 // updateLeague/deleteLeague pull in create-league.ts, which uses node:fs.
 export const runtime = "nodejs";
@@ -50,9 +51,10 @@ export async function PATCH(
   const patch = toPatch(body as Record<string, unknown>);
 
   try {
-    const league = await updateLeague(prisma, slug, patch);
-    try {
-      await writeAudit(prisma, {
+    // Mutation + audit row commit or roll back together.
+    const league = await prisma.$transaction(async (tx) => {
+      const updated = await updateLeague(tx, slug, patch);
+      await writeAudit(tx, {
         action: "league.update",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
@@ -60,9 +62,11 @@ export async function PATCH(
         targetSlug: slug,
         detail: { league: slug, patch: Object.keys(patch) },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+      return updated;
+    });
+    // League config (branding, SmugMug fields, access gate) renders on
+    // public pages — expire the ISR cache so the change is visible now.
+    expireResultsCache();
     return Response.json({ league: { slug: league.slug, name: league.name } });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "update failed" }, { status: 400 });
@@ -78,9 +82,9 @@ export async function DELETE(
   if (g instanceof Response) return g;
 
   try {
-    await deleteLeague(prisma, slug);
-    try {
-      await writeAudit(prisma, {
+    // The audit row rides inside deleteLeague's own transaction.
+    await deleteLeague(prisma, slug, async (tx) => {
+      await writeAudit(tx, {
         action: "league.delete",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
@@ -88,9 +92,8 @@ export async function DELETE(
         targetSlug: slug,
         detail: { league: slug },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+    });
+    expireResultsCache();
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "delete failed" }, { status: 400 });

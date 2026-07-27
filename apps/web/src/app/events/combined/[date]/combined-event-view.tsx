@@ -40,14 +40,31 @@ export async function CombinedEventPageView({
   const dayStart = new Date(`${date}T00:00:00.000Z`);
   if (Number.isNaN(dayStart.getTime())) notFound();
 
-  const events = await findEventsByDate(league.id, dayStart, prisma);
+  const dateEvents = await findEventsByDate(league.id, dayStart, prisma);
 
-  if (events.length === 0) notFound();
+  if (dateEvents.length === 0) notFound();
+
+  // A combined event is one season's morning/afternoon sessions — same-date
+  // events from ANOTHER season (e.g. a Winter-series round) are different
+  // competitions under different rulesets and must not merge into the group
+  // (PR #99 review). Partition by season and render the largest group
+  // (ties: lowest seasonId, deterministic); stray other-season events on
+  // this date simply aren't part of it.
+  const bySeason = new Map<number, typeof dateEvents>();
+  for (const event of dateEvents) {
+    const group = bySeason.get(event.seasonId) ?? [];
+    group.push(event);
+    bySeason.set(event.seasonId, group);
+  }
+  const events = [...bySeason.values()].sort(
+    (a, b) => b.length - a.length || a[0]!.seasonId - b[0]!.seasonId,
+  )[0]!;
+
   if (events.length === 1) redirect(`${basePath}/events/${events[0]!.slug}`);
 
-  // All sessions in a combined group share a calendar date within one
-  // league, so in practice they share one Season row — the first session's
-  // policy is the group's policy (Task 7: conePenaltyMs threading).
+  // All sessions now provably share one Season row (the partition above), so
+  // the first session's policy IS the group's policy (Task 7: conePenaltyMs
+  // threading).
   const conePenaltyMs = parseScoringPolicy(events[0]!.season.ruleset.policy).conePenaltyMs;
   const results = buildCombinedResults(events, conePenaltyMs);
   const photosUrl = await findSmugmugEventFolder(results.label, dayStart, league);

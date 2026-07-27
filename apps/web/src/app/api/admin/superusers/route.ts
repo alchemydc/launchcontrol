@@ -25,21 +25,22 @@ export async function PUT(request: Request) {
   if (typeof b.granted !== "boolean") {
     return Response.json({ error: "granted must be a boolean" }, { status: 400 });
   }
+  const granted = b.granted;
 
   try {
-    await setSuperUser(prisma, msrUid, b.granted);
-    try {
-      await writeAudit(prisma, {
+    // Grant/revoke and its audit row commit or roll back together: a
+    // superuser change must never succeed without a durable audit record.
+    await prisma.$transaction(async (tx) => {
+      await setSuperUser(tx, msrUid, granted);
+      await writeAudit(tx, {
         action: "superuser.update",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
         targetType: "superUser",
         targetSlug: msrUid,
-        detail: { msrUid, granted: b.granted },
+        detail: { msrUid, granted },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+    });
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "update failed" }, { status: 400 });

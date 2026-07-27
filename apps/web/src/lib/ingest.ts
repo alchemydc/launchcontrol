@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
-import { resolveOrCreateSeason } from "@/lib/season-resolve";
+import { resolveOrCreateSeason, resolveSeasonBySlug } from "@/lib/season-resolve";
 import { redactLastName } from "./pii";
 export { redactLastName };
 
@@ -109,6 +109,12 @@ export function normalizeMemberNum(raw: string | null): string | null {
 export type IngestAxdbOptions = {
   /** Target league slug. Defaults to DEFAULT_LEAGUE_SLUG (unchanged single-league behavior). */
   leagueSlug?: string;
+  /**
+   * Explicit target season (slug, unique per league). Required when the
+   * league has more than one ACTIVE season for the event's year —
+   * resolveOrCreateSeason refuses to guess between them (PR #99 review).
+   */
+  seasonSlug?: string;
 };
 
 export async function ingestAxdb(
@@ -214,7 +220,18 @@ export async function ingestAxdb(
         );
       }
       const eventYear = eventDate.getUTCFullYear();
-      const season = await resolveOrCreateSeason(tx, league, eventYear);
+      const seasonSlug = opts.seasonSlug?.trim();
+      let season;
+      if (seasonSlug) {
+        season = await resolveSeasonBySlug(tx, league.id, seasonSlug);
+        if (!season) {
+          throw new Error(
+            `[ingest] league '${leagueSlug}' has no season with slug '${seasonSlug}' — check --season.`,
+          );
+        }
+      } else {
+        season = await resolveOrCreateSeason(tx, league, eventYear);
+      }
       const seasonId = season.id;
 
       const existing = await tx.event.findUnique({

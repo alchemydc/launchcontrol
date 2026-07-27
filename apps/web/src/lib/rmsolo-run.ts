@@ -10,7 +10,7 @@
 // INGEST_NOW_ENABLED capability gate below.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { PrismaClient } from "@/generated/prisma/client";
@@ -19,11 +19,18 @@ import { prisma as defaultClient } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { extractPdfText, parseRmsoloFullText } from "@/lib/rmsolo-parse";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
-import { fetchResultsPage, parseResultsPage } from "@/lib/rmsolo-index";
+import { fetchResultsPage, fetchRmsoloPdf, parseResultsPage } from "@/lib/rmsolo-index";
 
 const POLITE_DELAY_MS = 1500;
-const UA = "Mozilla/5.0 (compatible; launchcontrol-ingest)";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Who initiated an ingest, for the per-event audit rows. Defaults to the CLI
+ * identity; the admin "Ingest now" route passes the authenticated admin so
+ * event mutations are attributed to the actual principal, not "cli".
+ */
+export type IngestActor = { msrUid: string; name: string };
+const CLI_ACTOR: IngestActor = { msrUid: "cli", name: "cli" };
 
 // Same env var and fallback as ingestRmsoloEvent's own DEFAULT_LEAGUE_SLUG
 // (rmsolo-ingest.ts) — kept in sync here so the sha pre-check below scopes to
@@ -107,7 +114,8 @@ export type RmsoloRunCounts = {
 /**
  * Ingest one downloaded PDF buffer into `leagueSlug`. Preserves the CLI's
  * league-scoped sha256 pre-check (cheap skip before shelling out to pdftotext),
- * mkdtemp temp-file handling, and best-effort per-event audit ("ingest"/"cli").
+ * mkdtemp temp-file handling (cleaned up in a finally), and a best-effort
+ * per-event "ingest" audit attributed to `actor`.
  * Returns the ingest summary, or `null` when the sha pre-check skipped it.
  *
  * Exported so the CLI's `--file` single-PDF path shares this exact code.
@@ -119,7 +127,9 @@ export async function ingestBuffer(
   name: string | undefined,
   leagueSlug: string | undefined,
   client: PrismaClient = defaultClient,
+  opts: { actor?: IngestActor; seasonSlug?: string } = {},
 ): Promise<IngestSummary | null> {
+  const actor = opts.actor ?? CLI_ACTOR;
   const sha256 = createHash("sha256").update(pdf).digest("hex");
   const effectiveLeagueSlug = leagueSlug?.trim() || DEFAULT_LEAGUE_SLUG;
   // Cheap skip before we bother shelling out to pdftotext / parsing: if a
@@ -136,16 +146,33 @@ export async function ingestBuffer(
     console.log(`[skip] ${sourceName} — already ingested (event ${existing.slug})`);
     return null;
   }
-  const tmp = join(mkdtempSync(join(tmpdir(), "rmsolo-")), "event.pdf");
-  writeFileSync(tmp, pdf);
-  const parsed = parseRmsoloFullText(extractPdfText(tmp));
-  const result = await ingestRmsoloEvent({ parsed, sha256, date, name, leagueSlug }, client);
+  // The temp file exists only because pdftotext needs a path argument; the
+  // PDF holds names + hometowns, so the directory is removed in the finally
+  // whether the parse succeeds or throws — a polling deployment must not
+  // accumulate PII (or fill the disk) under /tmp.
+  const tmpDir = mkdtempSync(join(tmpdir(), "rmsolo-"));
+  let parsed: ReturnType<typeof parseRmsoloFullText>;
+  try {
+    const tmp = join(tmpDir, "event.pdf");
+    writeFileSync(tmp, pdf);
+    parsed = parseRmsoloFullText(extractPdfText(tmp));
+  } finally {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best-effort — never fail an ingest over temp-dir cleanup
+    }
+  }
+  const result = await ingestRmsoloEvent(
+    { parsed, sha256, date, name, leagueSlug, seasonSlug: opts.seasonSlug },
+    client,
+  );
   console.log(JSON.stringify(result, null, 2));
   try {
     await writeAudit(client, {
       action: "ingest",
-      actorMsrUid: "cli",
-      actorName: "cli",
+      actorMsrUid: actor.msrUid,
+      actorName: actor.name,
       targetType: "event",
       targetId: result.event.id,
       targetSlug: result.event.slug,
@@ -169,9 +196,14 @@ export async function ingestBuffer(
 export async function runRmsoloIngest({
   leagueSlug,
   client = defaultClient,
+  actor = CLI_ACTOR,
+  seasonSlug,
 }: {
   leagueSlug: string | undefined;
   client?: PrismaClient;
+  actor?: IngestActor;
+  /** Explicit target season — required when the league has two active seasons in one year. */
+  seasonSlug?: string;
 }): Promise<RmsoloRunCounts> {
   const counts: RmsoloRunCounts = { ingested: 0, unchanged: 0, skipped: 0, failed: 0 };
 
@@ -200,15 +232,17 @@ export async function runRmsoloIngest({
     }
     try {
       await sleep(POLITE_DELAY_MS);
-      const res = await fetch(ev.pdfUrls.full, { headers: { "User-Agent": UA } });
-      if (!res.ok) throw new Error(`HTTP ${res.status} for ${ev.pdfUrls.full}`);
+      // fetchRmsoloPdf enforces the allowlisted-host/no-redirect/timeout/
+      // size-cap/%PDF-signature guards — the URL comes from scraped HTML.
+      const pdf = await fetchRmsoloPdf(ev.pdfUrls.full);
       const result = await ingestBuffer(
-        Buffer.from(await res.arrayBuffer()),
+        pdf,
         basename(ev.pdfUrls.full),
         ev.date,
         undefined,
         leagueSlug,
         client,
+        { actor, seasonSlug },
       );
       if (result == null) counts.skipped += 1;
       else if (result.status === "ingested") counts.ingested += 1;

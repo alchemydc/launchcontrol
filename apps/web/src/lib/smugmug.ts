@@ -1,30 +1,41 @@
 import { unstable_cache } from "next/cache";
-import { getLeagueConfig } from "@/lib/league-config";
+import { defaultLeagueSlug, getLeagueConfig } from "@/lib/league-config";
 
 const API_BASE = "https://api.smugmug.com/api/v2";
 
 export type SmugmugLeagueTarget = {
+  slug: string;
   smugmugUser: string | null;
   smugmugDisciplinePath: string | null;
 };
 
-// The League row is authoritative for smugmugUser/smugmugDisciplinePath;
-// SMUGMUG_USER/SMUGMUG_DISCIPLINE_PATH env vars are honored as a fallback
-// only when the League row leaves the field unset (null), with a hardcoded
-// last resort so a league with neither configured still resolves to
-// something (parity with the pre-League behavior). `league` overrides which
-// League's fields are consulted — callers on `/l/[league]` routes (Task 5)
-// pass THAT league's config so photos never resolve against the deployment's
-// default league; omitted, this falls back to `getLeagueConfig()` (default
-// league), preserving every pre-Task-5 call site's behavior exactly.
-async function resolveSmugmugTarget(
+// The League row is authoritative for smugmugUser/smugmugDisciplinePath.
+// The SMUGMUG_USER/SMUGMUG_DISCIPLINE_PATH env fallbacks (and the "rmrpca"/
+// "Autocross" hardcoded last resort, parity with the pre-League behavior)
+// are deployment-level legacy config, so they apply ONLY to the deployment's
+// DEFAULT league. Any other league resolves from its own columns alone and
+// returns null when it has no smugmugUser — an unconfigured league means "no
+// photos", never "show the default league's (RMR's) galleries". `league`
+// selects which League's fields are consulted — callers on `/l/[league]`
+// routes (Task 5) pass THAT league's config; omitted, this falls back to
+// `getLeagueConfig()` (default league).
+export async function resolveSmugmugTarget(
   league?: SmugmugLeagueTarget,
-): Promise<{ user: string; discipline: string }> {
+): Promise<{ user: string; discipline: string } | null> {
   const target = league ?? (await getLeagueConfig());
+  if (target.slug === defaultLeagueSlug()) {
+    return {
+      user: target.smugmugUser || process.env.SMUGMUG_USER || "rmrpca",
+      discipline:
+        target.smugmugDisciplinePath || process.env.SMUGMUG_DISCIPLINE_PATH || "Autocross",
+    };
+  }
+  if (!target.smugmugUser) return null;
   return {
-    user: target.smugmugUser || process.env.SMUGMUG_USER || "rmrpca",
-    discipline:
-      target.smugmugDisciplinePath || process.env.SMUGMUG_DISCIPLINE_PATH || "Autocross",
+    user: target.smugmugUser,
+    // "Autocross" mirrors SmugMug's common discipline-folder layout; a wrong
+    // guess fails soft (year-node lookup returns null → no photos link).
+    discipline: target.smugmugDisciplinePath || "Autocross",
   };
 }
 
@@ -194,7 +205,9 @@ export async function findSmugmugEventFolder(
   }
 
   try {
-    const { user, discipline } = await resolveSmugmugTarget(league);
+    const target = await resolveSmugmugTarget(league);
+    if (!target) return null; // league has no photo config — nothing to show
+    const { user, discipline } = target;
     const nodeId = await cachedYearNodeId(user, discipline, eventDate.getUTCFullYear());
     if (!nodeId) return null;
     const folders = await cachedEventFolders(user, discipline, nodeId);

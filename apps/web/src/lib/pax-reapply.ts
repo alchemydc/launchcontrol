@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { parseSeasonPaxTableStrict } from "@/lib/rmsolo-pax";
 
 /**
@@ -15,6 +15,9 @@ import { parseSeasonPaxTableStrict } from "@/lib/rmsolo-pax";
 export async function reapplySeasonPaxFactors(
   client: PrismaClient,
   seasonId: number,
+  // Runs inside the same transaction, after the rewrite — used by the admin
+  // route to make the audit row atomic with this history rewrite.
+  inTx?: (tx: Prisma.TransactionClient, result: { updated: number; codes: string[] }) => Promise<void>,
 ): Promise<{ updated: number; codes: string[] }> {
   const season = await client.season.findUniqueOrThrow({
     where: { id: seasonId },
@@ -31,6 +34,7 @@ export async function reapplySeasonPaxFactors(
       });
       updated += res.count;
     }
+    await inTx?.(tx, { updated, codes });
   });
   return { updated, codes };
 }

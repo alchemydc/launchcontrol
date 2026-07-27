@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { matchEventFolder } from "@/lib/smugmug";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { matchEventFolder, resolveSmugmugTarget } from "@/lib/smugmug";
 
 const eventDate = new Date("2026-04-25T00:00:00Z");
 
@@ -113,5 +113,67 @@ describe("matchEventFolder", () => {
     // The combined page's own label (stripped of the session suffix) matches too.
     const combinedLabel = matchEventFolder(combinedFolders, "Cone in 60 Seconds", combinedDate);
     expect(combinedLabel).toBe(sessionA);
+  });
+});
+
+// PR #99 review: the SMUGMUG_* env fallbacks (and the "rmrpca"/"Autocross"
+// hardcoded last resort) are deployment-level legacy config for the DEFAULT
+// league only. An explicitly-supplied non-default league with no photo
+// columns resolves to null — "no photos", never another league's galleries.
+describe("resolveSmugmugTarget", () => {
+  const ENV_KEYS = ["SMUGMUG_USER", "SMUGMUG_DISCIPLINE_PATH", "DEFAULT_LEAGUE_SLUG"] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of ENV_KEYS) saved[k] = process.env[k];
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("default league falls back to env, then the legacy hardcoded target", async () => {
+    delete process.env.DEFAULT_LEAGUE_SLUG; // → "pca-rmr"
+    process.env.SMUGMUG_USER = "envuser";
+    delete process.env.SMUGMUG_DISCIPLINE_PATH;
+    const target = await resolveSmugmugTarget({
+      slug: "pca-rmr",
+      smugmugUser: null,
+      smugmugDisciplinePath: null,
+    });
+    expect(target).toEqual({ user: "envuser", discipline: "Autocross" });
+
+    delete process.env.SMUGMUG_USER;
+    const hardcoded = await resolveSmugmugTarget({
+      slug: "pca-rmr",
+      smugmugUser: null,
+      smugmugDisciplinePath: null,
+    });
+    expect(hardcoded).toEqual({ user: "rmrpca", discipline: "Autocross" });
+  });
+
+  it("a non-default league with no photo config resolves to null even when env is set", async () => {
+    delete process.env.DEFAULT_LEAGUE_SLUG;
+    process.env.SMUGMUG_USER = "envuser";
+    process.env.SMUGMUG_DISCIPLINE_PATH = "Autocross";
+    const target = await resolveSmugmugTarget({
+      slug: "rmsolo",
+      smugmugUser: null,
+      smugmugDisciplinePath: null,
+    });
+    expect(target).toBeNull();
+  });
+
+  it("a non-default league with its own config uses exactly that config", async () => {
+    delete process.env.DEFAULT_LEAGUE_SLUG;
+    process.env.SMUGMUG_USER = "envuser";
+    const target = await resolveSmugmugTarget({
+      slug: "rmsolo",
+      smugmugUser: "rmsolophotos",
+      smugmugDisciplinePath: "Solo",
+    });
+    expect(target).toEqual({ user: "rmsolophotos", discipline: "Solo" });
   });
 });

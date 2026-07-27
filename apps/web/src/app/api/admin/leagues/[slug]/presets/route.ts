@@ -2,6 +2,7 @@ import { guardLeagueAdmin } from "@/lib/admin-guard";
 import { createScoringSystem, updateScoringSystem } from "@/lib/scoring-system";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
+import { expireResultsCache } from "@/lib/results-cache";
 
 export async function POST(
   request: Request,
@@ -33,15 +34,18 @@ export async function POST(
   }
   const paxTableJson = typeof b.paxTableJson === "string" ? b.paxTableJson : undefined;
 
+  const name = b.name;
+  const policyJson = b.policyJson;
   try {
-    const preset = await createScoringSystem(prisma, {
-      leagueSlug: slug,
-      name: b.name,
-      policyJson: b.policyJson,
-      paxTableJson,
-    });
-    try {
-      await writeAudit(prisma, {
+    // Mutation + audit row commit or roll back together.
+    const preset = await prisma.$transaction(async (tx) => {
+      const created = await createScoringSystem(tx, {
+        leagueSlug: slug,
+        name,
+        policyJson,
+        paxTableJson,
+      });
+      await writeAudit(tx, {
         action: "preset.create",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
@@ -49,13 +53,12 @@ export async function POST(
         targetSlug: slug,
         detail: {
           league: slug,
-          name: preset.name,
-          after: { policy: preset.policy, paxTable: preset.paxTable },
+          name: created.name,
+          after: { policy: created.policy, paxTable: created.paxTable },
         },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+      return created;
+    });
     return Response.json({ preset }, { status: 201 });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "create failed" }, { status: 400 });
@@ -91,19 +94,20 @@ export async function PATCH(
   if (typeof b.policyJson === "string") patch.policyJson = b.policyJson;
   if (typeof b.paxTableJson === "string") patch.paxTableJson = b.paxTableJson;
 
-  // Snapshot the pre-update values for the audit trail: since Task R2 a
-  // ruleset is a LIVE reference for every season pointing at it, so an edit
-  // here changes standings retroactively — the log must show what the
-  // scoring config was before, not just that "policy" was patched.
-  const before = await prisma.scoringSystem.findFirst({
-    where: { league: { slug }, name },
-    select: { policy: true, paxTable: true },
-  });
-
   try {
-    const preset = await updateScoringSystem(prisma, { leagueSlug: slug, name }, patch);
-    try {
-      await writeAudit(prisma, {
+    // Mutation + audit row commit or roll back together. The pre-update
+    // snapshot rides in the same transaction so it can't race a concurrent
+    // edit: since Task R2 a ruleset is a LIVE reference for every season
+    // pointing at it, so an edit here changes standings retroactively — the
+    // log must show what the scoring config was before, not just that
+    // "policy" was patched.
+    const preset = await prisma.$transaction(async (tx) => {
+      const before = await tx.scoringSystem.findFirst({
+        where: { league: { slug }, name },
+        select: { policy: true, paxTable: true },
+      });
+      const updated = await updateScoringSystem(tx, { leagueSlug: slug, name }, patch);
+      await writeAudit(tx, {
         action: "preset.update",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
@@ -114,12 +118,14 @@ export async function PATCH(
           name,
           patch: Object.keys(patch),
           before: before ? { policy: before.policy, paxTable: before.paxTable } : null,
-          after: { policy: preset.policy, paxTable: preset.paxTable },
+          after: { policy: updated.policy, paxTable: updated.paxTable },
         },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+      return updated;
+    });
+    // Rulesets are read live by season standings — expire the ISR cache so
+    // the retroactive scoring change is visible now, not in five minutes.
+    expireResultsCache();
     return Response.json({ preset });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "update failed" }, { status: 400 });

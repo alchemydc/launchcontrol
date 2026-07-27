@@ -78,6 +78,10 @@ export type CreateLeagueResult = {
 export async function createLeague(
   opts: CreateLeagueOptions,
   client: PrismaClient = defaultClient,
+  // Runs inside the same transaction, after the League + preset inserts —
+  // the admin route uses this to make the creator's ADMIN membership and
+  // the audit row atomic with league creation.
+  inTx?: (tx: Prisma.TransactionClient, league: League, scoringSystemName: string) => Promise<void>,
 ): Promise<CreateLeagueResult> {
   const { slug: rawSlug, name } = opts;
 
@@ -146,6 +150,7 @@ export async function createLeague(
         paxTable: JSON.stringify(RMSOLO_PAX_2026),
       },
     });
+    await inTx?.(tx, created, presetName);
     return created;
   });
 
@@ -175,7 +180,7 @@ export type UpdateLeaguePatch = Partial<{
  * not here — this function is transport-free.
  */
 export async function updateLeague(
-  client: PrismaClient,
+  client: PrismaClient | Prisma.TransactionClient,
   slug: string,
   patch: UpdateLeaguePatch,
 ): Promise<League> {
@@ -234,7 +239,13 @@ export async function updateLeague(
  * Superuser-only gating is enforced by the caller (the admin REST route),
  * not here — this function is transport-free.
  */
-export async function deleteLeague(client: PrismaClient, slug: string): Promise<void> {
+export async function deleteLeague(
+  client: PrismaClient,
+  slug: string,
+  // Runs inside the same transaction, after the deletes — used by the admin
+  // route to make the audit row atomic with the deletion.
+  inTx?: (tx: Prisma.TransactionClient) => Promise<void>,
+): Promise<void> {
   await client.$transaction(async (tx) => {
     const league = await tx.league.findUnique({
       where: { slug },
@@ -251,5 +262,6 @@ export async function deleteLeague(client: PrismaClient, slug: string): Promise<
     await tx.carClass.deleteMany({ where: { leagueId: league.id } });
     await tx.season.deleteMany({ where: { leagueId: league.id } });
     await tx.league.delete({ where: { id: league.id } });
+    await inTx?.(tx);
   });
 }

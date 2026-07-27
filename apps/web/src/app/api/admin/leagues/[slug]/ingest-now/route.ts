@@ -1,6 +1,7 @@
 import { guardLeagueAdmin } from "@/lib/admin-guard";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
+import { expireResultsCache } from "@/lib/results-cache";
 
 // The shared scrape lib shells out to pdftotext (execFileSync) — force nodejs.
 export const runtime = "nodejs";
@@ -42,7 +43,16 @@ export async function POST(
   }
 
   try {
-    const counts = await runRmsoloIngest({ leagueSlug: g.league.slug, client: prisma });
+    // Actor threads through to the per-event "ingest" audit rows so they
+    // record the admin who clicked, not "cli".
+    const counts = await runRmsoloIngest({
+      leagueSlug: g.league.slug,
+      client: prisma,
+      actor: { msrUid: g.actor.msrUid, name: g.actor.name },
+    });
+    // New events/runs render on public pages — expire the ISR cache so the
+    // admin's success response matches what visitors see.
+    expireResultsCache();
     try {
       await writeAudit(prisma, {
         action: "ingest.now",

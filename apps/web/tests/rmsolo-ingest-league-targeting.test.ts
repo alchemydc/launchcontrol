@@ -139,3 +139,63 @@ describe("ingestRmsoloEvent league targeting", () => {
     ).rejects.toThrow(/league 'does-not-exist' not found/);
   });
 });
+
+// PR #99 review: explicit season targeting. With two ACTIVE seasons in one
+// (league, year), season resolution refuses to guess — an ingest without an
+// explicit season fails loudly, and { seasonSlug } lands the event in
+// exactly the named season.
+describe("ingestRmsoloEvent { seasonSlug } targeting", () => {
+  it("fails without a season target when the year is ambiguous, succeeds with one", async () => {
+    const rulesetId = (await prisma.scoringSystem.findFirstOrThrow({
+      where: { leagueId: otherLeagueId },
+    })).id;
+    await prisma.season.create({
+      data: {
+        leagueId: otherLeagueId,
+        name: "2026 Winter",
+        slug: "2026-winter",
+        year: 2026,
+        rulesetId,
+      },
+    });
+
+    await expect(
+      ingestRmsoloEvent(
+        { parsed: event("77"), sha256: "ambiguous-season", date: "2026-06-01", leagueSlug: "rmsolo-test" },
+        prisma,
+      ),
+    ).rejects.toThrow(/2 active seasons for 2026[\s\S]*--season/);
+
+    const result = await ingestRmsoloEvent(
+      {
+        parsed: event("77"),
+        sha256: "ambiguous-season",
+        date: "2026-06-01",
+        leagueSlug: "rmsolo-test",
+        seasonSlug: "2026-winter",
+      },
+      prisma,
+    );
+    expect(result.status).toBe("ingested");
+    const ingested = await prisma.event.findFirstOrThrow({
+      where: { id: result.event.id },
+      include: { season: true },
+    });
+    expect(ingested.season.slug).toBe("2026-winter");
+  });
+
+  it("rejects an unknown season slug with a friendly error", async () => {
+    await expect(
+      ingestRmsoloEvent(
+        {
+          parsed: event("78"),
+          sha256: "unknown-season",
+          date: "2026-06-02",
+          leagueSlug: "rmsolo-test",
+          seasonSlug: "no-such-season",
+        },
+        prisma,
+      ),
+    ).rejects.toThrow(/no season with slug 'no-such-season'/);
+  });
+});

@@ -328,3 +328,28 @@ describe("listSeasonsForLeague", () => {
     expect(await listSeasonsForLeague(prisma, league.id)).toEqual([]);
   });
 });
+
+// PR #99 review: with TWO active seasons in one (league, year) — a supported
+// shape (Winter series alongside the main season) — resolveOrCreateSeason
+// must refuse to guess rather than silently landing events under the
+// lowest-id season's ruleset. Callers escape via an explicit --season slug.
+describe("resolveOrCreateSeason ambiguity guard", () => {
+  it("throws (naming the candidates) when a year has two ACTIVE seasons", async () => {
+    const rulesetId = await ensureRuleset(prisma, leagueId);
+    await prisma.season.create({
+      data: { leagueId, name: "2077 Season", slug: "2077-season", year: 2077, plannedEvents: 0, rulesetId },
+    });
+    await prisma.season.create({
+      data: { leagueId, name: "2077 Winter", slug: "2077-winter", year: 2077, plannedEvents: 0, rulesetId },
+    });
+    await expect(
+      resolveOrCreateSeason(prisma, { id: leagueId, slug: "pca-rmr" }, 2077),
+    ).rejects.toThrow(/2 active seasons for 2077[\s\S]*'2077-season'[\s\S]*'2077-winter'/);
+  });
+
+  it("resolves normally once only one season for the year is active", async () => {
+    await prisma.season.update({ where: { leagueId_slug: { leagueId, slug: "2077-winter" } }, data: { status: "completed" } });
+    const season = await resolveOrCreateSeason(prisma, { id: leagueId, slug: "pca-rmr" }, 2077);
+    expect(season.slug).toBe("2077-season");
+  });
+});

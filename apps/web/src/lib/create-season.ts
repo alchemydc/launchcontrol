@@ -44,7 +44,7 @@ export type CreateSeasonOptions = {
  */
 export async function createSeason(
   opts: CreateSeasonOptions,
-  client: PrismaClient = defaultClient,
+  client: PrismaClient | Prisma.TransactionClient = defaultClient,
 ): Promise<Season> {
   const {
     leagueSlug,
@@ -158,7 +158,7 @@ export type UpdateSeasonPatch = Partial<{
  * flows through to every season referencing it.
  */
 export async function updateSeason(
-  client: PrismaClient,
+  client: PrismaClient | Prisma.TransactionClient,
   ref: SeasonRef,
   patch: UpdateSeasonPatch,
 ): Promise<Season> {

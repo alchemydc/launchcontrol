@@ -1,4 +1,4 @@
-import { guardAnyLeagueAdmin } from "@/lib/admin-guard";
+import { guardSuperUser } from "@/lib/admin-guard";
 import { createLeague, type AccessGate, type CreateLeagueOptions } from "@/lib/create-league";
 import { setLeagueMembership } from "@/lib/membership";
 import { writeAudit } from "@/lib/audit";
@@ -15,7 +15,10 @@ export const runtime = "nodejs";
  * `CreateLeagueOptions` field is pass-through.
  */
 export async function POST(request: Request) {
-  const g = await guardAnyLeagueAdmin();
+  // Superuser-only: creating a league is creating a tenant. A league-scoped
+  // admin who could create leagues would self-grant admin of the new tenant
+  // (via the auto-ADMIN below), crossing the tenant boundary.
+  const g = await guardSuperUser();
   if (g instanceof Response) return g;
 
   let body: unknown;
@@ -46,25 +49,21 @@ export async function POST(request: Request) {
   if (b.logoUrl === null || typeof b.logoUrl === "string") opts.logoUrl = b.logoUrl;
 
   try {
-    const { league, scoringSystemName } = await createLeague(opts, prisma);
-
-    // Auto-ADMIN the creator on their new league — not best-effort: a
-    // league created without its creator able to administer it is a bug,
-    // not a logging hiccup, so a failure here surfaces as a real error.
-    await setLeagueMembership(prisma, { leagueId: league.id, msrUid: g.actor.msrUid, role: "ADMIN" });
-
-    try {
-      await writeAudit(prisma, {
+    // League + default preset + creator's ADMIN membership + audit row all
+    // commit atomically (createLeague runs the callback inside its own
+    // transaction): a league must never exist without an administering
+    // creator or a durable audit record.
+    const { league, scoringSystemName } = await createLeague(opts, prisma, async (tx, created, presetName) => {
+      await setLeagueMembership(tx, { leagueId: created.id, msrUid: g.actor.msrUid, role: "ADMIN" });
+      await writeAudit(tx, {
         action: "league.create",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
         targetType: "league",
-        targetSlug: league.slug,
-        detail: { league: league.slug, scoringSystemName },
+        targetSlug: created.slug,
+        detail: { league: created.slug, scoringSystemName: presetName },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+    });
 
     return Response.json(
       { league: { slug: league.slug, name: league.name }, scoringSystemName },

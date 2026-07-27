@@ -25,11 +25,14 @@ function requirePdftotext(): void {
 
 async function main() {
   const leagueSlug = argValue("--league");
+  // Required when the league has two ACTIVE seasons in one year — season
+  // resolution refuses to guess between them (PR #99 review).
+  const seasonSlug = argValue("--season");
   const file = argValue("--file");
   if (file) {
     const date = argValue("--date");
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      console.error('Usage: pnpm ingest:rmsolo [--league <slug>] --file <pdf> --date YYYY-MM-DD [--name "Event name"]');
+      console.error('Usage: pnpm ingest:rmsolo [--league <slug>] [--season <slug>] --file <pdf> --date YYYY-MM-DD [--name "Event name"]');
       process.exit(2);
     }
     // pnpm sets INIT_CWD to the directory where the user invoked pnpm,
@@ -40,12 +43,14 @@ async function main() {
       process.exit(2);
     }
     requirePdftotext();
-    await ingestBuffer(readFileSync(path), basename(path), date, argValue("--name"), leagueSlug);
+    await ingestBuffer(readFileSync(path), basename(path), date, argValue("--name"), leagueSlug, prisma, {
+      seasonSlug,
+    });
     return;
   }
 
   requirePdftotext();
-  const counts = await runRmsoloIngest({ leagueSlug });
+  const counts = await runRmsoloIngest({ leagueSlug, seasonSlug });
   if (counts.failed > 0) process.exitCode = 1;
 }
 

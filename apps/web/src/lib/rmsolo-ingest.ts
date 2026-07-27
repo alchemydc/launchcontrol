@@ -7,7 +7,7 @@ import {
   redactLastName,
   type IngestSummary,
 } from "@/lib/ingest";
-import { resolveOrCreateSeason } from "@/lib/season-resolve";
+import { resolveOrCreateSeason, resolveSeasonBySlug } from "@/lib/season-resolve";
 import { nearestPaxClass, parseSeasonPaxTable, resolveRulesetPaxIndex } from "@/lib/rmsolo-pax";
 import { reconcileTimes, type ParsedEntry, type ParsedRmsoloEvent, type ParsedRun } from "@/lib/rmsolo-parse";
 
@@ -29,6 +29,12 @@ export type RmsoloIngestInput = {
   name?: string;
   /** Target league slug. Defaults to DEFAULT_LEAGUE_SLUG (single-league behavior, unchanged). */
   leagueSlug?: string;
+  /**
+   * Explicit target season (slug, unique per league). Required when the
+   * league has more than one ACTIVE season for the event's year —
+   * resolveOrCreateSeason refuses to guess between them (PR #99 review).
+   */
+  seasonSlug?: string;
 };
 
 function toDisposition(raw: ParsedRun["disposition"]): RunDisposition {
@@ -84,10 +90,15 @@ export async function ingestRmsoloEvent(
     // One summary line per event, not per entry — real "run-group" headings
     // (M/N/S/P/X; see rmsolo-pax.ts) can carry many PAX-indexed entries and we
     // don't want to flood logs with one warning each.
+    // Redacted like the DB rows (lastInitial only): logs persist in
+    // production, and the DB never stores the full surname either — the log
+    // must not be the one place it escapes. The anonymous "#<carNumber>"
+    // placeholder is not a surname and stays verbatim.
     const listed = unreconciled
       .map((e) => {
         const { firstName, lastName } = identityNameFor(e);
-        return `${e.classCode}/${firstName} ${lastName}`;
+        const displayLast = lastName.startsWith("#") ? lastName : redactLastName(lastName);
+        return `${e.classCode}/${firstName} ${displayLast}`;
       })
       .join(", ");
     console.warn(
@@ -140,7 +151,18 @@ export async function ingestRmsoloEvent(
       );
     }
     const eventYear = eventDate.getUTCFullYear();
-    const season = await resolveOrCreateSeason(tx, league, eventYear);
+    const seasonSlug = input.seasonSlug?.trim();
+    let season;
+    if (seasonSlug) {
+      season = await resolveSeasonBySlug(tx, league.id, seasonSlug);
+      if (!season) {
+        throw new Error(
+          `[rmsolo-ingest] league '${leagueSlug}' has no season with slug '${seasonSlug}' — check --season.`,
+        );
+      }
+    } else {
+      season = await resolveOrCreateSeason(tx, league, eventYear);
+    }
     const seasonId = season.id;
     // Factors come from the season's ruleset paxTable (Task R2 — a COMPLETE
     // table, no built-in fallback; unlisted codes resolve to 1.0 with a

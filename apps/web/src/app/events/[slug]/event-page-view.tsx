@@ -52,8 +52,9 @@ export async function EventPageView({
   const showPaxView = policy.paxSection;
 
   // Combined-event cross-link (M1.15): any other events sharing this event's
-  // calendar date (within the same league) form one combined scoring event.
-  const siblingCount = await countSiblingEventsByDate(league.id, event.date, event.id, prisma);
+  // calendar date (within the same SEASON — a same-date event in another
+  // season is a different competition) form one combined scoring event.
+  const siblingCount = await countSiblingEventsByDate(event.seasonId, event.date, event.id, prisma);
   const dateKey = event.date.toISOString().slice(0, 10);
 
   const rows = buildLeaderboard(event.entries, policy.conePenaltyMs);

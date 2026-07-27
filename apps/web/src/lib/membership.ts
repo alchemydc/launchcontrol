@@ -1,4 +1,6 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+
+type Db = PrismaClient | Prisma.TransactionClient;
 
 export const MEMBERSHIP_ROLES = ["ADMIN", "MEMBER", "BLOCKED"] as const;
 export type MembershipRole = (typeof MEMBERSHIP_ROLES)[number];
@@ -11,7 +13,7 @@ export function parseMembershipRole(v: unknown): MembershipRole {
 }
 
 export async function setLeagueMembership(
-  client: PrismaClient,
+  client: Db,
   { leagueId, msrUid, role }: { leagueId: number; msrUid: string; role: MembershipRole },
 ): Promise<void> {
   await client.leagueMembership.upsert({
@@ -22,14 +24,14 @@ export async function setLeagueMembership(
 }
 
 export async function removeLeagueMembership(
-  client: PrismaClient,
+  client: Db,
   { leagueId, msrUid }: { leagueId: number; msrUid: string },
 ): Promise<void> {
   await client.leagueMembership.deleteMany({ where: { leagueId, msrUid } });
 }
 
 export async function getMembershipRole(
-  client: PrismaClient,
+  client: Db,
   leagueId: number,
   msrUid: string,
 ): Promise<MembershipRole | null> {

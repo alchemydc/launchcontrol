@@ -42,19 +42,21 @@ export async function findEventBySlug(
 
 /**
  * Count sibling events sharing `date` (excluding `excludeEventId`), scoped to
- * `leagueId` — powers the /events/[slug] page's "this is part of a combined
- * event" cross-link. Scoped for the same cross-league-collision reason as
- * `findEventBySlug`: an unrelated league's event landing on the same
- * calendar date must never make a single-league event look combined.
+ * `seasonId` — powers the /events/[slug] page's "this is part of a combined
+ * event" cross-link. Season-scoped (which pins the league too) for the same
+ * collision reason as `findEventBySlug`, tightened by the PR #99 review: an
+ * unrelated league's — or an unrelated same-league SEASON's (e.g. Winter
+ * series) — event landing on the same calendar date must never make a
+ * standalone event advertise itself as combined.
  */
 export async function countSiblingEventsByDate(
-  leagueId: number,
+  seasonId: number,
   date: Date,
   excludeEventId: number,
   client: PrismaClient = defaultClient,
 ): Promise<number> {
   return client.event.count({
-    where: { date, id: { not: excludeEventId }, season: { leagueId } },
+    where: { date, id: { not: excludeEventId }, seasonId },
   });
 }
 

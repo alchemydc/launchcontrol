@@ -2,6 +2,7 @@ import { guardLeagueAdmin } from "@/lib/admin-guard";
 import { updateSeason, type UpdateSeasonPatch } from "@/lib/create-season";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
+import { expireResultsCache } from "@/lib/results-cache";
 
 export const runtime = "nodejs";
 
@@ -58,19 +59,22 @@ export async function PATCH(
   const patch = toPatch(requestBody);
 
   try {
-    const season = await updateSeason(prisma, { leagueSlug: slug, seasonSlug }, patch);
-    try {
-      await writeAudit(prisma, {
+    // Mutation + audit row commit or roll back together.
+    const season = await prisma.$transaction(async (tx) => {
+      const updated = await updateSeason(tx, { leagueSlug: slug, seasonSlug }, patch);
+      await writeAudit(tx, {
         action: "season.update",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
         targetType: "season",
-        targetSlug: season.slug,
-        detail: { league: slug, season: season.slug, patch: Object.keys(patch) },
+        targetSlug: updated.slug,
+        detail: { league: slug, season: updated.slug, patch: Object.keys(patch) },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+      return updated;
+    });
+    // Re-pointing a season's ruleset (or archiving it) changes published
+    // standings immediately — expire the ISR cache to match.
+    expireResultsCache();
     return Response.json({ season });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "update failed" }, { status: 400 });

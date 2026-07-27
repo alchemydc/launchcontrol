@@ -145,7 +145,10 @@ describe("ingestRmsoloEvent", () => {
     // class code has no real-world factor) are unrelated and may also fire.
     const unreconciledWarnings = warnSpy.mock.calls.filter(([msg]) => typeof msg === "string" && msg.includes("could not reconcile"));
     expect(unreconciledWarnings).toHaveLength(1);
-    expect(unreconciledWarnings[0]![0]).toMatch(/M\/Max Modified/);
+    // Surnames are redacted to an initial in log output (PR #99 review) —
+    // production logs must never be the one place a full surname escapes.
+    expect(unreconciledWarnings[0]![0]).toMatch(/M\/Max M\./);
+    expect(unreconciledWarnings[0]![0]).not.toContain("Modified");
     warnSpy.mockRestore();
 
     const maxEntry = await prisma.entry.findFirst({ where: { carNumber: "77" } });

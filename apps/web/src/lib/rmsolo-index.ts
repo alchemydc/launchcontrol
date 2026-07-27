@@ -35,6 +35,85 @@ export type RmsoloEventRef = {
 
 export const RMSOLO_RESULTS_URL = "https://www.rmsolo.org/results/";
 
+// The scraped index page controls which URLs the ingest loop downloads, so
+// every outbound fetch is constrained to HTTPS on rmsolo.org itself: a
+// compromised page/DNS/redirect must not be able to steer the server at an
+// internal address (SSRF), an unbounded body, or a non-PDF payload.
+const RMSOLO_ALLOWED_HOSTS = ["www.rmsolo.org", "rmsolo.org"];
+const FETCH_TIMEOUT_MS = 30_000;
+const MAX_INDEX_BYTES = 2 * 1024 * 1024;
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
+const UA = "Mozilla/5.0 (compatible; launchcontrol-ingest)";
+
+/** Throws unless `raw` is an https URL on an approved RMsolo host. */
+export function assertRmsoloUrl(raw: string): URL {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`refusing to fetch malformed URL '${raw}'`);
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(`refusing to fetch non-https URL '${raw}'`);
+  }
+  if (!RMSOLO_ALLOWED_HOSTS.includes(url.hostname.toLowerCase())) {
+    throw new Error(`refusing to fetch '${raw}': host is not an approved RMsolo host`);
+  }
+  return url;
+}
+
+/**
+ * Fetch `url` with the full guard set: allowlisted host, no redirects
+ * (a redirect off-host would bypass the allowlist, so none are followed),
+ * request timeout, and a byte cap enforced while streaming — the response
+ * is abandoned the moment it exceeds `maxBytes`, never buffered whole first.
+ */
+async function fetchCapped(url: string, maxBytes: number): Promise<Buffer> {
+  assertRmsoloUrl(url);
+  const res = await fetch(url, {
+    headers: { "User-Agent": UA },
+    redirect: "manual",
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error(`refusing to follow redirect (HTTP ${res.status}) from ${url}`);
+  }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
+  }
+  const declared = Number(res.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new Error(`response for ${url} declares ${declared} bytes (max ${maxBytes})`);
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error(`response for ${url} exceeded ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Download one RMsolo results PDF with the guard set above, plus a `%PDF-`
+ * signature check before the buffer is allowed anywhere near poppler.
+ */
+export async function fetchRmsoloPdf(url: string): Promise<Buffer> {
+  const buf = await fetchCapped(url, MAX_PDF_BYTES);
+  if (!buf.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+    throw new Error(`response for ${url} is not a PDF (missing %PDF- signature)`);
+  }
+  return buf;
+}
+
 const MONTHS: Record<string, string> = {
   Jan: "01",
   Feb: "02",
@@ -133,11 +212,6 @@ export function parseResultsPage(html: string, baseUrl?: string): { season: numb
 }
 
 export async function fetchResultsPage(): Promise<string> {
-  const res = await fetch(RMSOLO_RESULTS_URL, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; launchcontrol-ingest)" },
-  });
-  if (!res.ok) {
-    throw new Error(`fetchResultsPage: ${RMSOLO_RESULTS_URL} responded ${res.status} ${res.statusText}`);
-  }
-  return res.text();
+  const buf = await fetchCapped(RMSOLO_RESULTS_URL, MAX_INDEX_BYTES);
+  return buf.toString("utf8");
 }

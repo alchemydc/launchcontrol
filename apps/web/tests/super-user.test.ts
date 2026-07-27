@@ -70,3 +70,34 @@ describe("setSuperUser", () => {
     await expect(setSuperUser(client, "GHOST", false)).resolves.not.toThrow();
   });
 });
+
+// PR #99 review: the others-count and the delete must share one transaction
+// (two concurrent cross-revocations could otherwise both observe a survivor
+// and both delete). setSuperUser opens its own transaction on a full client
+// and runs inline on a transaction handle — this pins the handle path, which
+// the superusers admin route now uses to make mutation + audit atomic.
+describe("setSuperUser inside a caller-owned transaction", () => {
+  it("revokes correctly when handed a transaction client", async () => {
+    process.env.ADMIN_MSR_UIDS = "";
+    await client.superUser.deleteMany({});
+    await setSuperUser(client, "TX-A", true);
+    await setSuperUser(client, "TX-B", true);
+    await client.$transaction(async (tx) => {
+      await setSuperUser(tx, "TX-B", false);
+    });
+    expect(await isSuperUser("TX-A", client)).toBe(true);
+    expect(await isSuperUser("TX-B", client)).toBe(false);
+  });
+
+  it("still refuses to orphan the last superuser from inside a transaction", async () => {
+    process.env.ADMIN_MSR_UIDS = "";
+    await client.superUser.deleteMany({});
+    await setSuperUser(client, "TX-LAST", true);
+    await expect(
+      client.$transaction(async (tx) => {
+        await setSuperUser(tx, "TX-LAST", false);
+      }),
+    ).rejects.toThrow(/last superuser/i);
+    expect(await isSuperUser("TX-LAST", client)).toBe(true);
+  });
+});

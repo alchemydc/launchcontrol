@@ -43,19 +43,19 @@ export async function POST(
   if (typeof b.presetName === "string") opts.presetName = b.presetName;
 
   try {
-    const season = await createSeason(opts, prisma);
-    try {
-      await writeAudit(prisma, {
+    // Mutation + audit row commit or roll back together.
+    const season = await prisma.$transaction(async (tx) => {
+      const created = await createSeason(opts, tx);
+      await writeAudit(tx, {
         action: "season.create",
         actorMsrUid: g.actor.msrUid,
         actorName: g.actor.name,
         targetType: "season",
-        targetSlug: season.slug,
-        detail: { league: slug, season: season.slug },
+        targetSlug: created.slug,
+        detail: { league: slug, season: created.slug },
       });
-    } catch (e) {
-      console.error("audit write failed", e);
-    }
+      return created;
+    });
     return Response.json({ season }, { status: 201 });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "create failed" }, { status: 400 });

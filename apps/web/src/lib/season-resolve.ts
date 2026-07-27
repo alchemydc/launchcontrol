@@ -7,14 +7,18 @@ import { slugify } from "@/lib/ingest";
  * updateEventMetadata's cross-year re-resolution (admin-events.ts), so both
  * follow the same deterministic rule.
  *
- * Ingest lands results in the year's ACTIVE season (oldest active if
- * several, by id) — archived ("completed") seasons only receive ingests when
- * the year has no active season at all, in which case this falls back to
- * the oldest season overall (`orderBy: { id: "asc" }`), matching pre-PR-2
- * behavior when only one season existed for the year. Multiple seasons per
- * (league, year) are a supported feature (e.g. a Winter Series alongside the
- * main season); season-aware addressing (`resolveSeasonBySlug`,
- * `activeSeason` below) is how callers pick a specific one directly.
+ * Ingest lands results in the year's ACTIVE season — archived ("completed")
+ * seasons only receive ingests when the year has no active season at all, in
+ * which case this falls back to the oldest season overall (`orderBy: { id:
+ * "asc" }`), matching pre-PR-2 behavior when only one season existed for the
+ * year. Multiple seasons per (league, year) are a supported feature (e.g. a
+ * Winter Series alongside the main season) — and for exactly that reason,
+ * when MORE THAN ONE active season matches the year this THROWS instead of
+ * guessing (PR #99 review: a silent lowest-id pick could land a main-series
+ * event under the Winter series' ruleset). Callers escape the ambiguity by
+ * passing an explicit season slug (CLI `--season`, `seasonSlug` on the
+ * ingest inputs), resolved via `resolveSeasonBySlug` before ever reaching
+ * this function.
  *
  * The auto-created row adopts the league's OLDEST ScoringSystem ruleset
  * (deterministic; seeded leagues carry exactly one) as a LIVE reference
@@ -29,11 +33,25 @@ export async function resolveOrCreateSeason(
   league: { id: number; slug: string },
   year: number,
 ): Promise<Season> {
-  const existing =
-    (await client.season.findFirst({
+  const activeMatches = await client.season.findMany({
+    where: { leagueId: league.id, year, status: "active" },
+    orderBy: { id: "asc" },
+    take: 2,
+  });
+  if (activeMatches.length > 1) {
+    const candidates = await client.season.findMany({
       where: { leagueId: league.id, year, status: "active" },
       orderBy: { id: "asc" },
-    })) ??
+      select: { slug: true, name: true },
+    });
+    throw new Error(
+      `[season-resolve] league '${league.slug}' has ${candidates.length} active seasons for ${year} ` +
+        `(${candidates.map((s) => `'${s.slug}'`).join(", ")}) — pass an explicit season ` +
+        `(e.g. ingest --season <slug>) so results can't land under the wrong ruleset.`,
+    );
+  }
+  const existing =
+    activeMatches[0] ??
     (await client.season.findFirst({
       where: { leagueId: league.id, year },
       orderBy: { id: "asc" },

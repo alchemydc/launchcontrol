@@ -248,8 +248,9 @@ function buildCombinedHistoryRow(
   // Per-session, per-driver best PAX (fastest entry per session -- co-drive
   // safe, mirrors buildSingleEventRow / combined-event.ts's own dedupe).
   const bestBySessionByDriver = sessions.map((session) => {
-    // Resolved per session: same-league sessions on one date can in principle
-    // belong to different seasons (and thus different rulesets).
+    // Groups are keyed by (seasonId, dateKey), so every session here shares
+    // one season/ruleset — per-session resolution is kept as cheap paranoia,
+    // not because values can differ within a group.
     const penaltyMs = parseScoringPolicy(session.season.ruleset.policy).conePenaltyMs;
     const byDriver = new Map<
       number,
@@ -343,8 +344,9 @@ function buildCombinedHistoryRow(
     diffFromMedianPct,
     href: `/events/combined/${dateKey}`,
     combined: true,
-    // All sessions in a group necessarily share one league -- buildDriverHistory's
-    // (leagueId, dateKey) grouping key guarantees it, so sessions[0] speaks for the group.
+    // All sessions in a group necessarily share one season (and so one
+    // league) -- buildDriverHistory's (seasonId, dateKey) grouping key
+    // guarantees it, so sessions[0] speaks for the group.
     leagueId: sessions[0]!.season.leagueId,
     leagueSlug: sessions[0]!.season.league.slug,
     leagueName: sessions[0]!.season.league.name,
@@ -401,10 +403,14 @@ function dateRangeWhereClause(filter: DriverHistoryFilter): Prisma.EventWhereInp
  * returns events this driver personally entered, which would miss a sibling
  * session they skipped (the forfeit case) and so under-detect the group.
  *
- * Task 6: that second query's grouping key is (leagueId, dateKey), not just
+ * Task 6: that second query's grouping key is (seasonId, dateKey), not just
  * dateKey -- under an "all leagues" scope there's no league where-clause at
  * all, so two unrelated leagues' events that happen to share a calendar date
- * must still never collapse into one combined-event row together.
+ * must still never collapse into one combined-event row together. Keyed by
+ * SEASON (which pins the league) rather than league since PR #99 review:
+ * same-league same-date events in different seasons (e.g. a main-series and
+ * a Winter-series event) are distinct competitions under distinct rulesets,
+ * not one combined event.
  */
 export async function buildDriverHistory(
   driverId: number,
@@ -436,13 +442,13 @@ export async function buildDriverHistory(
   // entered one session of the group.
   const events = await loadEventsForDates(prismaClient, dates, scopeWhere);
 
-  // Group by (leagueId, UTC date key) -- see the function doc comment above
-  // for why leagueId is part of the key. `events` is already date-ascending,
+  // Group by (seasonId, UTC date key) -- see the function doc comment above
+  // for why the season is part of the key. `events` is already date-ascending,
   // so Map insertion order preserves chronological group order.
   const groupsByKey = new Map<string, LoadedEvent[]>();
   for (const event of events) {
     const dateKey = event.date.toISOString().slice(0, 10);
-    const key = `${event.season.leagueId}:${dateKey}`;
+    const key = `${event.seasonId}:${dateKey}`;
     let group = groupsByKey.get(key);
     if (group == null) {
       group = [];

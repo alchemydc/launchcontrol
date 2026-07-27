@@ -33,7 +33,7 @@ export default async function AdminPage() {
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
               Leagues
             </h2>
-            <CreateLeagueDialog />
+            {canManageUsers && <CreateLeagueDialog />}
           </div>
           <div className="flex flex-col gap-3">
             {leagues.map((league) => (

@@ -49,7 +49,7 @@ function coerceAccessGate(raw: string): AccessGate {
     : "required";
 }
 
-function defaultLeagueSlug(): string {
+export function defaultLeagueSlug(): string {
   return process.env.DEFAULT_LEAGUE_SLUG?.trim() || "pca-rmr";
 }
 

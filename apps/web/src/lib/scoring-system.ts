@@ -1,4 +1,4 @@
-import type { PrismaClient, ScoringSystem } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient, ScoringSystem } from "@/generated/prisma/client";
 import { RMSOLO_PAX_2026, parseSeasonPaxTableStrict } from "@/lib/rmsolo-pax";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 
@@ -49,7 +49,7 @@ export type CreateScoringSystemOptions = {
 };
 
 export async function createScoringSystem(
-  client: PrismaClient,
+  client: PrismaClient | Prisma.TransactionClient,
   opts: CreateScoringSystemOptions,
 ): Promise<ScoringSystem> {
   const { leagueSlug, name, policyJson, paxTableJson } = opts;
@@ -87,7 +87,7 @@ export type UpdateScoringSystemPatch = Partial<{
 }>;
 
 export async function updateScoringSystem(
-  client: PrismaClient,
+  client: PrismaClient | Prisma.TransactionClient,
   ref: ScoringSystemRef,
   patch: UpdateScoringSystemPatch,
 ): Promise<ScoringSystem> {
