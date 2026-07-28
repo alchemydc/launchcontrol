@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { sanitizeReturnTo } from "@/lib/session";
+import { landingReturnTo, sanitizeReturnTo } from "@/lib/session";
 
 describe("sanitizeReturnTo — happy paths", () => {
   it('accepts "/"', () => {
@@ -89,5 +89,31 @@ describe("sanitizeReturnTo — edge cases", () => {
 
   it("rejects array input (repeated query keys)", () => {
     expect(sanitizeReturnTo(["/leaderboard", "/drivers/1"])).toBeNull();
+  });
+});
+
+describe("landingReturnTo — league-home sign-in fallback", () => {
+  it("returns the league's own path when no season is given", () => {
+    expect(landingReturnTo("/l/pca-rmr")).toBe("/l/pca-rmr");
+  });
+
+  it("preserves ?season=", () => {
+    expect(landingReturnTo("/l/pca-rmr", "2026")).toBe("/l/pca-rmr?season=2026");
+  });
+
+  it("ignores an array season (repeated query key)", () => {
+    expect(landingReturnTo("/l/pca-rmr", ["2026", "2025"])).toBe("/l/pca-rmr");
+  });
+
+  it("ignores an empty-string season", () => {
+    expect(landingReturnTo("/l/pca-rmr", "")).toBe("/l/pca-rmr");
+  });
+
+  it("encodes a season slug with reserved characters", () => {
+    expect(landingReturnTo("/l/pca-rmr", "a&b")).toBe("/l/pca-rmr?season=a%26b");
+  });
+
+  it("still defers to sanitizeReturnTo for an unsafe basePath", () => {
+    expect(landingReturnTo("//evil.com")).toBeNull();
   });
 });

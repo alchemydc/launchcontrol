@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
-import { checkLeagueAccess, getSession, sanitizeReturnTo } from "@/lib/session";
+import {
+  checkLeagueAccess,
+  getSession,
+  landingReturnTo,
+  sanitizeReturnTo,
+} from "@/lib/session";
 import { EventsHome } from "@/app/_events-home";
 import { Landing } from "@/components/landing";
 
@@ -58,8 +63,13 @@ export default async function LeagueHomePage({
   }
 
   const session = await getSession();
-  const { returnTo: rawReturnTo } = await searchParams;
-  const returnTo = sanitizeReturnTo(rawReturnTo);
+  const { season, returnTo: rawReturnTo } = await searchParams;
+  // Fall back to THIS league's own home: arriving here by clicking a card on
+  // the league grid carries no ?returnTo, and without a fallback the OAuth
+  // callback strands the viewer at "/" instead of the league they picked.
+  // An explicit, valid ?returnTo (the requireMember bounce-back) still wins.
+  const returnTo =
+    sanitizeReturnTo(rawReturnTo) ?? landingReturnTo(basePath, season);
 
   return (
     <Landing

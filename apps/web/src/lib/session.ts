@@ -140,6 +140,23 @@ export function sanitizeReturnTo(raw: string | string[] | null | undefined): str
   return result;
 }
 
+/**
+ * Default sign-in destination for a league home rendering the Landing view:
+ * the league's own path, so a direct click from the league grid (which carries
+ * no ?returnTo) returns there after MSR login instead of falling back to "/".
+ * Preserves ?season= when present. Run through sanitizeReturnTo so the result
+ * obeys the same same-origin/path-only invariant as a caller-supplied value.
+ */
+export function landingReturnTo(
+  basePath: string,
+  season?: string | string[],
+): string | null {
+  const s = typeof season === "string" && season ? season : null;
+  return sanitizeReturnTo(
+    s ? `${basePath}?season=${encodeURIComponent(s)}` : basePath,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // requireMember / requireRmrMember — page-level gate
 //
