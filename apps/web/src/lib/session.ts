@@ -2,7 +2,7 @@
  * iron-session typed wrappers for Launch Control.
  *
  * Two cookies:
- *   lc_session      — main session (30 days). Stores the six SessionData fields.
+ *   lc_session      — main session (30 days). Stores the seven SessionData fields.
  *   lc_msr_req      — transient request-token cookie (10 min, path-scoped to
  *                     the callback route). Stashes oauth_token_secret between
  *                     /api/auth/msr/login and /api/auth/msr/callback.
@@ -11,9 +11,14 @@
  * redactLastName() and stores only lastInitial.
  */
 
-import { getIronSession, type IronSession } from "iron-session";
+import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { getLeagueConfig, type LeagueConfig } from "@/lib/league-config";
+import { decideLeagueAccess, type LeagueAccessDecision } from "@/lib/league-access";
+import { getMembershipRole } from "@/lib/membership";
+import { isSuperUser } from "@/lib/super-user";
+import { prisma } from "@/lib/prisma";
 
 // ---------------------------------------------------------------------------
 // SESSION_SECRET is checked lazily on first use — not at module load — so
@@ -21,14 +26,18 @@ import { redirect } from "next/navigation";
 // data) does not require the secret to be present in the build environment.
 // ---------------------------------------------------------------------------
 
-function getSessionSecret(): string {
+function hasSessionSecret(): boolean {
   const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) {
+  return typeof secret === "string" && secret.length >= 32;
+}
+
+function getSessionSecret(): string {
+  if (!hasSessionSecret()) {
     throw new Error(
       "SESSION_SECRET environment variable must be set and at least 32 characters long"
     );
   }
-  return secret;
+  return process.env.SESSION_SECRET as string;
 }
 
 const isProd = process.env.NODE_ENV === "production";
@@ -46,6 +55,8 @@ export interface SessionData {
   accessToken?: string;
   accessTokenSecret?: string;
   isRmrMember?: boolean;
+  /** MSR org IDs from the login profile — enables per-league org gating (PR 3). */
+  msrOrgIds?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -130,22 +141,117 @@ export function sanitizeReturnTo(raw: string | string[] | null | undefined): str
 }
 
 // ---------------------------------------------------------------------------
-// requireRmrMember — page-level gate
+// requireMember / requireRmrMember — page-level gate
 //
 // Callers MUST NOT wrap this in try/catch — redirect() throws NEXT_REDIRECT.
 // Gate runs before any data fetch so unauthorized viewers cannot probe slug
 // existence via 404 vs redirect behavior.
 // ---------------------------------------------------------------------------
 
-export async function requireRmrMember(
-  returnPath?: string
-): Promise<{ session: IronSession<SessionData> }> {
+/**
+ * Resolve one league's access decision for the current session, without
+ * redirecting — the value form that `l/[league]/page.tsx` branches on
+ * (Landing vs EventsHome) and that `requireMember` turns into a redirect.
+ *
+ * Decision chain (all handled by the pure `decideLeagueAccess`, spec
+ * §Access decision order): superuser > BLOCKED > explicit membership row
+ * (ADMIN/MEMBER) > public gate > MSR org match > redirect. Public gates
+ * ("optional"/"none") short-circuit to "allow" WITHOUT any session or DB
+ * read, so a BLOCKED row only bites on a "required" gate.
+ *
+ * For a "required" gate this reads the session cookie and, in parallel,
+ * looks up superuser status and this viewer's `LeagueMembership` role for
+ * THIS league (`league.id`). Org matching uses `session.msrOrgIds`, captured
+ * at MSR login (PR 3, Task 5); sessions minted before that field shipped
+ * lack it and fall through to "redirect" (re-login) — accepted per spec.
+ */
+export async function checkLeagueAccess(
+  league: LeagueConfig,
+): Promise<LeagueAccessDecision> {
+  // Public leagues never gate — return before any session/DB read so a
+  // BLOCKED membership row can't deny access on a public gate.
+  if (league.accessGate !== "required") return "allow";
+
+  // Gated, but no session secret configured (login disabled on this deploy):
+  // there is nothing to authenticate with, so never admit.
+  if (!hasSessionSecret()) return "redirect";
+
   const session = await getSession();
+  const [superUser, membershipRole] = await Promise.all([
+    isSuperUser(session.msrUid),
+    session.msrUid
+      ? getMembershipRole(prisma, league.id, session.msrUid)
+      : Promise.resolve(null),
+  ]);
 
-  if (!session.msrUid || !session.isRmrMember) {
-    const safe = returnPath ? sanitizeReturnTo(returnPath) : null;
-    redirect(safe ? `/?returnTo=${encodeURIComponent(safe)}` : "/");
-  }
+  return decideLeagueAccess({
+    accessGate: league.accessGate,
+    msrOrgId: league.msrOrgId,
+    membershipRole,
+    superUser,
+    session: { msrUid: session.msrUid, msrOrgIds: session.msrOrgIds },
+  });
+}
 
-  return { session };
+/**
+ * League-aware page gate: redirects a viewer who fails `checkLeagueAccess`
+ * for `league`, and returns otherwise. Parameterized on an arbitrary
+ * league's config so `/l/[league]` routes gate on THAT league (and
+ * `requireRmrMember` on the deployment default).
+ *
+ * `homeHref` is where a failed gate lands; every caller passes `/l/[slug]`
+ * so a bounced viewer reaches that league's own home (which renders the
+ * Landing sign-in view under a "required" gate) rather than ROOT `/`, which
+ * is now always the league gate (card grid) with no sign-in prompt.
+ *
+ * `checkLeagueAccess` outcomes map to:
+ *   - "allow"    → return (let the page render).
+ *   - "deny"     → redirect to `homeHref` with NO returnTo — the viewer is
+ *                  signed in but explicitly BLOCKED, so a sign-in loop is
+ *                  pointless.
+ *   - "redirect" → redirect to `homeHref?returnTo=…` so a successful sign-in
+ *                  bounces back to the page they wanted.
+ *
+ * Callers MUST NOT wrap this in try/catch — redirect() throws NEXT_REDIRECT.
+ */
+export async function requireMember(
+  league: LeagueConfig,
+  returnPath: string | undefined,
+  homeHref: string,
+): Promise<void> {
+  // Public leagues (accessGate optional|none) never gate results pages.
+  if (league.accessGate !== "required") return;
+
+  // Gated, but no session secret configured (login disabled on this deploy):
+  // there is nothing to authenticate with, so never admit.
+  if (!hasSessionSecret()) redirect(homeHref);
+
+  const decision = await checkLeagueAccess(league);
+  if (decision === "allow") return;
+  if (decision === "deny") redirect(homeHref);
+
+  const safe = returnPath ? sanitizeReturnTo(returnPath) : null;
+  redirect(safe ? `${homeHref}?returnTo=${encodeURIComponent(safe)}` : homeHref);
+}
+
+/**
+ * Access gate for results routes that may use ISR. Public leagues return
+ * before any request-scoped API is read; required leagues delegate to the
+ * normal per-league membership gate and therefore remain request-rendered.
+ */
+export async function gateResultsPage(
+  league: LeagueConfig,
+  returnPath: string | undefined,
+  homeHref: string,
+): Promise<void> {
+  if (league.accessGate !== "required") return;
+  await requireMember(league, returnPath, homeHref);
+}
+
+export async function requireRmrMember(returnPath?: string): Promise<void> {
+  const league = await getLeagueConfig();
+  // ROOT `/` is now always the league gate (no sign-in prompt) — bounce to
+  // the default league's own scoped home instead, same pattern every
+  // `/l/[league]` route already uses.
+  await requireMember(league, returnPath, `/l/${league.slug}`);
 }

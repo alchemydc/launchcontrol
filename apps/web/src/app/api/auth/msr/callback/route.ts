@@ -8,9 +8,19 @@
  *  4. Parse response → access token, access secret.
  *  5. GET /rest/me.json with access token.
  *  6. Apply PII rule: compute lastInitial via redactLastName; discard full lastName.
- *  7. Compute isRmrMember from org list.
+ *  7. Compute isRmrMember from org list (display only — when the default
+ *     league has org config at all).
  *  8. Persist the SessionData fields in the main session cookie.
- *  9. 302 / (events home).
+ *  9. 302 to the re-validated returnTo, else "/" (the league card grid).
+ *
+ * This callback is deliberately league-AGNOSTIC (PR #99 review): it neither
+ * requires the default league's MSR org config nor gates returnTo on org
+ * membership. Authorization lives with the per-league page gates
+ * (checkLeagueAccess/decideLeagueAccess), which every destination re-checks
+ * server-side on render — a user without access to the destination league
+ * gets that league's normal denial flow, so gating the redirect here would
+ * only duplicate logic and (as it did) strand non-default-league members
+ * at "/".
  *
  * On error, redirects to /login?error=<reason>. Full last name is never
  * logged, stored in a cookie, or written to any persistent layer.
@@ -22,15 +32,17 @@ import { MSR_ACCESS_TOKEN_URL, MSR_ME_URL } from "@/lib/msr-endpoints";
 import { parseFormEncoded, signRequest, signedMsrFetch } from "@/lib/msr";
 import type { MsrMeResponse } from "@/lib/msr";
 import { getRequestTokenSession, getSession, sanitizeReturnTo } from "@/lib/session";
+import { getLeagueConfig } from "@/lib/league-config";
 import { redactLastName } from "@/lib/pii";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const rmrOrgId = process.env.MSR_RMR_ORG_ID;
-  if (!rmrOrgId) {
-    throw new Error("MSR_RMR_ORG_ID environment variable is not set");
-  }
+  // No org-config precondition: a required league gated purely by explicit
+  // LeagueMembership rows (msrOrgId null) is a supported configuration, and
+  // throwing here would 500 every login on such a deployment.
+  const league = await getLeagueConfig();
+  const orgId = league.msrOrgId;
 
   const { searchParams } = request.nextUrl;
   const oauthToken = searchParams.get("oauth_token");
@@ -99,8 +111,9 @@ export async function GET(request: NextRequest) {
   //    redactLastName is imported from lib/pii (not redefined here).
   const lastInitial = redactLastName(profile.lastName);
 
-  // 7. Determine RMR membership.
-  const isRmrMember = profile.organizations.some((o) => o.id === rmrOrgId);
+  // 7. Default-league org membership — a display flag (/me badge), not an
+  //    authorization input; per-league gates use session.msrOrgIds instead.
+  const isRmrMember = orgId != null && profile.organizations.some((o) => o.id === orgId);
 
   // 8. Persist session — only the seven approved fields; full lastName is never stored.
   const session = await getSession();
@@ -110,10 +123,13 @@ export async function GET(request: NextRequest) {
   session.accessToken = accessToken;
   session.accessTokenSecret = accessSecret;
   session.isRmrMember = isRmrMember;
+  session.msrOrgIds = profile.organizations.map((o) => o.id);
   await session.save();
 
-  // 9. Redirect: RMR members go to returnTo (re-validated) or home; non-members
-  //    always land on "/" so the landing page renders cleanly (avoids bounce loop).
+  // 9. Redirect to the re-validated (same-origin, path-only) returnTo, else
+  //    "/". Not gated on org membership: the destination page enforces its
+  //    own league's access rules server-side, and gating here stranded
+  //    legitimate non-default-league members (and superusers) at "/".
   const returnTo = sanitizeReturnTo(rawReturnTo);
-  redirect(isRmrMember && returnTo ? returnTo : "/");
+  redirect(returnTo || "/");
 }

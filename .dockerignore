@@ -1,0 +1,14 @@
+.git
+.superpowers
+node_modules
+apps/web/node_modules
+apps/web/.next
+apps/web/.env
+apps/web/.env.local
+apps/web/*.db
+apps/web/*.db-journal
+rmsolo_data
+real_season_data
+2026_season_data
+deploy/launchcontrol.env
+docs

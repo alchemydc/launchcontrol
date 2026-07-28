@@ -1,8 +1,43 @@
 import { unstable_cache } from "next/cache";
+import { defaultLeagueSlug, getLeagueConfig } from "@/lib/league-config";
 
-const SMUGMUG_USER = process.env.SMUGMUG_USER ?? "rmrpca";
-const SMUGMUG_DISCIPLINE = process.env.SMUGMUG_DISCIPLINE_PATH ?? "Autocross";
 const API_BASE = "https://api.smugmug.com/api/v2";
+
+export type SmugmugLeagueTarget = {
+  slug: string;
+  smugmugUser: string | null;
+  smugmugDisciplinePath: string | null;
+};
+
+// The League row is authoritative for smugmugUser/smugmugDisciplinePath.
+// The SMUGMUG_USER/SMUGMUG_DISCIPLINE_PATH env fallbacks (and the "rmrpca"/
+// "Autocross" hardcoded last resort, parity with the pre-League behavior)
+// are deployment-level legacy config, so they apply ONLY to the deployment's
+// DEFAULT league. Any other league resolves from its own columns alone and
+// returns null when it has no smugmugUser — an unconfigured league means "no
+// photos", never "show the default league's (RMR's) galleries". `league`
+// selects which League's fields are consulted — callers on `/l/[league]`
+// routes (Task 5) pass THAT league's config; omitted, this falls back to
+// `getLeagueConfig()` (default league).
+export async function resolveSmugmugTarget(
+  league?: SmugmugLeagueTarget,
+): Promise<{ user: string; discipline: string } | null> {
+  const target = league ?? (await getLeagueConfig());
+  if (target.slug === defaultLeagueSlug()) {
+    return {
+      user: target.smugmugUser || process.env.SMUGMUG_USER || "rmrpca",
+      discipline:
+        target.smugmugDisciplinePath || process.env.SMUGMUG_DISCIPLINE_PATH || "Autocross",
+    };
+  }
+  if (!target.smugmugUser) return null;
+  return {
+    user: target.smugmugUser,
+    // "Autocross" mirrors SmugMug's common discipline-folder layout; a wrong
+    // guess fails soft (year-node lookup returns null → no photos link).
+    discipline: target.smugmugDisciplinePath || "Autocross",
+  };
+}
 
 // Tokens to ignore when fuzzy-matching event names against SmugMug folder names
 const STOPWORDS = new Set([
@@ -81,12 +116,16 @@ export function matchEventFolder(
   return bestUri;
 }
 
-async function fetchYearNodeId(year: number): Promise<string | null> {
+async function fetchYearNodeId(
+  user: string,
+  discipline: string,
+  year: number
+): Promise<string | null> {
   const apiKey = process.env.SMUGMUG_API_KEY;
   if (!apiKey) return null;
 
-  const urlpath = encodeURIComponent(`/${SMUGMUG_DISCIPLINE}/${year}`);
-  const url = `${API_BASE}/user/${SMUGMUG_USER}!urlpathlookup?urlpath=${urlpath}&APIKey=${apiKey}`;
+  const urlpath = encodeURIComponent(`/${discipline}/${year}`);
+  const url = `${API_BASE}/user/${user}!urlpathlookup?urlpath=${urlpath}&APIKey=${apiKey}`;
 
   try {
     const res = await fetch(url, {
@@ -102,7 +141,11 @@ async function fetchYearNodeId(year: number): Promise<string | null> {
   }
 }
 
-async function fetchEventFolders(yearNodeId: string): Promise<FolderSummary[]> {
+async function fetchEventFolders(
+  user: string,
+  discipline: string,
+  yearNodeId: string
+): Promise<FolderSummary[]> {
   const apiKey = process.env.SMUGMUG_API_KEY;
   if (!apiKey) return [];
 
@@ -129,17 +172,20 @@ async function fetchEventFolders(yearNodeId: string): Promise<FolderSummary[]> {
   }
 }
 
-// Cached per year — 1 week TTL (year folders are stable)
+// Cached per (user, discipline, year) — 1 week TTL (year folders are stable).
+// user/discipline are call arguments (not fixed keyParts) so different
+// leagues never collide on the same cache entry.
 const cachedYearNodeId = unstable_cache(
-  async (year: number) => fetchYearNodeId(year),
-  ["smugmug-year-node", SMUGMUG_USER, SMUGMUG_DISCIPLINE],
+  fetchYearNodeId,
+  ["smugmug-year-node"],
   { revalidate: 604800 }
 );
 
-// Cached per year node — 1 hour TTL (new event folders get added during season)
+// Cached per (user, discipline, yearNodeId) — 1 hour TTL (new event folders
+// get added during season).
 const cachedEventFolders = unstable_cache(
-  async (yearNodeId: string) => fetchEventFolders(yearNodeId),
-  ["smugmug-event-folders", SMUGMUG_USER, SMUGMUG_DISCIPLINE],
+  fetchEventFolders,
+  ["smugmug-event-folders"],
   { revalidate: 3600 }
 );
 
@@ -147,7 +193,8 @@ let missingKeyWarned = false;
 
 export async function findSmugmugEventFolder(
   eventName: string,
-  eventDate: Date
+  eventDate: Date,
+  league?: SmugmugLeagueTarget,
 ): Promise<string | null> {
   if (!process.env.SMUGMUG_API_KEY) {
     if (!missingKeyWarned) {
@@ -158,9 +205,12 @@ export async function findSmugmugEventFolder(
   }
 
   try {
-    const nodeId = await cachedYearNodeId(eventDate.getUTCFullYear());
+    const target = await resolveSmugmugTarget(league);
+    if (!target) return null; // league has no photo config — nothing to show
+    const { user, discipline } = target;
+    const nodeId = await cachedYearNodeId(user, discipline, eventDate.getUTCFullYear());
     if (!nodeId) return null;
-    const folders = await cachedEventFolders(nodeId);
+    const folders = await cachedEventFolders(user, discipline, nodeId);
     return matchEventFolder(folders, eventName, eventDate);
   } catch {
     return null;

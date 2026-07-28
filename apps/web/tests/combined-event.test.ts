@@ -6,7 +6,8 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { ingestAxdb } from "@/lib/ingest";
 import { buildSeasonLeaderboard, combinedEventLabel } from "@/lib/season-leaderboard";
-import { buildCombinedResults } from "@/lib/combined-event";
+import { buildCombinedResults, type CombinedEntry, type CombinedSessionEvent } from "@/lib/combined-event";
+import { CONE_PENALTY_MS } from "@/lib/constants";
 
 const TEST_DB_PATH = resolve(__dirname, "..", "test-combined-event.db");
 const TEST_DB_URL = "file:./test-combined-event.db";
@@ -36,6 +37,15 @@ beforeAll(async () => {
     const path = resolve(FIXTURES_DIR, filename);
     await ingestAxdb(path, prisma);
   }
+  const season = await prisma.season.findFirstOrThrow({ where: { year: 2027 } });
+  await prisma.season.update({ where: { id: season.id }, data: { minimumEvents: 2 } });
+  await prisma.scoringSystem.update({
+    where: { id: season.rulesetId },
+    data: {
+      policy:
+        '{"v":3,"dropCount":1,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
+    },
+  });
 });
 
 afterAll(async () => {
@@ -84,9 +94,11 @@ describe("buildSeasonLeaderboard(2027) — combined-event scoring groups", () =>
     const result = await buildSeasonLeaderboard(2027, prisma);
     expect(result.totalEvents).toBe(3);
     expect(result.qualifyingEvents).toBe(2);
-    // 2027 is intentionally absent from PLANNED_SEASON_EVENTS, so this is a
-    // pure fallback-to-actual regression case (M1.16): completedEvents ===
-    // totalEvents === actual scoring groups, unaffected by the planned map.
+    // The 2027 Season row is auto-created by ingestAxdb with plannedEvents=0,
+    // so this is a pure fallback-to-actual regression case (M1.16):
+    // completedEvents === totalEvents === actual scoring groups. Must run
+    // before the "planned-season override" describe block below, which
+    // mutates this Season row's plannedEvents.
     expect(result.completedEvents).toBe(3);
   });
 
@@ -169,15 +181,21 @@ describe("buildSeasonLeaderboard(2027) — combined-event scoring groups", () =>
 });
 
 // ---------------------------------------------------------------------------
-// M1.16 — planned-season threshold override, via injected map (2027 is
-// intentionally unlisted in the real PLANNED_SEASON_EVENTS; injection lets
-// us exercise the new behavior against this existing 3-group fixture without
-// regenerating it).
+// M1.16 — planned-season threshold override. plannedEvents now lives on the
+// Season row (League Foundation) rather than an injected map, so these
+// mutate the auto-created 2027 Season's plannedEvents directly (ingestAxdb's
+// beforeAll auto-create left it at 0) to exercise the same two branches of
+// max(planned, actual) against this existing 3-group fixture without
+// regenerating it.
 // ---------------------------------------------------------------------------
 
-describe("buildSeasonLeaderboard(2027) — planned-season override via injected map", () => {
+describe("buildSeasonLeaderboard(2027) — planned-season override via Season row", () => {
   it("planned=6 > actual=3: totalEvents=6, qualifyingEvents=4, every driver Provisional, nothing dropped", async () => {
-    const result = await buildSeasonLeaderboard(2027, prisma, { 2027: 6 });
+    await prisma.season.updateMany({
+      where: { year: 2027 },
+      data: { plannedEvents: 6, minimumEvents: 4 },
+    });
+    const result = await buildSeasonLeaderboard(2027, prisma);
     expect(result.totalEvents).toBe(6);
     expect(result.completedEvents).toBe(3);
     expect(result.qualifyingEvents).toBe(4);
@@ -192,9 +210,8 @@ describe("buildSeasonLeaderboard(2027) — planned-season override via injected 
       }
     }
 
-    // Quinn's combined score (943 pts) was dropped under the derived
-    // threshold of 2 (best-2-of-3); with threshold 4 all 3 of her scores
-    // count, raising her total from 2000 to 2943.
+    // Quinn's combined score (943 pts) was dropped by the one-drop ruleset.
+    // With a six-event plan, best 5 count, so all 3 current scores count.
     const c1 = result.sections.find((s) => s.classCode === "C1")!;
     const quinn = c1.drivers.find((d) => d.driverName === "Quinn Q.")!;
     const combinedScore = quinn.scores.find((s) => s.combined)!;
@@ -202,10 +219,19 @@ describe("buildSeasonLeaderboard(2027) — planned-season override via injected 
     expect(quinn.totalPoints).toBe(2000 + combinedScore.points);
   });
 
-  it("planned=2 < actual=3: max(2,3)=3, identical to the no-map run", async () => {
-    const withMap = await buildSeasonLeaderboard(2027, prisma, { 2027: 2 });
-    const withoutMap = await buildSeasonLeaderboard(2027, prisma);
-    expect(withMap).toEqual(withoutMap);
+  it("planned=2 < actual=3: max(2,3)=3, identical to the actual-only (plannedEvents=0) run", async () => {
+    await prisma.season.updateMany({
+      where: { year: 2027 },
+      data: { plannedEvents: 2, minimumEvents: 2 },
+    });
+    const withPlanned2 = await buildSeasonLeaderboard(2027, prisma);
+
+    await prisma.season.updateMany({ where: { year: 2027 }, data: { plannedEvents: 0 } });
+    const withPlanned0 = await buildSeasonLeaderboard(2027, prisma);
+
+    expect(withPlanned2).toEqual(withPlanned0);
+    expect(withPlanned2.totalEvents).toBe(3);
+    expect(withPlanned2.qualifyingEvents).toBe(2);
   });
 });
 
@@ -308,5 +334,67 @@ describe("buildCombinedResults", () => {
       expect(session.runNumber).toBe(1); // single-run drivers in this fixture
       expect(session.correctedMs).not.toBeNull();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildCombinedResults — penaltyMs (League Foundation PR 2 Task 7), pure
+// in-memory fixtures (no DB): a two-session group, two drivers in one class.
+// Champ has 2 cones in session 1 only; Steady is always clean. Whether Champ
+// or Steady wins the class flips depending on the per-cone penalty, and the
+// overall section (single class here) mirrors it — proving the threaded
+// value drives session correctedMs, class sumMs, and overall sumMs alike.
+// ---------------------------------------------------------------------------
+
+describe("buildCombinedResults() — penaltyMs threading", () => {
+  function session(id: number, name: string, entries: CombinedEntry[]): CombinedSessionEvent {
+    return { id, slug: `s${id}`, name, date: new Date("2026-05-01T00:00:00.000Z"), entries };
+  }
+
+  const champ = (cones: number): CombinedEntry => ({
+    bestCommittedRunNumber: null,
+    carNumber: "1",
+    carDescription: null,
+    driver: { id: 1, firstName: "Champ", lastInitial: "C." },
+    class: { code: "AS" },
+    runs: [{ runNumber: 1, rawTimeMs: 50000, cones, disposition: "CLEAN" }],
+  });
+  const steady: CombinedEntry = {
+    bestCommittedRunNumber: null,
+    carNumber: "2",
+    carDescription: null,
+    driver: { id: 2, firstName: "Steady", lastInitial: "S." },
+    class: { code: "AS" },
+    runs: [{ runNumber: 1, rawTimeMs: 51500, cones: 0, disposition: "CLEAN" }],
+  };
+
+  function twoSessionEvents(champConesSession1: number): CombinedSessionEvent[] {
+    return [
+      session(1, "Session A (A)", [champ(champConesSession1), steady]),
+      session(2, "Session A (B)", [champ(0), { ...steady, runs: [{ runNumber: 1, rawTimeMs: 51500, cones: 0, disposition: "CLEAN" }] }]),
+    ];
+  }
+
+  it("defaults to CONE_PENALTY_MS — Champ's 2-cone session costs him the class", () => {
+    const results = buildCombinedResults(twoSessionEvents(2));
+    const as = results.classes.find((c) => c.classCode === "AS")!;
+    expect(as.ranked.map((r) => r.driverName)).toEqual(["Steady S.", "Champ C."]);
+    const champRow = as.ranked.find((r) => r.driverName === "Champ C.")!;
+    expect(champRow.sessions[0]!.correctedMs).toBe(50000 + 2 * CONE_PENALTY_MS);
+    expect(champRow.sumMs).toBe(50000 + 2 * CONE_PENALTY_MS + 50000);
+  });
+
+  it("an explicit penaltyMs equal to the constant matches the default (parity)", () => {
+    const events = twoSessionEvents(2);
+    expect(buildCombinedResults(events, CONE_PENALTY_MS)).toEqual(buildCombinedResults(events));
+  });
+
+  it("a 250ms-penalty flips the class win to Champ, in both the class and overall sections", () => {
+    const results = buildCombinedResults(twoSessionEvents(2), 250);
+    const as = results.classes.find((c) => c.classCode === "AS")!;
+    expect(as.ranked.map((r) => r.driverName)).toEqual(["Champ C.", "Steady S."]);
+    expect(results.overall.ranked.map((r) => r.driverName)).toEqual(["Champ C.", "Steady S."]);
+    const champRow = as.ranked.find((r) => r.driverName === "Champ C.")!;
+    expect(champRow.sessions[0]!.correctedMs).toBe(50000 + 2 * 250);
   });
 });

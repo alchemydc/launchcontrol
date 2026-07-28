@@ -42,6 +42,48 @@ function listMigrationDirs(migrationsDir: string): string[] {
     .sort();
 }
 
+/**
+ * Apply one migration's SQL, then record it in `_prisma_migrations`.
+ *
+ * Deliberately NOT wrapped in an interactive transaction. libSQL connections
+ * default to `foreign_keys=ON`, and `PRAGMA foreign_keys=OFF` is a no-op inside
+ * a transaction (SQLite only honors it between transactions). Prisma's SQLite
+ * table-rebuild migrations (`PRAGMA foreign_keys=OFF; … DROP TABLE "X"; ALTER
+ * TABLE "new_X" RENAME TO "X"; …`) rely on that PRAGMA taking effect — a
+ * `DROP TABLE` with FKs enabled performs an implicit DELETE that fires
+ * `ON DELETE CASCADE` and silently wipes child rows (e.g. Entry/Run when Event
+ * is rebuilt). `executeMultiple` runs the script as a single connection
+ * sequence with no wrapping BEGIN, so the migration's own `foreign_keys=OFF`
+ * applies and children survive. This mirrors how `prisma migrate deploy`
+ * applies SQLite migrations (no per-migration transaction). The trade-off —
+ * a mid-script failure leaves a partially-applied migration — is inherent to
+ * FK-off migrations and unchanged from Prisma's own behavior.
+ */
+export async function applyMigration(
+  client: Client,
+  migrationName: string,
+  sql: string
+): Promise<void> {
+  // Enforce — not merely document — the invariant above. A libSQL Transaction
+  // handle is structurally close enough to Client (execute/executeMultiple/
+  // close all exist) to be passed here by mistake; refuse it outright.
+  if ("commit" in client || "rollback" in client) {
+    throw new Error(
+      `refusing to apply ${migrationName} inside a transaction: PRAGMA foreign_keys=OFF is a no-op there, so a table-rebuild migration could cascade-delete child rows`
+    );
+  }
+  // Probe the connection itself: a nested BEGIN fails fast ("cannot start a
+  // transaction within a transaction") if one is somehow already open.
+  await client.executeMultiple("BEGIN; ROLLBACK;");
+  await client.executeMultiple(sql);
+  await client.execute({
+    sql: `INSERT INTO _prisma_migrations
+            (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
+          VALUES (?, ?, current_timestamp, ?, current_timestamp, 1)`,
+    args: [randomUUID(), createHash("sha256").update(sql).digest("hex"), migrationName],
+  });
+}
+
 async function main(): Promise<void> {
   const tursoUrl = process.env.TURSO_DATABASE_URL?.trim();
   const url = tursoUrl || process.env.DATABASE_URL?.trim();
@@ -71,25 +113,9 @@ async function main(): Promise<void> {
         resolve(migrationsDir, dir, "migration.sql"),
         "utf8"
       );
-      const checksum = createHash("sha256").update(sql).digest("hex");
 
       console.log(`  →   ${dir}`);
-      const tx = await client.transaction("write");
-      try {
-        await tx.executeMultiple(sql);
-        await tx.execute({
-          sql: `INSERT INTO _prisma_migrations
-                  (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
-                VALUES (?, ?, current_timestamp, ?, current_timestamp, 1)`,
-          args: [randomUUID(), checksum, dir],
-        });
-        await tx.commit();
-      } catch (e) {
-        await tx.rollback().catch(() => {});
-        throw e;
-      } finally {
-        tx.close();
-      }
+      await applyMigration(client, dir, sql);
       console.log(`  ok  ${dir}`);
       appliedCount += 1;
     }
@@ -104,7 +130,11 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((e: unknown) => {
-  console.error(e);
-  process.exitCode = 1;
-});
+// Run only when invoked as a script (`pnpm migrate:turso`), not when imported
+// (e.g. by tests exercising `applyMigration`).
+if (require.main === module) {
+  main().catch((e: unknown) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
+}

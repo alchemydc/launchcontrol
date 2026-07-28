@@ -1,7 +1,9 @@
 import { unlinkSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
+import { expireResultsCache } from "@/lib/results-cache";
 import { getSession } from "@/lib/session";
-import { isAdmin } from "@/lib/admin";
+import { isLeagueAdmin } from "@/lib/admin";
+import { resolveDefaultLeague } from "@/lib/league-config";
 import { validateAxdbBuffer } from "@/lib/axdb-validate";
 import { ingestAxdb } from "@/lib/ingest";
 import { prisma } from "@/lib/prisma";
@@ -20,7 +22,9 @@ export async function POST(request: NextRequest) {
 
   const msrUid = session.msrUid;
 
-  if (!isAdmin(msrUid)) {
+  // AxWare upload always targets the deployment's default league by design.
+  const league = await resolveDefaultLeague(prisma);
+  if (!league || !(await isLeagueAdmin(msrUid, league.id))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -61,7 +65,7 @@ export async function POST(request: NextRequest) {
   const { tempPath } = validated;
   try {
     const summary = await ingestAxdb(tempPath, prisma);
-    const { status, event, counts, axdbSha256 } = summary;
+    const { status, event, counts, sourceSha256 } = summary;
     console.log({ event: "admin-ingest", admin: msrUid, status, slug: event.slug, counts });
 
     try {
@@ -73,12 +77,14 @@ export async function POST(request: NextRequest) {
         targetType: "event",
         targetId: event.id,
         targetSlug: event.slug,
-        detail: { filename: file.name, axdbSha256, status, counts },
+        detail: { filename: file.name, sourceSha256, status, counts },
       });
     } catch (auditErr) {
       // Audit is best-effort — a logging hiccup must not fail a completed ingest.
       console.error("[admin-ingest] failed to write audit log", auditErr);
     }
+
+    expireResultsCache();
 
     return NextResponse.json({ status, event, counts }, { status: 200 });
   } catch (err) {
