@@ -48,6 +48,12 @@ function toDisposition(raw: ParsedRun["disposition"]): RunDisposition {
   }
 }
 
+// True when the source printed no driver name at all for this entry (see the
+// blank co-drive placeholder note below).
+function isAnonymousEntry(e: Pick<ParsedEntry, "firstName" | "lastName">): boolean {
+  return e.firstName.trim() === "" && e.lastName.trim() === "";
+}
+
 // Real RMsolo Full PDFs contain genuine "blank co-drive placeholder" rows —
 // entries with a car number and a full run set but NO name, car description,
 // or hometown printed at all (confirmed byte-for-byte against source PDFs,
@@ -64,10 +70,21 @@ function identityNameFor(e: Pick<ParsedEntry, "firstName" | "lastName" | "carNum
   firstName: string;
   lastName: string;
 } {
-  if (e.firstName.trim() === "" && e.lastName.trim() === "") {
+  if (isAnonymousEntry(e)) {
     return { firstName: "Unknown", lastName: `#${e.carNumber}` };
   }
   return { firstName: e.firstName, lastName: e.lastName };
+}
+
+// Human-readable driver label for log lines, e.g. "Jane S." or "Unknown #176".
+// Applies the same redaction the stored Driver row gets (lastInitial, below):
+// an anonymous row's car-number identity is shown in full since it IS the
+// identity, but a named row's last name is redacted so a log line is never
+// more identifying than the database.
+function driverLabelFor(e: Pick<ParsedEntry, "firstName" | "lastName" | "carNumber">): string {
+  const anonymous = isAnonymousEntry(e);
+  const { firstName, lastName } = identityNameFor(e);
+  return anonymous ? `${firstName} ${lastName}` : `${firstName} ${redactLastName(lastName)}`;
 }
 
 export async function ingestRmsoloEvent(
@@ -78,9 +95,7 @@ export async function ingestRmsoloEvent(
   const leagueSlug = input.leagueSlug?.trim() || DEFAULT_LEAGUE_SLUG;
   const { interpretation, unreconciled } = reconcileTimes(parsed);
   const unreconciledSet = new Set(unreconciled);
-  const anonymousCount = parsed.entries.filter(
-    (e) => e.firstName.trim() === "" && e.lastName.trim() === "",
-  ).length;
+  const anonymousCount = parsed.entries.filter(isAnonymousEntry).length;
   if (anonymousCount > 0) {
     console.warn(
       `[rmsolo-ingest] ${anonymousCount} entr${anonymousCount === 1 ? "y" : "ies"} printed no driver name — ingested as "Unknown #<carNumber>"`,
@@ -255,7 +270,7 @@ export async function ingestRmsoloEvent(
     const identityByEntry = new Map<ParsedEntry, string>();
     const uniqueDriverIdentities = new Map<string, DriverIdentity>();
     for (const e of parsed.entries) {
-      const anonymous = e.firstName.trim() === "" && e.lastName.trim() === "";
+      const anonymous = isAnonymousEntry(e);
       const { firstName, lastName } = identityNameFor(e);
       const identityHash = computeIdentityHash(null, firstName, lastName);
       identityByEntry.set(e, identityHash);
@@ -394,7 +409,9 @@ export async function ingestRmsoloEvent(
       const keep = withRuns[0] ?? group[0]!;
       const droppedCount = group.length - 1;
       console.warn(
-        `[rmsolo-ingest] collapsed ${group.length} entries for driver ${keep.driverId} in class ${keep.classId} at event ${event.id} into one (kept car ${keep.carNumber}, dropped ${droppedCount} with zero runs)`,
+        `[rmsolo-ingest] collapsed ${group.length} entries for driver ${keep.driverId} (${driverLabelFor(keep._entry)}) ` +
+          `in class ${keep.classId} (${keep._entry.classCode}) at event ${event.id} (${event.slug}) into one ` +
+          `(kept car ${keep.carNumber}, dropped ${droppedCount} with zero runs)`,
       );
       dedupedEntriesData.push(keep);
     }
