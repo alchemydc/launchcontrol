@@ -42,6 +42,12 @@ function toDisposition(raw: ParsedRun["disposition"]): RunDisposition {
   }
 }
 
+// True when the source printed no driver name at all for this entry (see the
+// blank co-drive placeholder note below).
+function isAnonymousEntry(e: Pick<ParsedEntry, "firstName" | "lastName">): boolean {
+  return e.firstName.trim() === "" && e.lastName.trim() === "";
+}
+
 // Real RMsolo Full PDFs contain genuine "blank co-drive placeholder" rows —
 // entries with a car number and a full run set but NO name, car description,
 // or hometown printed at all (confirmed byte-for-byte against source PDFs,
@@ -54,12 +60,6 @@ function toDisposition(raw: ParsedRun["disposition"]): RunDisposition {
 // Cross-event linkage of anonymous drivers by car number is a best-effort
 // assumption (a number can be reassigned to a different anonymous entrant
 // across seasons) — acceptable since there is no other identifying data.
-// True when the source printed no driver name at all for this entry (see the
-// blank co-drive placeholder note below).
-function isAnonymousEntry(e: Pick<ParsedEntry, "firstName" | "lastName">): boolean {
-  return e.firstName.trim() === "" && e.lastName.trim() === "";
-}
-
 function identityNameFor(e: Pick<ParsedEntry, "firstName" | "lastName" | "carNumber">): {
   firstName: string;
   lastName: string;
