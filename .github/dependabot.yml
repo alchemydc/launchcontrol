@@ -48,6 +48,11 @@ updates:
       # publishes v10-compatible peer ranges. See #22, #31.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # Hold typescript at v6 until typescript-eslint (pinned transitively by
+      # eslint-config-next) supports TS 7. Under TS 7 the lint step dies with
+      # `TypeError: Cannot read properties of undefined (reading 'Cjs')`. See #109.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
