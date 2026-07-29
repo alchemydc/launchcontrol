@@ -1,18 +1,21 @@
 <img width="1280" height="640" alt="launchcontrol_gh" src="https://github.com/user-attachments/assets/23b59229-f785-4e02-b6e8-25a5834578c3" />
 
-# PCA Launch Control
+# Launch Control
 
-A community web platform for the Porsche Club of America Rocky Mountain Region — autocross results, season standings, and event media.
+A web platform for autocross clubs — event results, season standings, and event media. One deployment can serve several clubs at once, each with its own branding, access policy, ingest pipeline, and scoring rules; or a club can self-host its own instance.
 
-**Live at [launchcontrol.club](https://launchcontrol.club)** — see the 2026 RMR season standings, per-event leaderboards, and driver progression charts.
+**Live at [launchcontrol.club](https://launchcontrol.club)** — the reference deployment, serving results and standings for both PCA Rocky Mountain Region and SCCA Rocky Mountain Solo.
 
 ## What's here
 
 - Per-event leaderboards (raw, PAX, and per-class)
-- Season-long points standings (best 4 of 7 events per class)
-- Per-driver progression charts across the season
-- SmugMug event gallery links (RMR-configured for MVP; extensible to any SmugMug-using club)
-- MSR single-sign-on (coming — blocked on MotorsportReg credentials)
+- Season-long points standings, with drop rules and cone penalty configured per league
+- Per-driver progression charts across a season, filterable to one league or aggregated across all
+- Multi-league hosting: a public league directory and per-league routes, each gated independently
+- League, season, and ruleset administration in-app — no redeploy or direct DB access to stand up a club
+- Two ingest pipelines: VisualAX `.axdb` exports and RMsolo results PDFs
+- SmugMug event gallery links, configured per league
+- MSR single-sign-on, with two-tier roles (deployment superuser + per-league admin/member)
 
 ## Stack
 
@@ -40,7 +43,7 @@ Tenant config lives in the database, not environment variables. A deployment's b
 
 - **`/leagues`** — directory of every `League` row on the deployment (name, active-season summary, event counts).
 - **`/l/[league]`** — that league's home page (events list), **`/l/[league]/leaderboard`** (active/latest season) or **`/l/[league]/leaderboard/s/[seasonSlug]`** (a specific season), and **`/l/[league]/events/[slug]`** — all league-scoped, respecting that league's own `accessGate`.
-- The **legacy, unprefixed routes** (`/`, `/leaderboard[/year]`, `/events/[slug]`) are unchanged and always serve `DEFAULT_LEAGUE_SLUG` — existing bookmarks and the production PCA deployment are unaffected.
+- The **legacy, unprefixed routes** (`/`, `/leaderboard[/year]`, `/events/[slug]`) are unchanged and always serve `DEFAULT_LEAGUE_SLUG` — existing bookmarks into the default league are unaffected.
 - The site header shows a "Leagues" nav link only when the deployment hosts more than one league.
 
 ### CLIs
@@ -127,9 +130,9 @@ ingest route relates to the CLI.
 
 The season leaderboard's **Avg** column is the driver's championship average points (total points ÷ counted scores, i.e. dropped scores excluded) — a quick read on scoring pace independent of how many events a driver has attended.
 
-## Project status
+## Docs
 
-M0–M1.12 shipped: ingest with PII redaction, styled leaderboards, GitHub Actions CI, per-driver progression at `/drivers/[id]`, SmugMug photo links, RMR season standings at `/leaderboard`, and ingest correctness pass. M2 (MSR OAuth) is blocked on credentials. See [docs/BUILD.md](docs/BUILD.md) for the full milestone history and [docs/PRD.md](docs/PRD.md) for requirements.
+See [docs/BUILD.md](docs/BUILD.md) for architecture and milestone history, [docs/PRD.md](docs/PRD.md) for requirements, [docs/RMSOLO.md](docs/RMSOLO.md) for the RMsolo ingest runbook, and [docs/dependabot.md](docs/dependabot.md) for the dependency-update runbook.
 
 ## License
 
