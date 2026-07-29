@@ -2,7 +2,8 @@
 
 Merging Dependabot PRs in this repo has repeatedly gotten stuck and required manual
 surgery (#23, #54, #64). This doc explains the preventive config now in place and gives
-exact recovery recipes for the two failure modes that still bite.
+an exact recovery recipe for the one failure mode that still bites (plus a second that
+`better-sqlite3` 13 has since made obsolete, kept for anyone on an older branch).
 
 The app is a pnpm workspace (`apps/web`, pnpm `10.25.0`). CI (`.github/workflows/ci.yml`,
 the **`web`** check) runs `pnpm install --frozen-lockfile` → prisma generate → lint →
@@ -14,8 +15,9 @@ typecheck → test → build.
   before merging** (branch protection now enforces this).
 - If `main` ends up with `ERR_PNPM_BROKEN_LOCKFILE … duplicated mapping key`, see
   [Failure mode 1](#failure-mode-1--broken-lockfile-duplicate-keys).
-- If tests fail with `Could not locate the bindings file … better_sqlite3.node`, run
-  `pnpm install --force`. See [Failure mode 2](#failure-mode-2--better-sqlite3-native-binary).
+- The old `Could not locate the bindings file … better_sqlite3.node` trap is **fixed** as of
+  `better-sqlite3` 13 — no more `pnpm install --force` in the routine. See
+  [Failure mode 2](#failure-mode-2--better-sqlite3-native-binary-fixed-by-v13).
 
 ## Why it broke (root cause)
 
@@ -42,7 +44,20 @@ up-to-date (and re-CI'd) before merging.
    tailwind) plus `dev-minor-patch` and a catch-all `production-minor-patch` group collapse
    most weekly updates into a handful of PRs instead of one-per-dependency, so the lockfile
    mutates far less often. Major bumps still get individual PRs (they need scrutiny).
-3. **Repo settings:** `allow_auto_merge` and `delete_branch_on_merge` are on. You can queue a
+3. **Held majors (`ignore:` in `.github/dependabot.yml`).** Two `version-update:semver-major`
+   holds are in place, each blocked on the same upstream problem — the eslint plugin set that
+   `eslint-config-next` pins transitively:
+   - **`eslint` at v9** — awaiting v10-compatible peer ranges from `eslint-plugin-react` /
+     `-import` / `-jsx-a11y`. See #22, #31.
+   - **`typescript` at v6** — under TS 7 the lint step dies with
+     `TypeError: Cannot read properties of undefined (reading 'Cjs')`, because
+     `eslint-config-next` pins `typescript-eslint` 8.x and `apps/web/eslint.config.mjs`
+     consumes `eslint-config-next/typescript` directly, so there's no way to route around it.
+     See #109, #122.
+
+   Re-check both when `eslint-config-next` makes a major move; drop the entry to let the bump
+   back in.
+4. **Repo settings:** `allow_auto_merge` and `delete_branch_on_merge` are on. You can queue a
    Dependabot PR to merge automatically once strict CI passes (`gh pr merge <n> --auto
    --merge`, or comment `@dependabot merge`), and merged branches are cleaned up.
 
@@ -128,14 +143,37 @@ Notes:
 - Because the fix branch is built on current `main`, merging it is a clean fast-forward of the
   lockfile — no 3-way merge, so no new duplicate key.
 
-## Failure mode 2 — better-sqlite3 native binary
+## Failure mode 2 — better-sqlite3 native binary (fixed by v13)
 
-`better-sqlite3` is a native addon (listed under `onlyBuiltDependencies` in
-`pnpm-workspace.yaml`, so its build is pre-approved). After a version bump or in a fresh git
-worktree, a cached `pnpm install` may link the package **without compiling** the new
-`better_sqlite3.node`.
+**This no longer happens on `main`.** `better-sqlite3` **13.0.1** (merged 2026-07-28, #108)
+rewrote the addon onto [N-API](https://nodejs.org/api/n-api.html) and **removed the install
+step entirely**. Concretely, as of v13:
 
-**Symptom:**
+- The package has **no `install` / `preinstall` / `postinstall` script at all** — nothing to
+  run, so nothing to skip. Its only runtime dep is `node-addon-api` (build-time headers).
+- `prebuild-install` is **gone** from the dependency tree (that removal alone pruned ~234
+  lines from `pnpm-lock.yaml`).
+- Prebuilt binaries ship **inside the published tarball** at `prebuilds/<target>.node`, one
+  per platform/arch (`linux-x64`, `linux-arm64`, `linuxmusl-*`, `darwin-x64`, `darwin-arm64`,
+  `win32-x64`, `win32-arm64`). `lib/binding.js` picks one at require time from
+  `process.platform` / `process.arch`, with musl detected via `process.report`.
+- Because N-API is **ABI-stable**, one binary serves every Node major. The old
+  `<node-abi>-<platform>-<arch>` matching problem — and the Node-24/ABI-137 source-build
+  fallback that came with it — is structurally gone.
+
+So a cached or fresh-worktree `pnpm install` cannot leave you without a working binary on any
+of those targets, and **`pnpm install --force` is no longer part of the routine**. Verify with:
+
+```bash
+ls node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3/prebuilds/
+```
+
+Note the `better-sqlite3` entry in `pnpm-workspace.yaml`'s `onlyBuiltDependencies` is now a
+**no-op** (there is no build script left to approve). It is harmless, and worth keeping only
+as insurance if the dep is ever pinned back below v13.
+
+Only if you land on an **old branch or worktree still pinned to `better-sqlite3` 12.x** can
+the original failure surface:
 
 ```
 Error: Could not locate the bindings file. Tried:
@@ -144,19 +182,14 @@ Error: Could not locate the bindings file. Tried:
 ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  web@0.1.0 pretest: …
 ```
 
-**Fix:** `pnpm install --force` (forces a real reinstall that runs build scripts → compiles
-the addon, ~20s). Verify:
+There the fix was `pnpm install --force` (a real reinstall that runs build scripts and
+compiles the addon, ~20s). `pnpm rebuild better-sqlite3` and plain `pnpm rebuild` were
+**silent no-ops** in a worktree — don't rely on them. It only ever affected local/worktree
+runs; GitHub CI compiled it correctly on every PR, so it never blocked CI.
 
-```bash
-ls node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3/build/Release/better_sqlite3.node
-```
-
-`pnpm rebuild better-sqlite3` and plain `pnpm rebuild` were **silent no-ops** in a worktree —
-don't rely on them. This only affects local/worktree runs; GitHub CI compiles it correctly on
-every PR, so it never blocks CI.
-
-> Long-term, replacing `better-sqlite3` with a pure-JS / WASM SQLite (no native build step)
-> would remove this failure mode entirely. Tracked separately.
+> The long-standing "replace `better-sqlite3` with a pure-JS / WASM SQLite" idea is now much
+> lower value — v13 already removed the build step that motivated it. See the appendix note in
+> [BUILD.md](./BUILD.md#appendix--post-mvp-deployment-hardening).
 
 ## Local CI mirror verification
 
@@ -168,6 +201,6 @@ pnpm install --frozen-lockfile          # catches the duplicate-key breakage
 pnpm --filter web exec prisma generate
 pnpm --filter web lint
 pnpm --filter web typecheck
-pnpm --filter web test                  # if better_sqlite3.node missing → pnpm install --force
+pnpm --filter web test
 pnpm --filter web build
 ```
