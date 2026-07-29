@@ -6,7 +6,7 @@
 // applied rows are recognized by `prisma migrate deploy` if/when Prisma adds
 // libsql adapter support — switching back later requires no state migration.
 //
-// Usage: pnpm --filter web migrate:turso
+// Usage: pnpm --filter web db:migrate
 //   Requires TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN for hosted Turso) in env.
 //   Falls back to DATABASE_URL — useful for smoke-testing against a local file: URL.
 
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
   );
 }
 
-// Run only when invoked as a script (`pnpm migrate:turso`), not when imported
+// Run only when invoked as a script (`pnpm db:migrate`), not when imported
 // (e.g. by tests exercising `applyMigration`).
 if (require.main === module) {
   main().catch((e: unknown) => {

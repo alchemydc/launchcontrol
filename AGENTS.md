@@ -39,8 +39,8 @@ apps/web/scripts/ingest.sh <dir>                                   # batch-inges
 pnpm --filter web ingest:rmsolo [--league <slug>] [--file <pdf> --date YYYY-MM-DD]  # RMsolo pipeline; no --file scrapes the results index
 pnpm --filter web league:create --slug <slug> --name <name> [--gate required|optional|none] ...
 pnpm --filter web season:create --league <slug> --name <name> --year <n> [--slug <slug>] ...
-pnpm --filter web wipe:db [--dry-run]      # drop all tables/views/triggers/indexes
-pnpm --filter web migrate:turso            # apply prisma migrations to Turso (libSQL workaround)
+pnpm --filter web db:wipe [--dry-run]      # drop all tables/views/triggers/indexes
+pnpm --filter web db:migrate               # apply prisma migrations to Turso (libSQL workaround)
 ```
 
 DB ops against **Turso** (wipe + migrate + ingest) are run by the user manually after a preview deploy — the agent commits and opens the PR but does not automate Turso writes.

@@ -3,9 +3,9 @@
  *
  * One-shot three-legged OAuth 1.0a probe against MotorsportReg.
  * Writes the raw /rest/me JSON to docs/private/rest_me_sample.json.
- * NOT wired into CI or package.json scripts.
+ * NOT wired into CI.
  *
- * Run: pnpm --filter web tsx --env-file=.env scripts/msr-oauth-probe.ts
+ * Run: pnpm --filter web msr:probe
  *
  * Prerequisites: MSR_CONSUMER_KEY and MSR_CONSUMER_SECRET in .env.
  * No live integration test in CI — OAuth requires interactive browser sign-in.

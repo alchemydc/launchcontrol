@@ -436,7 +436,7 @@ Unblocks the 2025 historical backfill and the imminent Turso re-ingest. Five iss
 Operator-facing tooling to support the 2025 backfill and Turso re-ingests without surprises.
 
 - **`apps/web/scripts/ingest.sh`** — walks a directory tree, finds one canonical `.axdb` per event folder, and runs `pnpm run ingest` on each. Skips `*Trailer Export*.axdb` (trailer snapshots, not canonical results). When multiple non-trailer files exist in a single event folder, prompts the operator to choose or skip; non-interactive runs error out rather than guess.
-- **`apps/web/scripts/wipe-db.ts` (`pnpm --filter web wipe:db`)** — drops every table/view/trigger/index in the target DB (local `file:` or Turso libSQL) but **does not delete the database itself**. Rationale: a full Turso "destroy + recreate" rotates the DB URL + auth token, which would require updating Vercel env vars on preview and prod on every re-ingest cycle. Safety rails: prints the redacted target URL and an itemized drop plan; supports `--dry-run`; for Turso, requires typing the exact hostname to confirm; for local DBs, defaults to a `[y/N]` prompt unless `--yes` is passed.
+- **`apps/web/scripts/wipe-db.ts` (`pnpm --filter web db:wipe`)** — drops every table/view/trigger/index in the target DB (local `file:` or Turso libSQL) but **does not delete the database itself**. Rationale: a full Turso "destroy + recreate" rotates the DB URL + auth token, which would require updating Vercel env vars on preview and prod on every re-ingest cycle. Safety rails: prints the redacted target URL and an itemized drop plan; supports `--dry-run`; for Turso, requires typing the exact hostname to confirm; for local DBs, defaults to a `[y/N]` prompt unless `--yes` is passed.
 
 ### M1.12 — Honor `bestcommittedrun_id` + tighten status/disposition filters ✓
 
@@ -446,7 +446,7 @@ Closes the CS P3/P4 anomaly surfaced during the 2025 backfill (`docs/private/ell
 - **Status filter at ingest:** the source `runs` SELECT adds `WHERE status = 3`. Rows in queue/cancelled states (0/1/2/4) never reach the app DB. Confirmed defense-in-depth — all observed real-event exports already had status=3 only, but the chair confirmed the lifecycle semantics on 2026-05-26.
 - **`OFF` / `DSQ` dispositions:** `RunDisposition` enum extended; `toDisposition()` recognizes them and now **throws** on any unrecognized string (replaces today's silent fallback to CLEAN — the exact class of bug this milestone closes). OFF/DSQ runs persist for auditing but are excluded from best-time.
 
-Backfill: wipe local + Turso schema via `pnpm --filter web wipe:db`, re-migrate, bulk re-ingest 2025+2026 via `apps/web/scripts/ingest.sh`. Verify Ellen G. → CS P4 (2894) and Mike P. → CS P3 (2908) on `/leaderboard/2025`. Verify `docs/private/compare-official.ts` reports `Total mismatches: 0`.
+Backfill: wipe local + Turso schema via `pnpm --filter web db:wipe`, re-migrate, bulk re-ingest 2025+2026 via `apps/web/scripts/ingest.sh`. Verify Ellen G. → CS P4 (2894) and Mike P. → CS P3 (2908) on `/leaderboard/2025`. Verify `docs/private/compare-official.ts` reports `Total mismatches: 0`.
 
 ### M1.13 — Dynamic qualifying threshold + single-car constraint ✓ (done 2026-05-27)
 
@@ -541,7 +541,7 @@ M2 ships full MSR OAuth 1.0a sign-in end-to-end: a three-legged OAuth handshake 
 
 **Header nav (`apps/web/src/components/header-nav.tsx`):** server component reading `getSession()`; signed-in users see their display name as a `<Link>` to `/me`; signed-out users see a "Sign in" link. Integrated into `apps/web/src/app/layout.tsx`.
 
-**Probe script (`apps/web/scripts/msr-oauth-probe.ts`):** manual one-shot tool that runs the full three-legged flow against live MSR and writes the raw `/rest/me.json` to `docs/private/rest_me_sample.json` (gitignored — contains PII). Not wired into CI. Run via `pnpm --filter web tsx --env-file=.env scripts/msr-oauth-probe.ts`.
+**Probe script (`apps/web/scripts/msr-oauth-probe.ts`):** manual one-shot tool that runs the full three-legged flow against live MSR and writes the raw `/rest/me.json` to `docs/private/rest_me_sample.json` (gitignored — contains PII). Not wired into CI. Run via `pnpm --filter web msr:probe`.
 
 **Signing tests (`apps/web/tests/msr-signing.test.ts`):** pin HMAC-SHA1 signatures deterministically by injecting fixed `oauth_timestamp` and `oauth_nonce`, with snapshot tests for both `/rest/tokens/request` (no token, with `oauth_callback`) and `/rest/tokens/access` (request token + `oauth_verifier`) Authorization headers, plus round-trip coverage for `parseFormEncoded()`. Snapshots committed under `apps/web/tests/__snapshots__/`.
 
@@ -660,7 +660,7 @@ Closes the "hand-edit the DB to fix bad uploads" gap. An admin uploaded 2024/202
 
 **Verified end-to-end (2026-07-10):** reproduced the duplicate with a date/name-tweaked synthetic fixture, then fixed it entirely through the UI — edit with slug regen, inline 409 on collision, both deletes (second sweep removed all 6 synthetic drivers), deleted slug 404s, home/leaderboard recovered. Checked at mobile (390px — table scrolls in its own `overflow-x-auto` container) and desktop breakpoints.
 
-**Deploy note:** the Turso migration is applied manually by the operator (`pnpm --filter web migrate:turso`) — delete/edit fail against Turso until it's applied because the audit insert is part of the transaction.
+**Deploy note:** the Turso migration is applied manually by the operator (`pnpm --filter web db:migrate`) — delete/edit fail against Turso until it's applied because the audit insert is part of the transaction.
 
 ### M1.15 — Combined same-date events ✓ (done 2026-07-18)
 
@@ -757,7 +757,7 @@ Both rebuilds use the standard Prisma/SQLite table-rebuild pattern (`PRAGMA defe
 
    **Must return 0 rows.** A non-empty result means two events in the same calendar year share a `sourceSha256` — resolve the duplicate (or diagnose why two distinct events hashed the same) before migrating; don't proceed with an unresolved collision.
 
-2. **Migrate and promote back-to-back, in the same deploy window — never leave a deploy half-migrated.** Run `pnpm --filter web migrate:turso` (applies `prisma migrate deploy` against Turso) immediately before promoting the build that expects the new schema. A build running the new code against the old (pre-migration) schema, or the old code against the new schema, is unsupported and untested — the app fails loudly (`[league-config] no League row for DEFAULT_LEAGUE_SLUG=...`) rather than serving degraded, but that's a symptom to avoid, not a safety net to rely on.
+2. **Migrate and promote back-to-back, in the same deploy window — never leave a deploy half-migrated.** Run `pnpm --filter web db:migrate` (applies `prisma migrate deploy` against Turso) immediately before promoting the build that expects the new schema. A build running the new code against the old (pre-migration) schema, or the old code against the new schema, is unsupported and untested — the app fails loudly (`[league-config] no League row for DEFAULT_LEAGUE_SLUG=...`) rather than serving degraded, but that's a symptom to avoid, not a safety net to rely on.
 3. Confirm `DEFAULT_LEAGUE_SLUG` is set correctly for the target environment (unset defaults to `pca-rmr`, correct for the existing production deployment — only set it explicitly when standing up a genuinely new tenant).
 4. Smoke-test `/`, `/leaderboard`, and one `/events/[slug]` page post-deploy to confirm the seeded League/Season rows resolved correctly.
 
@@ -823,7 +823,7 @@ Public gates (`"optional"`/`"none"`) short-circuit at step 4 without any session
 - **`20260724010000_super_user`** — `CREATE TABLE "SuperUser"` + a unique index on `msrUid`. New table only; nothing existing is touched. Deliberately **not** backfilled from `ADMIN_MSR_UIDS` — the env allowlist stays the irrevocable bootstrap (same posture as `LeagueMembership`: env is config, rows are data).
 - **`20260724020000_entry_pax_applied`** — `ALTER TABLE "Entry" ADD COLUMN "paxIndexApplied" DECIMAL` (nullable), then one `UPDATE` backfilling every existing row from its **current** `CarClass.paxIndex` via a correlated subquery. The backfill is idempotent — re-running it just re-sets each row to today's live factor again, a no-op if no `CarClass.paxIndex` changed in between.
 - **Back up first** (same as League Foundation's runbook: a Turso platform snapshot, or `turso db shell <db> .dump` piped to a file) — the `Entry` backfill is a bulk `UPDATE` across every row in the table.
-- **One `pnpm --filter web migrate:turso` run applies both** (`prisma migrate deploy` runs pending migrations in filename order — `..._super_user` then `..._entry_pax_applied` — in a single invocation). No seed step, no pre-flight collision query (unlike League Foundation) — both migrations are unconditionally safe to run against any prior schema state.
+- **One `pnpm --filter web db:migrate` run applies both** (`prisma migrate deploy` runs pending migrations in filename order — `..._super_user` then `..._entry_pax_applied` — in a single invocation). No seed step, no pre-flight collision query (unlike League Foundation) — both migrations are unconditionally safe to run against any prior schema state.
 - Promote the build in the same window as the migration, per the existing rule above: old code against the new schema, or new code against the old schema, is unsupported.
 
 ### Ruleset scoring parameters — qualification/drop ownership ✓ (done 2026-07-24)
@@ -839,7 +839,7 @@ Migration `20260725020000_ruleset_scoring_parameters` adds `Season.minimumEvents
 **Deploy runbook:**
 
 1. Take a Turso snapshot before deployment and save baseline row counts for `Season`, `Event`, `Driver`, `CarClass`, `Entry`, `Run`, `Video`, and `AdminAuditLog`.
-2. Run `pnpm --filter web migrate:turso`, then deploy the matching application build in the same window.
+2. Run `pnpm --filter web db:migrate`, then deploy the matching application build in the same window.
 3. Confirm `PRAGMA foreign_key_check;` returns no rows and `PRAGMA quick_check;` returns `ok`. Re-run the baseline counts; only `ScoringSystem` is expected to grow, by the number of historical drop-count variants that had shared a ruleset.
 4. Run this preservation check. It must return `0` before promotion:
 
