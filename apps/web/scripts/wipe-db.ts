@@ -128,7 +128,7 @@ async function main(): Promise<void> {
   console.log(
     `  →   Dropped ${tables.length} table${tables.length !== 1 ? "s" : ""}, ${views.length} view${views.length !== 1 ? "s" : ""}, ${triggers.length} trigger${triggers.length !== 1 ? "s" : ""}. Database is empty.`
   );
-  console.log("  ok  Next step: pnpm --filter web migrate:turso");
+  console.log("  ok  Next step: pnpm --filter web db:migrate");
 }
 
 main().catch((e: unknown) => {
