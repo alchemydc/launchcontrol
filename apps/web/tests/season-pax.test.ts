@@ -279,7 +279,7 @@ describe("season PAX section (ruleset policy paxSection)", () => {
     expect(pax.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
       ["Alice A.", 1000],
       ["Xena X.", 998], // round(1000 × 33200 / 33251)
-      ["Bella B.", 996], // round(1000 × 33200 / 33317)
+      ["Bella B.", 997], // round(1000 × 33200 / 33316.5) — full-precision indexed metric
       ["Yuri Y.", 981], // round(1000 × 33200 / 33858)
       ["Carol C.", 952], // round(1000 × 33200 / 34860)
     ]);

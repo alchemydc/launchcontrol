@@ -375,9 +375,15 @@ export async function buildSeasonLeaderboard(
   //    bars the other pathway — but the schema does not enforce uniqueness,
   //    so we collapse defensively rather than throw.
   const bestByEventClassDriver = new Map<number, Map<string, Map<number, number>>>();
+  // Per (event, driver) best indexed metric across ALL of that driver's
+  // entries — the population a `points.basis: "event"` ruleset scores
+  // against. Built unconditionally rather than gated on `paxSection`, because
+  // event basis needs it even when the synthetic section is switched off.
+  const indexedByEventDriver = new Map<number, Map<number, number>>();
 
   for (const event of events) {
     const byClass = new Map<string, Map<number, number>>();
+    const indexedByDriver = new Map<number, number>();
     for (const entry of event.entries) {
       const d = entry.driver;
       if (!driverInfo.has(d.id)) {
@@ -409,24 +415,23 @@ export async function buildSeasonLeaderboard(
         byDriver.set(d.id, rankMetric);
       }
 
-      // Synthetic overall-PAX section (ruleset policy paxSection=true): index
-      // the same best-corrected time by the entry's paxClass factor and rank
-      // across every class. Everything downstream (points formula, combined
-      // groups, qualifying threshold, drops) treats it as one more class.
-      if (paxSectionEnabled) {
-        const paxMs = Math.round(best * appliedPaxIndex(entry));
-        let paxByDriver = byClass.get(PAX_SECTION_CODE);
-        if (paxByDriver == null) {
-          paxByDriver = new Map();
-          byClass.set(PAX_SECTION_CODE, paxByDriver);
-        }
-        const existingPax = paxByDriver.get(d.id);
-        if (existingPax == null || paxMs < existingPax) {
-          paxByDriver.set(d.id, paxMs);
-        }
+      const existingIndexed = indexedByDriver.get(d.id);
+      if (existingIndexed == null || rankMetric < existingIndexed) {
+        indexedByDriver.set(d.id, rankMetric);
       }
     }
+    // Synthetic overall-PAX section (ruleset policy paxSection=true): the same
+    // event-wide indexed metric, exposed as one more class so that points,
+    // combined groups, qualifying thresholds, and drops all treat it
+    // identically. It shares the class metric's full precision — a
+    // `points.basis: "event"` ruleset requires a driver's class score and PAX
+    // score to be the same number, which only holds if both are computed from
+    // the same unrounded value.
+    if (paxSectionEnabled) {
+      byClass.set(PAX_SECTION_CODE, new Map(indexedByDriver));
+    }
     bestByEventClassDriver.set(event.id, byClass);
+    indexedByEventDriver.set(event.id, indexedByDriver);
   }
 
   // 3. Group events into scoring groups by UTC date key. `events` is already
