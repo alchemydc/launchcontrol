@@ -575,7 +575,12 @@ export async function buildSeasonLeaderboard(
         // every session implies having an indexed time in every session, so
         // the event-wide map is a superset of every class map. Skip rather
         // than emit a wrong score if that ever stops holding.
-        if (points == null) continue;
+        if (points == null) {
+          console.warn(
+            `[season-leaderboard] season ${year}: driver ${driverId} in class '${classCode}' scoring group '${key}' has no points in the event-wide map — skipping (should be impossible)`,
+          );
+          continue;
+        }
         pushScore(driverId, classCode, {
           key,
           eventName,

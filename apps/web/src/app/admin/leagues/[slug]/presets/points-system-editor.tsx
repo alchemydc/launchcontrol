@@ -13,7 +13,7 @@ import {
 import type { PointsBasis, PointsSystem } from "@/lib/scoring-policy";
 
 /** Starting table when an admin first picks the position system (issue #110's example). */
-export const DEFAULT_POSITION_TABLE = [20, 15, 12, 10, 8, 6, 4, 2, 1];
+const DEFAULT_POSITION_TABLE = [20, 15, 12, 10, 8, 6, 4, 2, 1];
 const DEFAULT_BEYOND_TABLE = 1;
 
 /**
