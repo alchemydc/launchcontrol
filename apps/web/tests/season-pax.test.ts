@@ -17,6 +17,9 @@ const FIXED_POLICY =
   '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}';
 const FIXED_PAX_SECTION_POLICY =
   '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}';
+const EVENT_BASIS_POLICY =
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,' +
+  '"points":{"type":"ratio1000","basis":"event"}}';
 
 let prisma: PrismaClient;
 let seasonId: number;
@@ -370,5 +373,67 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
     // beats Yuri's, same official order as the earlier describe block.
     const x = result.sections.find((s) => s.classCode === "X")!;
     expect(x.drivers.map((d) => d.driverName)).toEqual(["Xena X.", "Yuri Y."]);
+  });
+});
+
+describe("event-wide points basis (RMsolo)", () => {
+  it("scores every driver against the event's fastest indexed time, not their class's", async () => {
+    await setPolicy(EVENT_BASIS_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+
+    // Alice owns the fastest indexed time in the whole event (33200).
+    const as = result.sections.find((s) => s.classCode === "AS")!;
+    expect(as.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Alice A.", 1000],
+      ["Carol C.", 952], // round(1000 × 33200 / 34860)
+    ]);
+
+    // Bella wins BST outright but is 0.35% off overall PAX pace, so she does
+    // NOT get a fresh 1000 — this is the bug the whole change exists to fix.
+    const bst = result.sections.find((s) => s.classCode === "BST")!;
+    expect(bst.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Bella B.", 997], // round(1000 × 33200 / 33316.5)
+    ]);
+
+    // Same for the X run group's winner.
+    const x = result.sections.find((s) => s.classCode === "X")!;
+    expect(x.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Xena X.", 998], // round(1000 × 33200 / 33251)
+      ["Yuri Y.", 981], // round(1000 × 33200 / 33858)
+    ]);
+  });
+
+  it("gives each driver exactly one score, shared by their class and PAX sections", async () => {
+    await setPolicy(EVENT_BASIS_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+    const pax = result.sections.find((s) => s.classCode === "PAX")!;
+
+    const paxPoints = new Map(pax.drivers.map((d) => [d.driverName, d.totalPoints]));
+    for (const section of result.sections) {
+      if (section.classCode === "PAX") continue;
+      for (const driver of section.drivers) {
+        expect(driver.totalPoints).toBe(paxPoints.get(driver.driverName));
+      }
+    }
+  });
+
+  it("still gives only the overall PAX winner 1000", async () => {
+    await setPolicy(EVENT_BASIS_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+    const perfect = result.sections
+      .flatMap((s) => s.drivers)
+      .filter((d) => d.totalPoints === 1000)
+      .map((d) => d.driverName);
+    // Alice, counted once in AS and once in the PAX section.
+    expect(new Set(perfect)).toEqual(new Set(["Alice A."]));
+  });
+
+  it("class basis is unaffected — every class winner still scores 1000", async () => {
+    await setPolicy(FIXED_PAX_SECTION_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+    const bst = result.sections.find((s) => s.classCode === "BST")!;
+    expect(bst.drivers[0]!.totalPoints).toBe(1000);
+    const x = result.sections.find((s) => s.classCode === "X")!;
+    expect(x.drivers[0]!.totalPoints).toBe(1000);
   });
 });
