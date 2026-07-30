@@ -69,7 +69,7 @@ function policy(rulesetId: number): ScoringPolicy {
 }
 
 describe("scoring policy v4 migration", () => {
-  it("canonicalizes non-RMsolo rulesets to v4 with the per-class ratio (behavior preserving)", () => {
+  it("canonicalizes every v3 ruleset to v4 with the per-class ratio (behavior preserving)", () => {
     expect(policy(1)).toEqual({
       v: 4,
       dropCount: 2,
@@ -81,25 +81,64 @@ describe("scoring policy v4 migration", () => {
     expect(policy(4).points).toEqual({ type: "ratio1000", basis: "class" });
   });
 
-  it("puts every ruleset owned by the rmsolo league on the event-wide ratio", () => {
+  // The migration is deliberately tenant-blind: it never singles out a league.
+  // Moving a league to the event-wide basis is an admin action in the ruleset
+  // UI, not a slug match buried in SQL — so an RMsolo-shaped ruleset lands on
+  // the same behavior-preserving class basis as everyone else, and nothing
+  // about its scoring changes until someone flips it deliberately.
+  it("does not single out any league — RMsolo-owned rulesets also land on the class basis", () => {
     expect(policy(2)).toEqual({
       v: 4,
       dropCount: 4,
       dropTiming: "proportional",
       paxSection: true,
       conePenaltyMs: 2000,
-      points: { type: "ratio1000", basis: "event" },
+      points: { type: "ratio1000", basis: "class" },
     });
-    expect(policy(3).points).toEqual({ type: "ratio1000", basis: "event" });
+    expect(policy(3).points).toEqual({ type: "ratio1000", basis: "class" });
   });
 
   it("leaves every other policy field untouched", () => {
     expect(policy(2).dropCount).toBe(4);
     expect(policy(2).dropTiming).toBe("proportional");
+    expect(policy(2).paxSection).toBe(true);
     expect(policy(2).conePenaltyMs).toBe(2000);
   });
 
-  it("is a no-op on a database with no rmsolo league", () => {
+  it("already-v4 rows are left alone, so re-running it cannot clobber an admin's basis choice", () => {
+    const rerunDb = new Database(join(tmpDir, "rerun.db"));
+    rerunDb.exec(`
+      CREATE TABLE "ScoringSystem" (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        "leagueId" INTEGER NOT NULL,
+        "name" TEXT NOT NULL,
+        "policy" TEXT NOT NULL
+      );
+      CREATE TABLE "League" (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        "slug" TEXT NOT NULL,
+        "name" TEXT NOT NULL
+      );
+    `);
+    // An admin has already switched this ruleset to the event-wide basis.
+    rerunDb
+      .prepare(`INSERT INTO "ScoringSystem" ("id","leagueId","name","policy") VALUES (1,1,'RMsolo Championship',?)`)
+      .run(
+        '{"v":4,"dropCount":4,"dropTiming":"proportional","paxSection":true,' +
+          '"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"event"}}',
+      );
+    rerunDb.exec(readFileSync(migrationPath, "utf8"));
+    const row = rerunDb.prepare(`SELECT policy FROM "ScoringSystem" WHERE id = 1`).get() as {
+      policy: string;
+    };
+    expect((JSON.parse(row.policy) as ScoringPolicy).points).toEqual({
+      type: "ratio1000",
+      basis: "event",
+    });
+    rerunDb.close();
+  });
+
+  it("runs on a database with no rmsolo league", () => {
     const soloDb = new Database(join(tmpDir, "no-rmsolo.db"));
     soloDb.exec(`
       CREATE TABLE "League" (

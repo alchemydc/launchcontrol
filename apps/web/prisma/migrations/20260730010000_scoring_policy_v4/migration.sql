@@ -8,8 +8,17 @@
 --
 -- App code (parseScoringPolicy) now rejects any stored policy whose "v" isn't
 -- 4 and requires a "points" block, so every stored v3 policy is canonicalized
--- here. The first statement is purely behavior-preserving: ratio1000/class IS
--- the formula those rows were already scored with.
+-- here. This is purely behavior-preserving: ratio1000/class IS the formula
+-- those rows were already scored with, so no standing moves as a result of
+-- running this migration.
+--
+-- Deliberately NO tenant-specific statement. An earlier draft also flipped the
+-- rmsolo league's rulesets to the event-wide basis by matching League.slug.
+-- That is redundant now that the ruleset admin UI carries a Points system
+-- control: moving a league to the event-wide basis is a visible, audited admin
+-- action rather than a slug match that silently does nothing if the slug ever
+-- differs. It also keeps tenant identity out of migrations, matching the
+-- repo's no-hardcoded-org rule.
 UPDATE "ScoringSystem"
 SET "policy" = json_set(
       "policy",
@@ -17,16 +26,3 @@ SET "policy" = json_set(
       '$.points', json('{"type":"ratio1000","basis":"class"}')
     )
 WHERE json_extract("policy", '$.v') = 3;
-
--- RMsolo's rulesets move to the event-wide reference. Targeting is by League
--- slug because rulesets are created at runtime (league:create), so no seeded
--- row exists for this migration to name. This is a point-in-time data fix, not
--- live code, and it is a silent no-op on any database without an 'rmsolo'
--- league — which covers local dev and the PCA-only production DB.
-UPDATE "ScoringSystem"
-SET "policy" = json_set(
-      "policy",
-      '$.points', json('{"type":"ratio1000","basis":"event"}')
-    )
-WHERE json_extract("policy", '$.v') = 4
-  AND "leagueId" IN (SELECT "id" FROM "League" WHERE "slug" = 'rmsolo');
