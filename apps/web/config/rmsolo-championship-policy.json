@@ -4,5 +4,5 @@
   "dropTiming": "proportional",
   "paxSection": true,
   "conePenaltyMs": 2000,
-  "points": { "type": "ratio1000", "basis": "class" }
+  "points": { "type": "ratio1000", "basis": "event" }
 }

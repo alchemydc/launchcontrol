@@ -156,7 +156,7 @@ describe("createLeague", () => {
     });
     expect(preset.policy).toBe(
       '{"v":4,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":2000,' +
-        '"points":{"type":"ratio1000","basis":"class"}}',
+        '"points":{"type":"ratio1000","basis":"event"}}',
     );
     expect(JSON.parse(preset.paxTable)).toEqual(RMSOLO_PAX_2026);
 
