@@ -20,6 +20,12 @@ const FIXED_PAX_SECTION_POLICY =
 const EVENT_BASIS_POLICY =
   '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,' +
   '"points":{"type":"ratio1000","basis":"event"}}';
+const POSITION_CLASS_POLICY =
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,' +
+  '"points":{"type":"position","table":[20,15,12],"beyondTable":1,"basis":"class"}}';
+const POSITION_EVENT_POLICY =
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,' +
+  '"points":{"type":"position","table":[20,15,12],"beyondTable":1,"basis":"event"}}';
 
 let prisma: PrismaClient;
 let seasonId: number;
@@ -435,5 +441,76 @@ describe("event-wide points basis (RMsolo)", () => {
     expect(bst.drivers[0]!.totalPoints).toBe(1000);
     const x = result.sections.find((s) => s.classCode === "X")!;
     expect(x.drivers[0]!.totalPoints).toBe(1000);
+  });
+});
+
+describe("finish-position points table", () => {
+  it("basis class applies the table within each section", async () => {
+    await setPolicy(POSITION_CLASS_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+
+    const as = result.sections.find((s) => s.classCode === "AS")!;
+    expect(as.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Alice A.", 20],
+      ["Carol C.", 15],
+    ]);
+
+    // Sole entrant in BST still takes 1st in their own class.
+    const bst = result.sections.find((s) => s.classCode === "BST")!;
+    expect(bst.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([["Bella B.", 20]]);
+
+    const x = result.sections.find((s) => s.classCode === "X")!;
+    expect(x.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Xena X.", 20],
+      ["Yuri Y.", 15],
+    ]);
+  });
+
+  it("basis class ranks the synthetic PAX section event-wide, and drops past the table to beyondTable", async () => {
+    await setPolicy(POSITION_CLASS_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+    const pax = result.sections.find((s) => s.classCode === "PAX")!;
+    // Yuri (4th) and Carol (5th) both land on beyondTable — a genuine points
+    // tie (1 each) — so the section's documented totalPoints-desc/driverName-
+    // asc tiebreak (season-leaderboard.ts) orders them alphabetically, not by
+    // finish position: "Carol C." sorts before "Yuri Y.".
+    expect(pax.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Alice A.", 20],
+      ["Xena X.", 15],
+      ["Bella B.", 12],
+      ["Carol C.", 1], // 5th — past the 3-deep table, tied with Yuri on beyondTable
+      ["Yuri Y.", 1], // 4th — same points as Carol, alpha-sorted after
+    ]);
+  });
+
+  it("basis event gives each driver one position-derived score shared across sections", async () => {
+    await setPolicy(POSITION_EVENT_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+
+    // Overall indexed order decides every score.
+    const as = result.sections.find((s) => s.classCode === "AS")!;
+    expect(as.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Alice A.", 20], // 1st overall
+      ["Carol C.", 1], // 5th overall
+    ]);
+    const bst = result.sections.find((s) => s.classCode === "BST")!;
+    expect(bst.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Bella B.", 12], // 3rd overall, not 1st in class
+    ]);
+
+    const pax = result.sections.find((s) => s.classCode === "PAX")!;
+    const paxPoints = new Map(pax.drivers.map((d) => [d.driverName, d.totalPoints]));
+    for (const section of result.sections) {
+      if (section.classCode === "PAX") continue;
+      for (const driver of section.drivers) {
+        expect(driver.totalPoints).toBe(paxPoints.get(driver.driverName));
+      }
+    }
+  });
+
+  it("restores the file's baseline policy for any later test", async () => {
+    await setPolicy(FIXED_POLICY);
+    const result = await buildSeasonLeaderboard(YEAR, prisma);
+    expect(result.sections.map((s) => s.classCode)).toEqual(["AS", "BST", "X"]);
   });
 });

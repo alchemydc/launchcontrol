@@ -75,6 +75,23 @@ describe("awardPoints — position", () => {
     expect(result.get(4)).toBe(10); // 4th place
   });
 
+  it("handles a tie in the middle of the table — solo 1st, a two-way tie for 2nd/3rd, solo 4th", () => {
+    const table: PointsSystem = {
+      type: "position",
+      table: [20, 15, 12, 10],
+      beyondTable: 1,
+      basis: "class",
+    };
+    const result = awardPoints(
+      metrics([[1, 100], [2, 200], [3, 200], [4, 300]]),
+      table,
+    );
+    expect(result.get(1)).toBe(20);
+    expect(result.get(2)).toBe(15);
+    expect(result.get(3)).toBe(15);
+    expect(result.get(4)).toBe(10); // 4th place, not 3rd
+  });
+
   it("ties on whole indexed milliseconds, so float noise does not split a tie", () => {
     const result = awardPoints(metrics([[1, 100.2], [2, 100.4]]), POSITION);
     expect(result.get(1)).toBe(20);
