@@ -236,6 +236,86 @@ describe("buildSeasonLeaderboard(2027) — planned-season override via Season ro
 });
 
 // ---------------------------------------------------------------------------
+// buildSeasonLeaderboard(2027) — points.basis "event" against this file's
+// multi-session combined group and multi-event drop count, closing the gap
+// left by season-pax.test.ts's single-event event-basis fixture. Reuses the
+// existing 2027 season (3 scoring groups: opener, classic, and the combined
+// A+B pair) rather than building a new fixture.
+// ---------------------------------------------------------------------------
+
+describe("buildSeasonLeaderboard(2027) — points.basis event", () => {
+  const BASELINE_POLICY =
+    '{"v":4,"dropCount":1,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}';
+  const EVENT_BASIS_PAX_POLICY =
+    '{"v":4,"dropCount":1,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"event"}}';
+
+  async function setSeasonPolicy(policy: string) {
+    const season = await prisma.season.findFirstOrThrow({ where: { year: 2027 } });
+    await prisma.scoringSystem.update({ where: { id: season.rulesetId }, data: { policy } });
+  }
+
+  it("Owen wins CS outright but doesn't score 1000 under event basis — his class score equals his PAX score", async () => {
+    await setSeasonPolicy(EVENT_BASIS_PAX_POLICY);
+    const result = await buildSeasonLeaderboard(2027, prisma);
+
+    // Group 3 (2027-05-15, sessions A+B) event-wide indexed metric — raw sum
+    // × each entry's class paxIndex (C1=1.0, CS=0.92), summed across both
+    // sessions for drivers present in both:
+    //   Ivy  (C1): 41000 + 42000                = 83000  (event's fastest — the PAX leader)
+    //   Owen (CS): 55000×0.92 + 56000×0.92       = 102120
+    // Owen is CS's own class-basis winner (see "CS group" test above), but
+    // under event basis his score is round(1000 × 83000 / 102120) = 813, not
+    // 1000 — this is exactly the bug the whole feature exists to fix.
+    const cs = result.sections.find((s) => s.classCode === "CS")!;
+    const owenClass = cs.drivers.find((d) => d.driverName === "Owen O.")!;
+    expect(owenClass.totalPoints).toBe(813);
+
+    // Owen only entered this one scoring group, so his PAX-section score is
+    // the same single 813 — the class and PAX numbers must agree because
+    // basis "event" awards one score per driver, reused in both sections.
+    const pax = result.sections.find((s) => s.classCode === "PAX")!;
+    const owenPax = pax.drivers.find((d) => d.driverName === "Owen O.")!;
+    expect(owenPax.totalPoints).toBe(owenClass.totalPoints);
+  });
+
+  it("drops Rae's lowest of 3 event-basis scores from totalPoints, identically in her class and PAX sections", async () => {
+    await setSeasonPolicy(EVENT_BASIS_PAX_POLICY);
+    const result = await buildSeasonLeaderboard(2027, prisma);
+
+    // C1 is the only class racing in the opener and classic groups, so
+    // Rae's event-wide score there equals her already-established
+    // class-basis score (opener 962, classic 941 — see "Rae's C1 row" test
+    // above). The combined group's event-wide fastest is also Ivy (83000),
+    // same as C1's own class fastest, so Rae's combined score is likewise
+    // unchanged at 965. Sorted desc: [965, 962, 941]; dropCount 1 of 3
+    // scoring groups → top 2 count, classic (941) drops.
+    const c1 = result.sections.find((s) => s.classCode === "C1")!;
+    const raeClass = c1.drivers.find((d) => d.driverName === "Rae R.")!;
+    expect(raeClass.scores).toHaveLength(3);
+    expect(raeClass.totalPoints).toBe(965 + 962);
+    const classicScore = raeClass.scores.find((s) => s.eventName === "Summer Classic")!;
+    expect(classicScore.points).toBe(941);
+    expect(classicScore.dropped).toBe(true);
+
+    const pax = result.sections.find((s) => s.classCode === "PAX")!;
+    const raePax = pax.drivers.find((d) => d.driverName === "Rae R.")!;
+    expect(raePax.totalPoints).toBe(raeClass.totalPoints);
+
+    // Same scoring groups counted (not merely the same total) in both
+    // sections — the drop decision isn't just numerically equal by luck.
+    const countedKeys = (row: { scores: Array<{ key: string; dropped: boolean }> }) =>
+      new Set(row.scores.filter((s) => !s.dropped).map((s) => s.key));
+    expect(countedKeys(raePax)).toEqual(countedKeys(raeClass));
+  });
+
+  it("restores the file's baseline policy for later tests", async () => {
+    await setSeasonPolicy(BASELINE_POLICY);
+    const result = await buildSeasonLeaderboard(2027, prisma);
+    expect(result.sections.map((s) => s.classCode)).toEqual(["C1", "CS"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildCombinedResults — session-level combined page assertions
 // ---------------------------------------------------------------------------
 
