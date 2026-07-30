@@ -16,9 +16,9 @@ import { dbTarget, migrateDeploy } from "./helpers/db";
 // independent within a single shared DB file.
 
 const PCA_POLICY =
-  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}';
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}';
 const RMSOLO_POLICY =
-  '{"v":3,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1000}';
+  '{"v":4,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1000,"points":{"type":"ratio1000","basis":"class"}}';
 
 const { path: TEST_DB_PATH, url: TEST_DB_URL } = dbTarget("league-admin-crud");
 
@@ -358,7 +358,7 @@ describe("scoring systems", () => {
         leagueSlug: league.slug,
         name: "Bad Policy Preset",
         policyJson:
-          '{"v":3,"dropCount":2,"dropTiming":"sideways","paxSection":false,"conePenaltyMs":2000}',
+          '{"v":4,"dropCount":2,"dropTiming":"sideways","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}',
       }),
     ).rejects.toThrow(/scoringPolicy\.dropTiming/);
   });
@@ -425,7 +425,7 @@ describe("scoring systems", () => {
       updateScoringSystem(
         prisma,
         { leagueSlug: league.slug, name: "Preset A" },
-        { policyJson: '{"v":3,"dropCount":2,"dropTiming":"sideways"}' },
+        { policyJson: '{"v":4,"dropCount":2,"dropTiming":"sideways","points":{"type":"ratio1000","basis":"class"}}' },
       ),
     ).rejects.toThrow(/scoringPolicy\.dropTiming/);
 

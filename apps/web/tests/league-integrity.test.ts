@@ -56,7 +56,7 @@ describe("Season.rulesetId live-reference semantics (createSeason)", () => {
     expect(seasonA.rulesetId).toBe(preset.id);
 
     const editedPolicy =
-      '{"v":3,"dropCount":2,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1500}';
+      '{"v":4,"dropCount":2,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1500,"points":{"type":"ratio1000","basis":"class"}}';
     await client.scoringSystem.update({ where: { id: preset.id }, data: { policy: editedPolicy } });
 
     const seasonB = await createSeason(
@@ -159,7 +159,7 @@ describe("seed parity: buildSeasonLeaderboard(2026) matches main's fixture expec
       where: { id: season.rulesetId },
       data: {
         policy:
-          '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000}',
+          '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}',
       },
     });
 

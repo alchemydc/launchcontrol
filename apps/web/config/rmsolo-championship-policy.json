@@ -1,7 +1,8 @@
 {
-  "v": 3,
+  "v": 4,
   "dropCount": 4,
   "dropTiming": "proportional",
   "paxSection": true,
-  "conePenaltyMs": 2000
+  "conePenaltyMs": 2000,
+  "points": { "type": "ratio1000", "basis": "class" }
 }

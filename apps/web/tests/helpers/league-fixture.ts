@@ -15,10 +15,11 @@ import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 export const DEFAULT_LEAGUE_SLUG = "pca-rmr";
 
 // Matches the "PCA Classic" ruleset seeded by the league-foundation migration
-// (canonicalized to v3 by ruleset_scoring_parameters) — the policy every fixture
-// season scores with unless a test points it at a different ruleset.
+// (canonicalized to v4 by scoring_policy_v4) — the policy every fixture season
+// scores with unless a test points it at a different ruleset.
 export const DEFAULT_SCORING_POLICY =
-  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}';
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,' +
+  '"points":{"type":"ratio1000","basis":"class"}}';
 
 /**
  * Return a ScoringSystem id usable as a Season.rulesetId for `leagueId` —

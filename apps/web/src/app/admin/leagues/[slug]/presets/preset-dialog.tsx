@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import {
   DEFAULT_SCORING_POLICY,
+  type PointsSystem,
   type ScoringPolicy,
 } from "@/lib/scoring-policy";
 import { canonicalPaxJson } from "@/lib/pax-table-edit";
@@ -42,8 +43,9 @@ function serializePolicy(fields: {
   dropTiming: DropTiming;
   paxSection: boolean;
   conePenaltyMs: number;
+  points: PointsSystem;
 }): string {
-  const policy: ScoringPolicy = { v: 3, ...fields };
+  const policy: ScoringPolicy = { v: 4, ...fields };
   return JSON.stringify(policy);
 }
 
@@ -143,6 +145,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
             dropTiming,
             paxSection,
             conePenaltyMs: coneMs,
+            points: DEFAULT_SCORING_POLICY.points,
           }),
           paxTableJson: paxTable,
         }),
@@ -332,6 +335,7 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
         dropTiming,
         paxSection,
         conePenaltyMs: coneMs,
+        points: initialPolicy.points,
       });
     }
     if (paxTableChanged) {

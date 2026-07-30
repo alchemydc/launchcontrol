@@ -14,9 +14,9 @@ const TEST_DB_URL = "file:./test-season-pax.db";
 const YEAR = 2026;
 
 const FIXED_POLICY =
-  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}';
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}';
 const FIXED_PAX_SECTION_POLICY =
-  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000}';
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}';
 
 let prisma: PrismaClient;
 let seasonId: number;
@@ -318,7 +318,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("a season's default 2000ms policy (matching CONE_PENALTY_MS) is the parity baseline", async () => {
     await setConePenaltyPolicy(
-      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
@@ -330,7 +330,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("a 1000ms-penalty season scores this same matchup differently end-to-end — the win flips", async () => {
     await setConePenaltyPolicy(
-      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":1000}',
+      '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":1000,"points":{"type":"ratio1000","basis":"class"}}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;
@@ -342,7 +342,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("the same 1000ms penalty also flips the ruleset's synthetic overall-PAX section", async () => {
     await setConePenaltyPolicy(
-      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":1000}',
+      '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":1000,"points":{"type":"ratio1000","basis":"class"}}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const pax = result.sections.find((s) => s.classCode === "PAX")!;
@@ -352,7 +352,7 @@ describe("conePenaltyMs threading (League Foundation PR 2 Task 7)", () => {
 
   it("restoring the 2000ms policy restores the original (parity) order — the threading is not one-directional", async () => {
     await setConePenaltyPolicy(
-      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}',
     );
     const result = await buildSeasonLeaderboard(2027, prisma);
     const cs = result.sections.find((s) => s.classCode === "CS")!;

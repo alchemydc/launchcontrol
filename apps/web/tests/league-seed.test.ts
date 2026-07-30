@@ -17,7 +17,7 @@ const FIXTURES_DIR = resolve(__dirname, "fixtures");
 
 // Exact production branding strings (club-config defaults) copied into the seed.
 const PCA_POLICY =
-  '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}';
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}';
 
 let prisma: PrismaClient;
 
