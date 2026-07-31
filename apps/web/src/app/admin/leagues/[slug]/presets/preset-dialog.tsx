@@ -23,11 +23,13 @@ import {
 } from "@/components/ui/select";
 import {
   DEFAULT_SCORING_POLICY,
+  type PointsSystem,
   type ScoringPolicy,
 } from "@/lib/scoring-policy";
 import { canonicalPaxJson } from "@/lib/pax-table-edit";
 import { RMSOLO_PAX_2026 } from "@/lib/rmsolo-pax";
 import { PaxTableEditor } from "./pax-table-editor";
+import { PointsSystemEditor } from "./points-system-editor";
 import type { PresetRow } from "./presets-table";
 
 type DropTiming = ScoringPolicy["dropTiming"];
@@ -42,8 +44,9 @@ function serializePolicy(fields: {
   dropTiming: DropTiming;
   paxSection: boolean;
   conePenaltyMs: number;
+  points: PointsSystem;
 }): string {
-  const policy: ScoringPolicy = { v: 3, ...fields };
+  const policy: ScoringPolicy = { v: 4, ...fields };
   return JSON.stringify(policy);
 }
 
@@ -91,6 +94,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
   const [conePenaltyMs, setConePenaltyMs] = useState(
     String(DEFAULT_SCORING_POLICY.conePenaltyMs),
   );
+  const [points, setPoints] = useState<PointsSystem>(DEFAULT_SCORING_POLICY.points);
   const [seedChoice, setSeedChoice] = useState<SeedChoice>("scca");
   // The COMPLETE table (Task R3 — the editor owns the full table, not just
   // overrides); starts at the chosen seed and is freely editable from there.
@@ -104,6 +108,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
     setDropTiming(DEFAULT_SCORING_POLICY.dropTiming);
     setPaxSection(DEFAULT_SCORING_POLICY.paxSection);
     setConePenaltyMs(String(DEFAULT_SCORING_POLICY.conePenaltyMs));
+    setPoints(DEFAULT_SCORING_POLICY.points);
     setSeedChoice("scca");
     setPaxTable(seedTableJson("scca"));
     setError(null);
@@ -143,6 +148,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
             dropTiming,
             paxSection,
             conePenaltyMs: coneMs,
+            points,
           }),
           paxTableJson: paxTable,
         }),
@@ -241,6 +247,7 @@ function CreatePresetDialog({ leagueSlug, onCreated }: CreateProps) {
               required
             />
           </div>
+          <PointsSystemEditor value={points} onChange={setPoints} />
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="preset-pax-seed">PAX factors — start from</Label>
             <Select
@@ -288,6 +295,7 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
   const [dropTiming, setDropTiming] = useState<DropTiming>(initialPolicy.dropTiming);
   const [paxSection, setPaxSection] = useState(initialPolicy.paxSection);
   const [conePenaltyMs, setConePenaltyMs] = useState(String(initialPolicy.conePenaltyMs));
+  const [points, setPoints] = useState<PointsSystem>(initialPolicy.points);
   // The COMPLETE table, editable in full (Task R3 — no override semantics).
   const [initialPaxTable] = useState(preset.paxTable);
   const [paxTable, setPaxTable] = useState(initialPaxTable);
@@ -320,6 +328,7 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
       dropTiming !== initialPolicy.dropTiming ||
       paxSection !== initialPolicy.paxSection ||
       coneMs !== initialPolicy.conePenaltyMs ||
+      JSON.stringify(points) !== JSON.stringify(initialPolicy.points) ||
       preset.policy === null; // unparseable stored row — always rewrite it in canonical form
 
     const paxTableChanged = canonicalPaxJson(paxTable) !== canonicalPaxJson(initialPaxTable);
@@ -332,6 +341,7 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
         dropTiming,
         paxSection,
         conePenaltyMs: coneMs,
+        points,
       });
     }
     if (paxTableChanged) {
@@ -454,6 +464,7 @@ function EditPresetDialog({ leagueSlug, preset, onClose, onSaved }: EditProps) {
                   required
                 />
               </div>
+              <PointsSystemEditor value={points} onChange={setPoints} />
               <div className="flex flex-col gap-1.5">
                 <Label>PAX factors</Label>
                 <PaxTableEditor value={paxTable} onChange={setPaxTable} />

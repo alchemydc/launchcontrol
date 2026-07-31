@@ -145,7 +145,7 @@ model ScoringSystem {
   id        Int      @id @default(autoincrement())
   leagueId  Int
   name      String
-  policy    String // JSON ScoringPolicy v3 (SQLite has no JSON type)
+  policy    String // JSON ScoringPolicy v4 (SQLite has no JSON type)
   paxTable  String   @default("{}") // COMPLETE JSON code->factor table — no built-in fallback at read time
   createdAt DateTime @default(now())
 

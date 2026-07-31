@@ -54,7 +54,7 @@ export type CreateLeagueOptions = {
   gate?: AccessGate;
   /** Name for the auto-created default ScoringSystem preset. Defaults to `<name> Default`. */
   presetName?: string;
-  /** Path to a JSON file holding a ScoringPolicy v3 object for the default preset. Defaults to a PCA-shaped policy. */
+  /** Path to a JSON file holding a ScoringPolicy v4 object for the default preset. Defaults to a PCA-shaped policy. */
   policyFilePath?: string;
   /** Logo image URL for the league gate card grid. Must be http(s) when given. Defaults to null (placeholder tile). */
   logoUrl?: string | null;
