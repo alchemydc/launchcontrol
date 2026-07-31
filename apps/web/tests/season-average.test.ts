@@ -57,7 +57,7 @@ beforeAll(async () => {
     where: { id: season.rulesetId },
     data: {
       policy:
-        '{"v":3,"dropCount":1,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
+        '{"v":4,"dropCount":1,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,"points":{"type":"ratio1000","basis":"class"}}',
     },
   });
 });

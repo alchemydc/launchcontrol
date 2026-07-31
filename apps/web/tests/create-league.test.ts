@@ -57,7 +57,8 @@ describe("createLeague", () => {
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: result.league.id } });
     expect(preset.name).toBe("Rocky Mountain Solo Default");
     expect(preset.policy).toBe(
-      '{"v":3,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000}',
+      '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,' +
+        '"points":{"type":"ratio1000","basis":"class"}}',
     );
 
     // The whole point: a league created this way can immediately resolveOrCreateSeason.
@@ -126,7 +127,7 @@ describe("createLeague", () => {
   it("happy path: --policy-file reads, validates, and canonicalizes a policy JSON file for the default preset", async () => {
     const file = policyFile(
       "custom-policy.json",
-      '{\n  "v": 3,\n  "dropCount": 4,\n  "dropTiming": "proportional",\n  "paxSection": true,\n  "conePenaltyMs": 1000\n}\n',
+      '{\n  "v": 4,\n  "dropCount": 4,\n  "dropTiming": "proportional",\n  "paxSection": true,\n  "conePenaltyMs": 1000,\n  "points": {\n    "type": "ratio1000",\n    "basis": "class"\n  }\n}\n',
     );
     const result = await createLeague(
       { slug: "policy-file-league", name: "Policy File League", policyFilePath: file },
@@ -134,7 +135,8 @@ describe("createLeague", () => {
     );
     const preset = await prisma.scoringSystem.findFirstOrThrow({ where: { leagueId: result.league.id } });
     expect(preset.policy).toBe(
-      '{"v":3,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1000}',
+      '{"v":4,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":1000,' +
+        '"points":{"type":"ratio1000","basis":"class"}}',
     );
   });
 
@@ -153,7 +155,8 @@ describe("createLeague", () => {
       where: { leagueId: result.league.id, name: "RMsolo Championship" },
     });
     expect(preset.policy).toBe(
-      '{"v":3,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":2000}',
+      '{"v":4,"dropCount":4,"dropTiming":"proportional","paxSection":true,"conePenaltyMs":2000,' +
+        '"points":{"type":"ratio1000","basis":"event"}}',
     );
     expect(JSON.parse(preset.paxTable)).toEqual(RMSOLO_PAX_2026);
 
@@ -208,7 +211,8 @@ describe("createLeague", () => {
   it("rejects an invalid --policy-file (fails parseScoringPolicy)", async () => {
     const file = policyFile(
       "bad-policy.json",
-      '{"v":3,"dropCount":2,"dropTiming":"sideways","paxSection":false,"conePenaltyMs":2000}',
+      '{"v":4,"dropCount":2,"dropTiming":"sideways","paxSection":false,"conePenaltyMs":2000,' +
+        '"points":{"type":"ratio1000","basis":"class"}}',
     );
     await expect(
       createLeague({ slug: "bad-policy-league", name: "Bad Policy League", policyFilePath: file }, prisma),
@@ -225,7 +229,10 @@ describe("createLeague", () => {
   });
 
   it("does not create a League row when the ScoringSystem preset creation would fail (transactional)", async () => {
-    const file = policyFile("bad-transactional.json", '{"v":3,"dropCount":2,"dropTiming":"sideways"}');
+    const file = policyFile(
+      "bad-transactional.json",
+      '{"v":4,"dropCount":2,"dropTiming":"sideways","points":{"type":"ratio1000","basis":"class"}}',
+    );
     await expect(
       createLeague({ slug: "rolled-back-league", name: "Rolled Back League", policyFilePath: file }, prisma),
     ).rejects.toThrow();

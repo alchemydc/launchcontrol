@@ -3,6 +3,7 @@ import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { resolveDefaultLeague } from "@/lib/league-config";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { appliedPaxIndex } from "@/lib/pax-applied";
+import { awardPoints } from "@/lib/event-points";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 /**
@@ -302,6 +303,16 @@ async function resolveLeaderboardSeason(
  * so parity holds: default seasons render byte-identically to before this
  * threading existed.
  *
+ * Points systems (ScoringPolicy v4): the per-event formula is ruleset policy,
+ * not a constant. `points.basis: "class"` scores each section against its own
+ * fastest (PCA — every class winner earns the maximum); `points.basis:
+ * "event"` scores every driver against the event's fastest indexed time, so a
+ * driver earns exactly ONE score per group, reused in their class section and
+ * in the synthetic PAX section (RMsolo's published rule). `points.type`
+ * chooses the arithmetic — a 1000-ratio or a finish-position table — and lives
+ * in `event-points.ts`'s `awardPoints`. Section MEMBERSHIP is unchanged by any
+ * of this: only the points value differs.
+ *
  * Task 4 — explicit league/season targets: two overloads.
  * `buildSeasonLeaderboard(year, client?)` is the legacy/default path (the
  * deployment's default league, by year — byte-identical to pre-Task-4
@@ -375,9 +386,15 @@ export async function buildSeasonLeaderboard(
   //    bars the other pathway — but the schema does not enforce uniqueness,
   //    so we collapse defensively rather than throw.
   const bestByEventClassDriver = new Map<number, Map<string, Map<number, number>>>();
+  // Per (event, driver) best indexed metric across ALL of that driver's
+  // entries — the population a `points.basis: "event"` ruleset scores
+  // against. Built unconditionally rather than gated on `paxSection`, because
+  // event basis needs it even when the synthetic section is switched off.
+  const indexedByEventDriver = new Map<number, Map<number, number>>();
 
   for (const event of events) {
     const byClass = new Map<string, Map<number, number>>();
+    const indexedByDriver = new Map<number, number>();
     for (const entry of event.entries) {
       const d = entry.driver;
       if (!driverInfo.has(d.id)) {
@@ -409,24 +426,23 @@ export async function buildSeasonLeaderboard(
         byDriver.set(d.id, rankMetric);
       }
 
-      // Synthetic overall-PAX section (ruleset policy paxSection=true): index
-      // the same best-corrected time by the entry's paxClass factor and rank
-      // across every class. Everything downstream (points formula, combined
-      // groups, qualifying threshold, drops) treats it as one more class.
-      if (paxSectionEnabled) {
-        const paxMs = Math.round(best * appliedPaxIndex(entry));
-        let paxByDriver = byClass.get(PAX_SECTION_CODE);
-        if (paxByDriver == null) {
-          paxByDriver = new Map();
-          byClass.set(PAX_SECTION_CODE, paxByDriver);
-        }
-        const existingPax = paxByDriver.get(d.id);
-        if (existingPax == null || paxMs < existingPax) {
-          paxByDriver.set(d.id, paxMs);
-        }
+      const existingIndexed = indexedByDriver.get(d.id);
+      if (existingIndexed == null || rankMetric < existingIndexed) {
+        indexedByDriver.set(d.id, rankMetric);
       }
     }
+    // Synthetic overall-PAX section (ruleset policy paxSection=true): the same
+    // event-wide indexed metric, exposed as one more class so that points,
+    // combined groups, qualifying thresholds, and drops all treat it
+    // identically. It shares the class metric's full precision — a
+    // `points.basis: "event"` ruleset requires a driver's class score and PAX
+    // score to be the same number, which only holds if both are computed from
+    // the same unrounded value.
+    if (paxSectionEnabled) {
+      byClass.set(PAX_SECTION_CODE, new Map(indexedByDriver));
+    }
     bestByEventClassDriver.set(event.id, byClass);
+    indexedByEventDriver.set(event.id, indexedByDriver);
   }
 
   // 3. Group events into scoring groups by UTC date key. `events` is already
@@ -457,9 +473,13 @@ export async function buildSeasonLeaderboard(
     policy.dropTiming,
   );
 
-  // 4. Score each scoring group, per class. Multi-event groups score on
-  //    summed best-corrected time; single-event groups score exactly as
-  //    M1.14 did.
+  // 4. Score each scoring group. A group is one or more sessions sharing a
+  //    calendar date. A driver scores in a class only when they have a
+  //    countable time in that class in EVERY session of the group, and the
+  //    group's metric is the sum of those per-session metrics. A single-
+  //    session group is the degenerate case of that same rule (a sum of one),
+  //    so both shapes run one path — which is what keeps points dispatch in
+  //    exactly one place instead of two that can drift apart.
   type RawScore = {
     key: string;
     eventName: string;
@@ -482,30 +502,46 @@ export async function buildSeasonLeaderboard(
     arr.push(score);
   };
 
-  for (const [dateKey, group] of scoringGroups) {
-    if (group.length === 1) {
-      // Single-event group — identical to pre-M1.15 per-event scoring.
-      const event = group[0]!;
-      const byClass = bestByEventClassDriver.get(event.id)!;
-      for (const [classCode, byDriver] of byClass) {
-        const fastest = Math.min(...byDriver.values());
-        for (const [driverId, bestMs] of byDriver) {
-          const points = Math.round((1000 * fastest) / bestMs);
-          pushScore(driverId, classCode, {
-            key: event.slug,
-            eventName: event.name,
-            eventDate: event.date,
-            points,
-            combined: false,
-            href: `/events/${event.slug}`,
-          });
+  /**
+   * Sum one per-session metric map across every session in the group, keeping
+   * only drivers present in ALL of them. Missing a session — or racing a
+   * different class in another session, which means no entry under this class
+   * code there — excludes a driver, with no special-case code.
+   *
+   * Serves both the per-class maps and the event-wide map.
+   */
+  const sumAcrossGroup = (
+    group: LoadedEvent[],
+    metricFor: (eventId: number) => Map<number, number> | undefined,
+  ): Map<number, number> => {
+    const summed = new Map<number, number>();
+    const firstSession = metricFor(group[0]!.id);
+    if (firstSession == null) return summed;
+    for (const driverId of firstSession.keys()) {
+      let total = 0;
+      let presentInAll = true;
+      for (const event of group) {
+        const value = metricFor(event.id)?.get(driverId);
+        if (value == null) {
+          presentInAll = false;
+          break;
         }
+        total += value;
       }
-      continue;
+      if (presentInAll) summed.set(driverId, total);
     }
+    return summed;
+  };
 
-    // Multi-event (combined) group. Union of class codes seen across the
-    // group's sessions.
+  for (const [dateKey, group] of scoringGroups) {
+    const single = group.length === 1 ? group[0]! : null;
+    const key = single == null ? `combined-${dateKey}` : single.slug;
+    const eventName = single == null ? combinedEventLabel(group) : single.name;
+    const eventDate = group[0]!.date;
+    const href = single == null ? `/events/combined/${dateKey}` : `/events/${single.slug}`;
+    const combined = single == null;
+
+    // Union of class codes seen across the group's sessions.
     const classCodes = new Set<string>();
     for (const event of group) {
       for (const classCode of bestByEventClassDriver.get(event.id)!.keys()) {
@@ -513,46 +549,44 @@ export async function buildSeasonLeaderboard(
       }
     }
 
-    const combinedLabel = combinedEventLabel(group);
-    const groupDate = group[0]!.date;
-    const href = `/events/combined/${dateKey}`;
+    // basis "event": one score per driver for the whole group, computed once
+    // against every driver at the event regardless of class, then reused in
+    // each of that driver's sections. This is RMsolo's published rule.
+    const eventPoints =
+      policy.points.basis === "event"
+        ? awardPoints(
+            sumAcrossGroup(group, (eventId) => indexedByEventDriver.get(eventId)),
+            policy.points,
+          )
+        : null;
 
     for (const classCode of classCodes) {
-      // A driver qualifies only when every session in the group has a best
-      // time for them in this exact class — sum those bests. Missing a
-      // session, or racing a different class in another session, naturally
-      // excludes them (no entry in this class in that session).
-      const combinedByDriver = new Map<number, number>();
-      const driverIds = new Set<number>();
-      for (const event of group) {
-        const byDriver = bestByEventClassDriver.get(event.id)!.get(classCode);
-        if (byDriver == null) continue;
-        for (const driverId of byDriver.keys()) driverIds.add(driverId);
-      }
-      for (const driverId of driverIds) {
-        let sum = 0;
-        let qualifiesAll = true;
-        for (const event of group) {
-          const best = bestByEventClassDriver.get(event.id)!.get(classCode)?.get(driverId);
-          if (best == null) {
-            qualifiesAll = false;
-            break;
-          }
-          sum += best;
-        }
-        if (qualifiesAll) combinedByDriver.set(driverId, sum);
-      }
+      const classMetrics = sumAcrossGroup(group, (eventId) =>
+        bestByEventClassDriver.get(eventId)!.get(classCode),
+      );
+      if (classMetrics.size === 0) continue;
 
-      if (combinedByDriver.size === 0) continue;
-      const fastestSum = Math.min(...combinedByDriver.values());
-      for (const [driverId, sumMs] of combinedByDriver) {
-        const points = Math.round((1000 * fastestSum) / sumMs);
+      // basis "class": score against this section's own population.
+      const sectionPoints = eventPoints ?? awardPoints(classMetrics, policy.points);
+
+      for (const driverId of classMetrics.keys()) {
+        const points = sectionPoints.get(driverId);
+        // Total by construction under either basis: qualifying for a class in
+        // every session implies having an indexed time in every session, so
+        // the event-wide map is a superset of every class map. Skip rather
+        // than emit a wrong score if that ever stops holding.
+        if (points == null) {
+          console.warn(
+            `[season-leaderboard] season ${year}: driver ${driverId} in class '${classCode}' scoring group '${key}' has no points in the event-wide map — skipping (should be impossible)`,
+          );
+          continue;
+        }
         pushScore(driverId, classCode, {
-          key: `combined-${dateKey}`,
-          eventName: combinedLabel,
-          eventDate: groupDate,
+          key,
+          eventName,
+          eventDate,
           points,
-          combined: true,
+          combined,
           href,
         });
       }

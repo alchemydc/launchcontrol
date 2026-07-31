@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import type { ScoringPolicy } from "@/lib/scoring-policy";
 import { PresetDialog } from "./preset-dialog";
+import { describePointsSystem } from "./points-system-editor";
 
 export type PresetRow = {
   id: number;
@@ -49,6 +50,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
+            <TableHead>Points</TableHead>
             <TableHead>Drops</TableHead>
             <TableHead>Drop timing</TableHead>
             <TableHead>PAX section</TableHead>
@@ -61,6 +63,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
           {rows.map((row) => (
             <TableRow key={row.id}>
               <TableCell className="font-medium">{row.name}</TableCell>
+              <TableCell>{row.policy ? describePointsSystem(row.policy.points) : "—"}</TableCell>
               {row.policy ? (
                 <>
                   <TableCell>{row.policy.dropCount}</TableCell>
@@ -93,7 +96,7 @@ export function PresetsTable({ leagueSlug, rows }: { leagueSlug: string; rows: P
           ))}
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground">
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
                 No scoring rulesets yet.
               </TableCell>
             </TableRow>
