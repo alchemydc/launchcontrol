@@ -1,5 +1,5 @@
 /**
- * ScoringPolicy v3 — the scoring knobs stored as JSON on a ScoringSystem
+ * ScoringPolicy v4 — the scoring knobs stored as JSON on a ScoringSystem
  * ("ruleset") row, read live through `Season.rulesetId` (Task R2 — seasons
  * no longer snapshot a policy of their own). This is the only shape in play
  * right now: no formula DSL, no per-field defaulting. Every seeded ruleset

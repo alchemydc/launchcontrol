@@ -167,4 +167,44 @@ describe("scoring policy v4 migration", () => {
     });
     soloDb.close();
   });
+
+  // json_extract() raises "malformed JSON" on a row whose policy text isn't
+  // valid JSON, which without the json_valid() guard aborts the whole UPDATE —
+  // one corrupt row in one league would block the migration for every other
+  // league. The app already tolerates an unparseable policy (preset-dialog's
+  // `preset.policy === null` branch), so it must not be fatal here either.
+  it("skips a row whose policy isn't valid JSON instead of aborting the whole statement", () => {
+    const corruptDb = new Database(join(tmpDir, "corrupt-policy.db"));
+    corruptDb.exec(`
+      CREATE TABLE "ScoringSystem" (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        "leagueId" INTEGER NOT NULL,
+        "name" TEXT NOT NULL,
+        "policy" TEXT NOT NULL
+      );
+    `);
+    const insert = corruptDb.prepare(
+      `INSERT INTO "ScoringSystem" ("id","leagueId","name","policy") VALUES (?,?,?,?)`,
+    );
+    insert.run(1, 1, "Corrupt", "not json at all");
+    insert.run(2, 1, "Healthy", PCA_V3);
+
+    expect(() => corruptDb.exec(readFileSync(migrationPath, "utf8"))).not.toThrow();
+
+    const read = (id: number) =>
+      (corruptDb.prepare(`SELECT policy FROM "ScoringSystem" WHERE id = ?`).get(id) as {
+        policy: string;
+      }).policy;
+
+    // The healthy row still migrated...
+    expect((JSON.parse(read(2)) as ScoringPolicy).points).toEqual({
+      type: "ratio1000",
+      basis: "class",
+    });
+    // ...and the corrupt one is left exactly as it was, no worse off than
+    // before: it could not be parsed then either, and the ruleset editor
+    // rewrites it in canonical form on the next save.
+    expect(read(1)).toBe("not json at all");
+    corruptDb.close();
+  });
 });

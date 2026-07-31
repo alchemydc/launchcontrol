@@ -61,7 +61,8 @@ export function describePointsSystem(points: PointsSystem): string {
     return points.basis === "event" ? "Event-wide" : "Per class";
   }
   const places = points.table.length;
-  return `Position table (${places} place${places === 1 ? "" : "s"})`;
+  const basis = points.basis === "event" ? "event-wide" : "per class";
+  return `Position table (${places} place${places === 1 ? "" : "s"}, ${basis})`;
 }
 
 export function PointsSystemEditor({

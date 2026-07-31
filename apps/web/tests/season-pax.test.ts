@@ -20,6 +20,11 @@ const FIXED_PAX_SECTION_POLICY =
 const EVENT_BASIS_POLICY =
   '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,' +
   '"points":{"type":"ratio1000","basis":"event"}}';
+// Event basis with the synthetic PAX section switched OFF — the combination
+// season-leaderboard.ts builds `indexedByEventDriver` unconditionally for.
+const EVENT_BASIS_NO_PAX_SECTION_POLICY =
+  '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":false,"conePenaltyMs":2000,' +
+  '"points":{"type":"ratio1000","basis":"event"}}';
 const POSITION_CLASS_POLICY =
   '{"v":4,"dropCount":2,"dropTiming":"fixed","paxSection":true,"conePenaltyMs":2000,' +
   '"points":{"type":"position","table":[20,15,12],"beyondTable":1,"basis":"class"}}';
@@ -441,6 +446,39 @@ describe("event-wide points basis (RMsolo)", () => {
     expect(bst.drivers[0]!.totalPoints).toBe(1000);
     const x = result.sections.find((s) => s.classCode === "X")!;
     expect(x.drivers[0]!.totalPoints).toBe(1000);
+  });
+
+  // The event-wide metric map is built unconditionally rather than gated on
+  // paxSection, precisely so these two settings stay independent. Without this
+  // case that decision is unexercised: every other event-basis test here runs
+  // paxSection=true, so a regression that rebuilt the map inside the
+  // `if (paxSectionEnabled)` branch would still pass them all.
+  it("is independent of paxSection — scores are identical with the synthetic section off", async () => {
+    await setPolicy(EVENT_BASIS_POLICY);
+    const withSection = await buildSeasonLeaderboard(YEAR, prisma);
+
+    await setPolicy(EVENT_BASIS_NO_PAX_SECTION_POLICY);
+    const withoutSection = await buildSeasonLeaderboard(YEAR, prisma);
+
+    // The synthetic section is gone, the real classes are not.
+    expect(withoutSection.sections.map((s) => s.classCode)).toEqual(["AS", "BST", "X"]);
+
+    // Still scored against the event's fastest indexed time (33200), not each
+    // class's own — Bella and Xena win their sections without earning 1000.
+    const bst = withoutSection.sections.find((s) => s.classCode === "BST")!;
+    expect(bst.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([["Bella B.", 997]]);
+    const x = withoutSection.sections.find((s) => s.classCode === "X")!;
+    expect(x.drivers.map((d) => [d.driverName, d.totalPoints])).toEqual([
+      ["Xena X.", 998],
+      ["Yuri Y.", 981],
+    ]);
+
+    // And every real class section matches the paxSection=true run exactly.
+    const realSections = (result: Awaited<ReturnType<typeof buildSeasonLeaderboard>>) =>
+      result.sections
+        .filter((s) => s.classCode !== "PAX")
+        .map((s) => [s.classCode, s.drivers.map((d) => [d.driverName, d.totalPoints])]);
+    expect(realSections(withoutSection)).toEqual(realSections(withSection));
   });
 });
 

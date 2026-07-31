@@ -19,7 +19,14 @@ export function awardPoints(
   if (metrics.size === 0) return awarded;
 
   if (points.type === "ratio1000") {
-    const fastest = Math.min(...metrics.values());
+    // Single pass rather than Math.min(...metrics.values()): under basis
+    // "event" this population is the whole event rather than one class, and a
+    // loop avoids both the spread's intermediate array and its argument-count
+    // ceiling.
+    let fastest = Infinity;
+    for (const metric of metrics.values()) {
+      if (metric < fastest) fastest = metric;
+    }
     for (const [driverId, metric] of metrics) {
       awarded.set(driverId, Math.round((1000 * fastest) / metric));
     }
