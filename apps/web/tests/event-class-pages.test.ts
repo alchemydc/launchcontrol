@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   classUsesPaxMetric,
   filterRowsForClass,
+  resolveEventView,
   summarizeEventClasses,
   type LeaderboardRow,
 } from "@/lib/leaderboard";
@@ -102,5 +103,87 @@ describe("filterRowsForClass", () => {
   it("returns null for unknown or blank classes", () => {
     expect(filterRowsForClass(rows, "XX")).toBeNull();
     expect(filterRowsForClass(rows, "")).toBeNull();
+  });
+});
+
+describe("resolveEventView", () => {
+  const rows = [
+    row({ driverId: 1, classCode: "SS", paxIndex: 0.83 }),
+    row({ driverId: 2, classCode: "AS", paxIndex: 0.82 }),
+    row({ driverId: 3, classCode: "SS", paxIndex: 0.83 }),
+  ];
+
+  it("resolves a real class to just that class's rows, ranked on raw time", () => {
+    const view = resolveEventView(rows, "ss", true);
+    expect(view).toEqual({
+      rows: [rows[0], rows[2]],
+      label: "SS",
+      paxView: false, // homogeneous factor — raw and indexed order identically
+      navActive: "SS",
+    });
+  });
+
+  it("ranks a heterogeneous run-group class on the indexed metric", () => {
+    const runGroup = [
+      row({ driverId: 1, classCode: "X", paxIndex: 0.81 }),
+      row({ driverId: 2, classCode: "X", paxIndex: 0.84 }),
+    ];
+    expect(resolveEventView(runGroup, "X", true)?.paxView).toBe(true);
+  });
+
+  it("resolves the PAX view to every row, ranked on the indexed metric", () => {
+    const view = resolveEventView(rows, "pax", true);
+    expect(view?.rows).toEqual(rows);
+    expect(view?.paxView).toBe(true);
+    expect(view?.navActive).toBe("pax");
+  });
+
+  it("hides the PAX view when the ruleset has PAX standings off", () => {
+    expect(resolveEventView(rows, "pax", false)).toBeNull();
+  });
+
+  // The raw view is what the pre-#99 "All Raw" / "All" filter chip showed:
+  // every entry at the event in one list, ranked on raw time. It is NOT gated
+  // on PAX standings — a league with the PAX section off still gets the
+  // unfiltered list, it is just labelled "All" rather than "All Raw".
+  it("resolves the raw view to every row, ranked on raw time", () => {
+    const view = resolveEventView(rows, "raw", true);
+    expect(view).toEqual({
+      rows,
+      label: "All raw times",
+      paxView: false,
+      navActive: "raw",
+    });
+  });
+
+  it("offers the raw view even when PAX standings are off", () => {
+    expect(resolveEventView(rows, "raw", false)?.navActive).toBe("raw");
+  });
+
+  it("matches the virtual views case-insensitively and trims the param", () => {
+    expect(resolveEventView(rows, " RAW ", true)?.navActive).toBe("raw");
+    expect(resolveEventView(rows, " Pax ", true)?.navActive).toBe("pax");
+  });
+
+  // Same precedent as the season leaderboard's synthetic PAX section: a real
+  // class of that name wins outright, never silently merged with the virtual
+  // view of the same name.
+  it("lets a real class named RAW or PAX win over the virtual view", () => {
+    const withReal = [
+      row({ driverId: 1, classCode: "RAW" }),
+      row({ driverId: 2, classCode: "PAX" }),
+      row({ driverId: 3, classCode: "SS" }),
+    ];
+    const raw = resolveEventView(withReal, "raw", true);
+    expect(raw?.rows.map((r) => r.driverId)).toEqual([1]);
+    expect(raw?.label).toBe("RAW");
+    const pax = resolveEventView(withReal, "pax", true);
+    expect(pax?.rows.map((r) => r.driverId)).toEqual([2]);
+    expect(pax?.label).toBe("PAX");
+  });
+
+  it("returns null for an unknown or blank view", () => {
+    expect(resolveEventView(rows, "XX", true)).toBeNull();
+    expect(resolveEventView(rows, "", true)).toBeNull();
   });
 });
