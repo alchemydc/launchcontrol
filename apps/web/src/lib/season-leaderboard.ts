@@ -3,6 +3,7 @@ import { bestCorrectedMsForEntry } from "@/lib/entry-best";
 import { resolveDefaultLeague } from "@/lib/league-config";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { appliedPaxIndex } from "@/lib/pax-applied";
+import { loadCarClassMap, requireCarClass } from "@/lib/car-class-map";
 import { awardPoints } from "@/lib/event-points";
 import { prisma as defaultClient } from "@/lib/prisma";
 
@@ -213,8 +214,11 @@ const seasonLeaderboardInclude = {
         select: {
           bestCommittedRunNumber: true,
           paxIndexApplied: true,
-          class: { select: { code: true } },
-          paxClass: { select: { paxIndex: true } },
+          // Scalar ids, not `class`/`paxClass` relations: both point at the same
+          // table, so including them costs two round trips. `hydrateEvents`
+          // below resolves them through one shared CarClass lookup.
+          classId: true,
+          paxClassId: true,
           driver: { select: { id: true, firstName: true, lastInitial: true } },
           runs: { select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true } },
         },
@@ -255,6 +259,38 @@ async function resolveLeaderboardSeason(
     orderBy: { id: "asc" },
     include: seasonLeaderboardInclude,
   });
+}
+
+type RawSeason = NonNullable<Awaited<ReturnType<typeof resolveLeaderboardSeason>>>;
+
+/**
+ * Attach each entry's CarClass rows from one shared lookup, restoring the
+ * `class`/`paxClass` shape the scoring code below expects. Splitting this out of
+ * the query is what turns two CarClass round trips into one — see
+ * `loadCarClassMap`.
+ */
+async function hydrateEvents(
+  raw: RawSeason["events"],
+  client: PrismaClient,
+): Promise<LoadedEvent[]> {
+  const classMap = await loadCarClassMap(
+    client,
+    raw.flatMap((event) => event.entries.flatMap((e) => [e.classId, e.paxClassId])),
+  );
+  return raw.map((event) => ({
+    id: event.id,
+    slug: event.slug,
+    name: event.name,
+    date: event.date,
+    entries: event.entries.map((e) => ({
+      class: requireCarClass(classMap, e.classId),
+      paxClass: requireCarClass(classMap, e.paxClassId),
+      paxIndexApplied: e.paxIndexApplied,
+      driver: e.driver,
+      bestCommittedRunNumber: e.bestCommittedRunNumber,
+      runs: e.runs,
+    })),
+  }));
 }
 
 /**
@@ -349,7 +385,7 @@ export async function buildSeasonLeaderboard(
   const policy = parseScoringPolicy(season.ruleset.policy);
 
   // 1. Events for the season, already loaded in chronological order.
-  const events: LoadedEvent[] = season.events;
+  const events: LoadedEvent[] = await hydrateEvents(season.events, client);
   const plannedEvents: Record<number, number> = { [year]: season.plannedEvents };
 
   if (events.length === 0) {
