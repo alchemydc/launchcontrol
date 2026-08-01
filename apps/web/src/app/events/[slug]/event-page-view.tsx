@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
 import {
+  availableEventViews,
   buildLeaderboard,
   formatMs,
   summarizeEventClasses,
@@ -60,8 +61,7 @@ export async function EventPageView({
   const rows = buildLeaderboard(event.entries, policy.conePenaltyMs);
   const photosUrl = await findSmugmugEventFolder(event.name, event.date, league);
   const summaries = summarizeEventClasses(rows, showPaxView);
-  const paxAvailable =
-    showPaxView && !rows.some((row) => row.classCode.toLowerCase() === "pax");
+  const { raw: rawAvailable, pax: paxAvailable } = availableEventViews(rows, showPaxView);
   const eventHref = `${basePath}/events/${slug}`;
 
   return (
@@ -110,6 +110,7 @@ export async function EventPageView({
       <EventClassNav
         slug={slug}
         classCodes={summaries.map((summary) => summary.classCode)}
+        rawAvailable={rawAvailable}
         paxAvailable={paxAvailable}
         basePath={basePath}
       />

@@ -106,13 +106,18 @@ function medianOf(sortedAscMs: number[]): number | null {
 // subject driver only entered one of its sessions (see buildCombinedHistoryRow).
 //
 // `scopeWhere` (the same league/season fragment applied to the driver-date
-// discovery query in `buildDriverHistory`) is applied here too -- without
-// it, a coincidental same-date event in a DIFFERENT league (impossible
-// pre-multi-league, now merely unlikely) would be fetched, and a driver with
-// no entry in it would make `buildSingleEventRow`'s displayEntry lookup
-// blow up. The date-range half of the filter is deliberately NOT re-applied
-// here: `dates` was already derived from the range-filtered discovery query,
-// and every sibling shares one of those exact dates by definition.
+// discovery query in `buildDriverHistory`) is applied here too, so a scoped
+// query never loads another league's coincidental same-date event at all.
+// That does NOT cover every scope: `"all"` produces an empty where-clause by
+// construction (see scopeWhereClause), so foreign same-date events DO load
+// under it -- two Colorado clubs sharing a Saturday is ordinary, not exotic.
+// buildDriverHistory therefore drops any resulting group the driver has no
+// entry in before building a row from it (#128); do not rely on this filter
+// alone for that invariant.
+//
+// The date-range half of the filter is deliberately NOT re-applied here:
+// `dates` was already derived from the range-filtered discovery query, and
+// every sibling shares one of those exact dates by definition.
 async function loadEventsForDates(
   prismaClient: PrismaClient,
   dates: Date[],
@@ -194,9 +199,18 @@ function buildSingleEventRow(event: LoadedEvent, driverId: number): DriverHistor
     best == null ? null : ranked.findIndex((r) => r.entry.id === best.entry.id) + 1;
 
   // The "display" entry is the driver's best-PAX entry if they had a clean run,
-  // otherwise just the first entry we have for them at this event.
+  // otherwise just the first entry we have for them at this event. Callers
+  // must only hand us an event the driver actually entered — buildDriverHistory
+  // filters foreign groups out (see #128); fail loudly rather than reading a
+  // property off undefined if that ever stops holding.
   const displayEntry =
-    best?.entry ?? event.entries.find((e) => e.driverId === driverId)!;
+    best?.entry ?? event.entries.find((e) => e.driverId === driverId);
+  if (displayEntry == null) {
+    throw new Error(
+      `[driver-history] driver ${driverId} has no entry at event ${event.id} (${event.slug}) — ` +
+        `buildDriverHistory must not form a row for a group the driver never entered`,
+    );
+  }
 
   const bestRawMs = best?.bestRawMs ?? null;
   const bestPaxMs = best?.bestPaxMs ?? null;
@@ -338,10 +352,21 @@ function buildCombinedHistoryRow(
       : (bestPaxMs - medianPaxMs) / medianPaxMs;
 
   // Display fields come from whichever session (earliest by id) the subject
-  // has an entry in -- guaranteed to exist in at least one session, since
-  // buildDriverHistory only ever forms a group for a date the driver appears
-  // on somewhere.
-  const displayEntry = sessions.flatMap((s) => s.entries).find((e) => e.driverId === driverId)!;
+  // has an entry in. buildDriverHistory guarantees at least one, because it
+  // drops groups the driver never entered -- a real case under the "all"
+  // scope, where another league's same-date event forms a group of its own
+  // (#128). Fail loudly rather than reading a property off undefined if that
+  // guarantee ever stops holding.
+  const displayEntry = sessions
+    .flatMap((s) => s.entries)
+    .find((e) => e.driverId === driverId);
+  if (displayEntry == null) {
+    throw new Error(
+      `[driver-history] driver ${driverId} has no entry in the combined group ` +
+        `${sessions.map((s) => s.slug).join(", ")} — buildDriverHistory must not ` +
+        `form a row for a group the driver never entered`,
+    );
+  }
 
   return {
     eventId: Math.min(...sessions.map((s) => s.id)),
@@ -476,11 +501,24 @@ export async function buildDriverHistory(
     group.push(event);
   }
 
-  return Array.from(groupsByKey.values()).map((group) =>
-    group.length === 1
-      ? buildSingleEventRow(group[0]!, driverId)
-      : buildCombinedHistoryRow(group, driverId),
-  );
+  // Drop groups the subject never entered. `dates` is discovered per DATE but
+  // groups are keyed per (season, date), so any OTHER season running on one of
+  // those dates forms its own group — one the subject has no entry in. In
+  // practice that means another league, which `scopeWhere` normally filters
+  // out at load time; the "all" scope is the exception, since its where-clause
+  // is empty by construction (see scopeWhereClause). Both row builders need
+  // the subject present somewhere in the group to resolve their display
+  // fields, so this filter is what makes that invariant true rather than
+  // merely hoped for.
+  return Array.from(groupsByKey.values())
+    .filter((group) =>
+      group.some((event) => event.entries.some((e) => e.driverId === driverId)),
+    )
+    .map((group) =>
+      group.length === 1
+        ? buildSingleEventRow(group[0]!, driverId)
+        : buildCombinedHistoryRow(group, driverId),
+    );
 }
 
 export type DriverSeasonOption = {
