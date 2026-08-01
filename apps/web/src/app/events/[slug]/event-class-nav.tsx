@@ -11,16 +11,21 @@ import { PAX_VIEW, RAW_VIEW } from "@/lib/leaderboard";
  * the word exists to distinguish the two. With PAX standings off there is
  * nothing to distinguish from, so it is plain "All", matching the labelling of
  * the client-side filter chip this nav replaced in #99.
+ *
+ * Both virtual pills are suppressed when a real class shadows them (see
+ * `rawAvailable` / `paxAvailable` at the call site).
  */
 export function EventClassNav({
   slug,
   classCodes,
+  rawAvailable,
   paxAvailable,
   active,
   basePath = "",
 }: {
   slug: string;
   classCodes: string[];
+  rawAvailable: boolean;
   paxAvailable: boolean;
   /** Active class code, `"pax"` / `"raw"` for the virtual views, or undefined on the overview. */
   active?: string;
@@ -46,13 +51,15 @@ export function EventClassNav({
     <nav aria-label="Event views" className="mb-6">
       <ul className="flex flex-wrap gap-1.5">
         <li>{pill(eventHref, active == null, "Overview")}</li>
-        <li>
-          {pill(
-            `${eventHref}/${RAW_VIEW}`,
-            active === RAW_VIEW,
-            paxAvailable ? "All Raw" : "All",
-          )}
-        </li>
+        {rawAvailable && (
+          <li>
+            {pill(
+              `${eventHref}/${RAW_VIEW}`,
+              active === RAW_VIEW,
+              paxAvailable ? "All Raw" : "All",
+            )}
+          </li>
+        )}
         {paxAvailable && (
           <li>{pill(`${eventHref}/${PAX_VIEW}`, active === PAX_VIEW, "All PAX")}</li>
         )}

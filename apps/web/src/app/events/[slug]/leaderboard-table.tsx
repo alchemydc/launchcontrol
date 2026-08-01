@@ -370,7 +370,7 @@ export function LeaderboardTable({
       <ul className="md:hidden divide-y divide-border/60">
         {sortedRows.length === 0 ? (
           <li className="px-4 py-10 text-center text-sm text-muted-foreground">
-            {"No entries in this class."}
+            {"No entries."}
           </li>
         ) : (
           sortedRows.map((row) => (
@@ -415,7 +415,7 @@ export function LeaderboardTable({
                   colSpan={columns.length}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
-                  {"No entries in this class."}
+                  {"No entries."}
                 </TableCell>
               </TableRow>
             ) : (

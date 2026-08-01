@@ -231,6 +231,32 @@ export function resolveEventView(
   return null;
 }
 
+/**
+ * Which virtual view pills the event nav can offer.
+ *
+ * The counterpart to `resolveEventView`'s real-class-first precedence: when a
+ * club actually runs a class coded "RAW" or "PAX", that class owns the shared
+ * `[class]` segment, so a pill pointing at the virtual view of the same name
+ * would land on the class page and never read as active. The pill is dropped
+ * instead — the virtual and class views share one route segment, so there is
+ * no other address to point it at.
+ *
+ * The PAX pill is additionally gated on `paxStandings`; the raw view is not
+ * (see `resolveEventView`).
+ */
+export function availableEventViews(
+  rows: LeaderboardRow[],
+  paxStandings: boolean,
+): { raw: boolean; pax: boolean } {
+  const shadowedByRealClass = (view: string) =>
+    rows.some((row) => row.classCode.toLowerCase() === view);
+
+  return {
+    raw: !shadowedByRealClass(RAW_VIEW),
+    pax: paxStandings && !shadowedByRealClass(PAX_VIEW),
+  };
+}
+
 export function formatMs(ms: number | null): string {
   if (ms == null) return "—";
   return (ms / 1000).toFixed(3);
