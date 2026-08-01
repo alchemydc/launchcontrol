@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
-import { activeSeason } from "@/lib/season-resolve";
+import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { renderLeagueSeasonLeaderboard } from "./render-league-leaderboard";
 
 export const revalidate = 300;
@@ -25,7 +25,8 @@ export default async function LeagueLeaderboardPage({
   // league's data (same ordering as the legacy /leaderboard pages).
   await gateResultsPage(league, `/l/${slug}/leaderboard`, `/l/${slug}`);
 
-  const season = await activeSeason(prisma, league.id);
+  // Shares the layout's memoized season list rather than re-querying.
+  const season = pickActiveSeason(await listSeasonsForLeague(prisma, league.id));
 
   return renderLeagueSeasonLeaderboard({
     leagueSlug: slug,

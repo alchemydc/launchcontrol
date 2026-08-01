@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { LeagueSubnav } from "@/components/league-subnav";
-import { activeSeason, listSeasonsForLeague } from "@/lib/season-resolve";
+import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -44,10 +44,10 @@ export default async function LeagueLayout({
   const { league: slug } = await params;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) notFound();
-  const [seasons, active] = await Promise.all([
-    listSeasonsForLeague(prisma, league.id),
-    activeSeason(prisma, league.id),
-  ]);
+  // One Season read, not two: the list already carries the active season, in
+  // the same [year desc, id desc] order `activeSeason` would apply.
+  const seasons = await listSeasonsForLeague(prisma, league.id);
+  const active = pickActiveSeason(seasons);
   return (
     <>
       <LeagueSubnav

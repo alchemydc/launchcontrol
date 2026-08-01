@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Prisma, PrismaClient, Season } from "@/generated/prisma/client";
 import { slugify } from "@/lib/ingest";
 
@@ -112,6 +113,8 @@ export async function resolveSeasonBySlug(
   return client.season.findFirst({ where: { leagueId, slug } });
 }
 
+export type SeasonOption = Pick<Season, "id" | "slug" | "name" | "year" | "status">;
+
 /**
  * List every Season row under a league, newest-first (year desc, ties by id
  * desc — same ordering convention as `activeSeason`). Powers the season
@@ -119,16 +122,51 @@ export async function resolveSeasonBySlug(
  * which addresses seasons by slug and labels them by name rather than by
  * bare year (a league can have more than one season per year, e.g. a Winter
  * Series alongside the main season).
+ *
+ * Memoized per (client, leagueId) via React `cache()` so a `/l/[league]/*`
+ * render tree issues ONE Season read instead of one per component: the layout
+ * needs the list for the season switcher, and the page then derives the season
+ * it is rendering from that same list via `pickActiveSeason` /
+ * `pickSeasonBySlug` rather than re-querying. Same pattern as
+ * `getLeagueConfigForSlug`.
  */
-export async function listSeasonsForLeague(
-  client: PrismaClient | Prisma.TransactionClient,
-  leagueId: number,
-): Promise<Array<Pick<Season, "id" | "slug" | "name" | "year" | "status">>> {
-  return client.season.findMany({
-    where: { leagueId },
-    orderBy: [{ year: "desc" }, { id: "desc" }],
-    select: { id: true, slug: true, name: true, year: true, status: true },
-  });
+export const listSeasonsForLeague = cache(
+  async (
+    client: PrismaClient | Prisma.TransactionClient,
+    leagueId: number,
+  ): Promise<SeasonOption[]> =>
+    client.season.findMany({
+      where: { leagueId },
+      orderBy: [{ year: "desc" }, { id: "desc" }],
+      select: { id: true, slug: true, name: true, year: true, status: true },
+    }),
+);
+
+/**
+ * In-memory equivalents of `activeSeason` / `resolveSeasonBySlug` for callers
+ * that already hold a `listSeasonsForLeague` result — they save a round trip
+ * each, which matters because every Prisma call is a network hop to Turso.
+ *
+ * `pickActiveSeason` is an exact match for `activeSeason`'s semantics rather
+ * than a re-implementation of them: `listSeasonsForLeague` already sorts by
+ * [year desc, id desc], the very ordering `activeSeason` applies, so the first
+ * "active" row in that list IS the row the query would return.
+ *
+ * `pickSeasonBySlug` relies on slug being unique within a league (the
+ * `@@unique([leagueId, slug])` the query form's `findFirst` also assumes).
+ *
+ * The query forms stay for callers that hold only a `leagueId` and for ingest,
+ * which resolves inside a transaction and must read live.
+ */
+export function pickActiveSeason(seasons: SeasonOption[]): SeasonOption | null {
+  return seasons.find((s) => s.status === "active") ?? null;
+}
+
+export function pickSeasonBySlug(
+  seasons: SeasonOption[],
+  slug: string,
+): SeasonOption | null {
+  return seasons.find((s) => s.slug === slug) ?? null;
 }
 
 /**

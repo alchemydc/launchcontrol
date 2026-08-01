@@ -8,16 +8,15 @@
  */
 
 import { getLeagueConfig } from "@/lib/league-config";
-import { activeSeason, listSeasonsForLeague } from "@/lib/season-resolve";
+import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { prisma } from "@/lib/prisma";
 import { LeagueSubnav } from "./league-subnav";
 
 export async function DefaultLeagueSubnav() {
   const league = await getLeagueConfig();
-  const [seasons, active] = await Promise.all([
-    listSeasonsForLeague(prisma, league.id),
-    activeSeason(prisma, league.id),
-  ]);
+  // One Season read, not two: the list already carries the active season.
+  const seasons = await listSeasonsForLeague(prisma, league.id);
+  const active = pickActiveSeason(seasons);
   return (
     <LeagueSubnav
       slug={league.slug}

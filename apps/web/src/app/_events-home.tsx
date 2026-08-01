@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
-import { activeSeason, listSeasonsForLeague } from "@/lib/season-resolve";
+import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { findSmugmugEventFolder, type SmugmugLeagueTarget } from "@/lib/smugmug";
 
 function formatDateShort(date: Date): string {
@@ -44,14 +44,12 @@ export async function EventsHome({
 
   // The subnav season selector is the single season control; the events list
   // scopes to the chosen season (its `?season=` slug), defaulting to the
-  // league's active season — the same default the subnav shows.
+  // league's active season — the same default the subnav shows. That default
+  // comes out of the list we already hold; querying for it separately was a
+  // second round trip for a row we had in hand.
   const seasons = await listSeasonsForLeague(prisma, leagueId);
-  const active = await activeSeason(prisma, leagueId);
   const selectedSeason =
-    seasons.find((s) => s.slug === seasonParam) ??
-    seasons.find((s) => s.id === active?.id) ??
-    seasons[0] ??
-    null;
+    seasons.find((s) => s.slug === seasonParam) ?? pickActiveSeason(seasons) ?? seasons[0] ?? null;
 
   const events = selectedSeason
     ? await prisma.event.findMany({
