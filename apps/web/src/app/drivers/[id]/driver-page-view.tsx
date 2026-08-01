@@ -179,17 +179,27 @@ export async function DriverPageView({
   basePath: string;
   searchParams: { league?: string; season?: string; from?: string; to?: string };
 }) {
-  const driver = await prisma.driver.findUnique({ where: { id: driverId } });
+  // These three reads don't depend on each other, so they issue together
+  // rather than in series. Against Turso each is a network round trip, and
+  // this page is both the most-requested route and force-dynamic, so the
+  // depth of the serial chain -- not the query count -- is what costs here.
+  // `notFound()` stays outside: it throws NEXT_REDIRECT-style control flow,
+  // which must not reject the Promise.all.
+  const [driver, driverSeasons, lockedLeague] = await Promise.all([
+    prisma.driver.findUnique({ where: { id: driverId } }),
+    // The driver's full league/season breadth, independent of the current
+    // filter selection -- powers the filter bar's options.
+    listSeasonsForDriver(driverId, prisma),
+    lockedLeagueSlug ? getLeagueConfigForSlug(lockedLeagueSlug) : Promise.resolve(null),
+  ]);
   if (!driver) notFound();
 
-  // The driver's full league/season breadth, independent of the current
-  // filter selection -- powers the filter bar's options.
-  const driverSeasons = await listSeasonsForDriver(driverId, prisma);
   const leagues = Array.from(
     new Map(driverSeasons.map((s) => [s.leagueId, { id: s.leagueId, slug: s.leagueSlug, name: s.leagueName }])).values(),
   ).sort((a, b) => a.name.localeCompare(b.name));
 
-  const lockedLeague = lockedLeagueSlug ? await getLeagueConfigForSlug(lockedLeagueSlug) : null;
+  // Only the legacy (non-league-scoped) route reaches this second await:
+  // `/l/[league]/drivers/[id]` already resolved its league above.
   const defaultLeague = lockedLeague ?? (await getLeagueConfig());
   const { filter, current } = parseFilter(
     rawSearchParams,
