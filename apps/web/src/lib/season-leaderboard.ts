@@ -215,7 +215,7 @@ const seasonLeaderboardInclude = {
           bestCommittedRunNumber: true,
           paxIndexApplied: true,
           // Scalar ids, not `class`/`paxClass` relations: both point at the same
-          // table, so including them costs two round trips. `hydrateEntries`
+          // table, so including them costs two round trips. `hydrateEvents`
           // below resolves them through one shared CarClass lookup.
           classId: true,
           paxClassId: true,

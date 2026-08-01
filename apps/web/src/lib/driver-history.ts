@@ -137,8 +137,8 @@ async function loadEventsForDates(
           bestCommittedRunNumber: true,
           paxIndexApplied: true,
           // Scalar ids, not `class`/`paxClass` relations: both point at the
-          // same table, so including them costs two round trips. Resolved
-          // through one shared CarClass lookup in `buildDriverHistory`.
+          // same table, so including them costs two round trips. Reattached
+          // through one shared CarClass lookup just below, before returning.
           classId: true,
           paxClassId: true,
           runs: {
