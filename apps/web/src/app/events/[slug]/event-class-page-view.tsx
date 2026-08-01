@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
 import {
+  availableEventViews,
   buildLeaderboard,
   resolveEventView,
   summarizeEventClasses,
@@ -50,9 +51,7 @@ export async function EventClassPageView({
   const { rows: classRows, label: classLabel, paxView, navActive } = view;
 
   const summaries = summarizeEventClasses(rows, policy.paxSection);
-  const paxAvailable =
-    policy.paxSection &&
-    !rows.some((row) => row.classCode.toLowerCase() === "pax");
+  const virtualViews = availableEventViews(rows, policy.paxSection);
   const eventHref = `${basePath}/events/${slug}`;
 
   return (
@@ -81,7 +80,8 @@ export async function EventClassPageView({
       <EventClassNav
         slug={slug}
         classCodes={summaries.map((summary) => summary.classCode)}
-        paxAvailable={paxAvailable}
+        rawAvailable={virtualViews.raw}
+        paxAvailable={virtualViews.pax}
         active={navActive}
         basePath={basePath}
       />

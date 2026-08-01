@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  availableEventViews,
   classUsesPaxMetric,
   filterRowsForClass,
   resolveEventView,
@@ -185,5 +186,41 @@ describe("resolveEventView", () => {
   it("returns null for an unknown or blank view", () => {
     expect(resolveEventView(rows, "XX", true)).toBeNull();
     expect(resolveEventView(rows, "", true)).toBeNull();
+  });
+});
+
+// The nav counterpart to resolveEventView's real-class-first precedence: a
+// pill for a virtual view a real class has taken over would link to that class
+// page and never read as active, so it is not offered at all.
+describe("availableEventViews", () => {
+  const rows = [
+    row({ driverId: 1, classCode: "SS" }),
+    row({ driverId: 2, classCode: "AS" }),
+  ];
+
+  it("offers both virtual views when no real class shadows them", () => {
+    expect(availableEventViews(rows, true)).toEqual({ raw: true, pax: true });
+  });
+
+  it("still offers the raw view when PAX standings are off", () => {
+    expect(availableEventViews(rows, false)).toEqual({ raw: true, pax: false });
+  });
+
+  it("drops the raw pill when a real class named RAW owns that segment", () => {
+    const withRealRaw = [...rows, row({ driverId: 3, classCode: "RAW" })];
+    expect(availableEventViews(withRealRaw, true)).toEqual({ raw: false, pax: true });
+    // ...and that is exactly the segment resolveEventView hands to the class.
+    expect(resolveEventView(withRealRaw, "raw", true)?.label).toBe("RAW");
+  });
+
+  it("drops the PAX pill when a real class named PAX owns that segment", () => {
+    const withRealPax = [...rows, row({ driverId: 3, classCode: "PAX" })];
+    expect(availableEventViews(withRealPax, true)).toEqual({ raw: true, pax: false });
+    expect(resolveEventView(withRealPax, "pax", true)?.label).toBe("PAX");
+  });
+
+  it("matches shadowing class codes case-insensitively", () => {
+    const lowercase = [...rows, row({ driverId: 3, classCode: "raw" })];
+    expect(availableEventViews(lowercase, true).raw).toBe(false);
   });
 });
