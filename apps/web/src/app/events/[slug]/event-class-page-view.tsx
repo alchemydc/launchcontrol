@@ -4,10 +4,8 @@ import { BackButton } from "@/components/back-button";
 import { prisma } from "@/lib/prisma";
 import {
   buildLeaderboard,
-  classUsesPaxMetric,
-  filterRowsForClass,
+  resolveEventView,
   summarizeEventClasses,
-  type LeaderboardRow,
 } from "@/lib/leaderboard";
 import { findEventBySlug } from "@/lib/event-queries";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
@@ -47,29 +45,9 @@ export async function EventClassPageView({
 
   const policy = parseScoringPolicy(event.season.ruleset.policy);
   const rows = buildLeaderboard(event.entries, policy.conePenaltyMs);
-  const classParam = decodeClassParam(rawClass);
-  const realClass = filterRowsForClass(rows, classParam);
-
-  let classRows: LeaderboardRow[];
-  let classLabel: string;
-  let paxView: boolean;
-  let navActive: string;
-  if (realClass != null) {
-    classRows = realClass.rows;
-    classLabel = realClass.classCode;
-    paxView = classUsesPaxMetric(classRows, policy.paxSection);
-    navActive = realClass.classCode;
-  } else if (
-    policy.paxSection &&
-    classParam.trim().toLowerCase() === "pax"
-  ) {
-    classRows = rows;
-    classLabel = "PAX standings";
-    paxView = true;
-    navActive = "pax";
-  } else {
-    notFound();
-  }
+  const view = resolveEventView(rows, decodeClassParam(rawClass), policy.paxSection);
+  if (view == null) notFound();
+  const { rows: classRows, label: classLabel, paxView, navActive } = view;
 
   const summaries = summarizeEventClasses(rows, policy.paxSection);
   const paxAvailable =
