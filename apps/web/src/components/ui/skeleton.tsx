@@ -1,8 +1,10 @@
+import * as React from "react"
+
 import { cn } from "@/lib/utils"
 
 /**
  * Placeholder block for `loading.tsx` route skeletons. Purely presentational —
- * `aria-hidden` plus a `role="status"` wrapper at the skeleton root keeps
+ * `aria-hidden` plus a `role="status"` wrapper around the skeleton keeps
  * screen readers from announcing a tree of meaningless boxes; the wrapper
  * announces "Loading …" once instead.
  */

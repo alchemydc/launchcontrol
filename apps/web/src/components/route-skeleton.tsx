@@ -10,7 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
  *
  * `role="status"` + `aria-label` announces one "Loading" to assistive tech; the
  * individual blocks are `aria-hidden` (see `ui/skeleton.tsx`) so a screen
- * reader doesn't walk a tree of empty boxes.
+ * reader doesn't walk a tree of empty boxes. The status role goes on an inner
+ * wrapper, never on `<main>` itself — an explicit role overrides the element's
+ * implicit one, which would drop the `main` landmark for the whole loading
+ * state and break landmark navigation exactly when the page is least legible.
  */
 
 function TableRows({ rows }: { rows: number }) {
@@ -41,18 +44,16 @@ function HeaderBlock() {
 /** Season leaderboards and event results — header, class pills, standings table. */
 export function ResultsSkeleton() {
   return (
-    <main
-      role="status"
-      aria-label="Loading results"
-      className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10"
-    >
-      <HeaderBlock />
-      <div className="mb-6 flex flex-wrap gap-2">
-        {Array.from({ length: 8 }, (_, i) => (
-          <Skeleton key={i} className="h-8 w-20" />
-        ))}
+    <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
+      <div role="status" aria-label="Loading results">
+        <HeaderBlock />
+        <div className="mb-6 flex flex-wrap gap-2">
+          {Array.from({ length: 8 }, (_, i) => (
+            <Skeleton key={i} className="h-8 w-20" />
+          ))}
+        </div>
+        <TableRows rows={12} />
       </div>
-      <TableRows rows={12} />
     </main>
   );
 }
@@ -60,19 +61,17 @@ export function ResultsSkeleton() {
 /** Driver detail — header, stat tiles, progression chart, event history. */
 export function DriverSkeleton() {
   return (
-    <main
-      role="status"
-      aria-label="Loading driver"
-      className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10"
-    >
-      <HeaderBlock />
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} className="h-20" />
-        ))}
+    <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
+      <div role="status" aria-label="Loading driver">
+        <HeaderBlock />
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+        <Skeleton className="mb-6 h-64 w-full" />
+        <TableRows rows={8} />
       </div>
-      <Skeleton className="mb-6 h-64 w-full" />
-      <TableRows rows={8} />
     </main>
   );
 }
