@@ -23,6 +23,7 @@ let seasonAId: number;
 let seasonBId: number;
 let crossDriverId: number; // entries in both leagues
 let soloDriverId: number; // entries only in league A
+let clashDriverId: number; // league A only, but races on dates league B also runs (#128)
 
 async function makeEntry(
   eventId: number,
@@ -104,6 +105,38 @@ beforeAll(async () => {
   // Solo driver: league A only.
   await makeEntry(eventA1.id, soloDriverId, classA.id, "2", 65_000);
   await makeEntry(eventA2.id, soloDriverId, classA.id, "2", 64_000);
+
+  // Regression fixture for #128. The crossDriver above races in BOTH of the
+  // same-date March events, and soloDriver races on neither date, so no group
+  // is ever foreign to the subject — which is exactly why the pre-existing
+  // suite could not catch the bug. clashDriver is the missing shape: they race
+  // on a date the OTHER league also runs on, without entering the other
+  // league's event.
+  //
+  // Two collisions, one per row builder:
+  //   2026-03-01 — league B has one session there (eventB2)  -> single path
+  //   2026-04-05 — league B has two sessions there           -> combined path
+  //
+  // League B's new events deliberately have no crossDriver entries, so every
+  // assertion above still sees the same league-B history it did before: dates
+  // are discovered from the subject's OWN entries, and crossDriver has none in
+  // April.
+  const eventA4 = await prisma.event.create({
+    data: { seasonId: seasonAId, slug: "a-apr-5", name: "A April Clash", date: new Date("2026-04-05T00:00:00.000Z") },
+  });
+  await prisma.event.create({
+    data: { seasonId: seasonBId, slug: "b-apr-5-am", name: "B April Clash (AM)", date: new Date("2026-04-05T00:00:00.000Z") },
+  });
+  await prisma.event.create({
+    data: { seasonId: seasonBId, slug: "b-apr-5-pm", name: "B April Clash (PM)", date: new Date("2026-04-05T00:00:00.000Z") },
+  });
+
+  const clashDriver = await prisma.driver.create({
+    data: { firstName: "Clash", lastInitial: "Z.", identityHash: "clash-driver-hash" },
+  });
+  clashDriverId = clashDriver.id;
+  await makeEntry(eventA3.id, clashDriverId, classA.id, "3", 63_000);
+  await makeEntry(eventA4.id, clashDriverId, classA.id, "3", 62_000);
 });
 
 afterAll(async () => {
@@ -172,6 +205,33 @@ describe("buildDriverHistory — league/time filters", () => {
     const history = await buildDriverHistory(soloDriverId, {}, prisma);
     expect(history).toHaveLength(2);
     expect(history.every((r) => r.leagueId === leagueAId)).toBe(true);
+  });
+
+  // Regression, #128. Groups are keyed (seasonId, dateKey), but the dates were
+  // discovered per DATE — so under "all", the one scope whose where-clause is
+  // empty by construction, another league's event on the same calendar date
+  // formed a group the subject has no entry in. Both row builders assumed the
+  // subject appears somewhere in every group handed to them and asserted it
+  // with `!`, so the driver page 500'd on a property read of undefined.
+  it("skips another league's same-date event the driver never entered ('all' scope)", async () => {
+    const history = await buildDriverHistory(clashDriverId, { leagueIds: "all" }, prisma);
+    expect(history.map((r) => r.eventSlug)).toEqual(["a-mar-1", "a-apr-5"]);
+    expect(history.every((r) => r.leagueId === leagueAId)).toBe(true);
+  });
+
+  it("skips a foreign same-date COMBINED group too, not just a single event", async () => {
+    // 2026-04-05 is two sessions in league B, so the foreign group takes the
+    // combined path rather than the single-event one.
+    const history = await buildDriverHistory(clashDriverId, { leagueIds: "all" }, prisma);
+    const april = history.filter((r) => r.eventDate.toISOString().slice(0, 10) === "2026-04-05");
+    expect(april).toHaveLength(1);
+    expect(april[0]!.eventSlug).toBe("a-apr-5");
+    expect(april[0]!.combined).toBe(false);
+  });
+
+  it("scoped queries were already correct and stay correct", async () => {
+    const scoped = await buildDriverHistory(clashDriverId, { leagueIds: [leagueAId] }, prisma);
+    expect(scoped.map((r) => r.eventSlug)).toEqual(["a-mar-1", "a-apr-5"]);
   });
 });
 
