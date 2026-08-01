@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { bestCorrectedMsForEntry } from "@/lib/entry-best";
+import { loadCarClassMap, requireCarClass } from "@/lib/car-class-map";
 import { resolveDefaultLeague } from "@/lib/league-config";
 import { appliedPaxIndex } from "@/lib/pax-applied";
 import { prisma } from "@/lib/prisma";
@@ -112,12 +113,12 @@ function medianOf(sortedAscMs: number[]): number | null {
 // blow up. The date-range half of the filter is deliberately NOT re-applied
 // here: `dates` was already derived from the range-filtered discovery query,
 // and every sibling shares one of those exact dates by definition.
-function loadEventsForDates(
+async function loadEventsForDates(
   prismaClient: PrismaClient,
   dates: Date[],
   scopeWhere: Prisma.EventWhereInput,
 ) {
-  return prismaClient.event.findMany({
+  const events = await prismaClient.event.findMany({
     where: { date: { in: dates }, ...scopeWhere },
     orderBy: { date: "asc" },
     include: {
@@ -135,8 +136,11 @@ function loadEventsForDates(
           carNumber: true,
           bestCommittedRunNumber: true,
           paxIndexApplied: true,
-          class: { select: { code: true } },
-          paxClass: { select: { code: true, paxIndex: true } },
+          // Scalar ids, not `class`/`paxClass` relations: both point at the
+          // same table, so including them costs two round trips. Resolved
+          // through one shared CarClass lookup in `buildDriverHistory`.
+          classId: true,
+          paxClassId: true,
           runs: {
             select: { runNumber: true, rawTimeMs: true, cones: true, disposition: true },
           },
@@ -144,6 +148,21 @@ function loadEventsForDates(
       },
     },
   });
+
+  // Reattach class/paxClass from one shared lookup, so callers below keep the
+  // relation shape they already expect.
+  const classMap = await loadCarClassMap(
+    prismaClient,
+    events.flatMap((event) => event.entries.flatMap((e) => [e.classId, e.paxClassId])),
+  );
+  return events.map((event) => ({
+    ...event,
+    entries: event.entries.map((e) => ({
+      ...e,
+      class: requireCarClass(classMap, e.classId),
+      paxClass: requireCarClass(classMap, e.paxClassId),
+    })),
+  }));
 }
 
 type LoadedEvent = Awaited<ReturnType<typeof loadEventsForDates>>[number];
