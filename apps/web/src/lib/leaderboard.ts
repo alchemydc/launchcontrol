@@ -168,6 +168,69 @@ export function filterRowsForClass(
     : { classCode: first.classCode, rows: matchingRows };
 }
 
+/** Virtual (non-class) event views, addressed by the same `[class]` route segment. */
+export const RAW_VIEW = "raw";
+export const PAX_VIEW = "pax";
+
+export type EventView = {
+  /** The rows this view renders — one class's, or every entry at the event. */
+  rows: LeaderboardRow[];
+  /** Heading suffix after the event name. */
+  label: string;
+  /** Rank and show gaps on the PAX-indexed metric rather than raw time. */
+  paxView: boolean;
+  /** Which nav pill is current: a class code, `"pax"`, or `"raw"`. */
+  navActive: string;
+};
+
+/**
+ * Resolve one event page's `[class]` segment to the view it addresses, or
+ * `null` when it addresses nothing (→ 404).
+ *
+ * Three kinds of view share this one route segment:
+ *   - a real class code — that class's rows only;
+ *   - `"pax"` — every entry ranked on the indexed metric, when the ruleset
+ *     enables PAX standings;
+ *   - `"raw"` — every entry ranked on raw time.
+ *
+ * The raw view restores what the pre-#99 client-side filter chip labelled
+ * "All Raw" (or plain "All" with PAX standings off). PR #99 replaced that chip
+ * row with per-class routes and carried over Overview, All PAX, and the class
+ * views, but nothing addressed the unfiltered list — so it became unreachable.
+ * Unlike the PAX view it is deliberately NOT gated on `paxStandings`: the
+ * unfiltered list is meaningful for every league, and with PAX standings off
+ * it is simply labelled "All" in the nav.
+ *
+ * A REAL class is matched first, so a club that actually runs a class named
+ * "RAW" or "PAX" gets its own class page rather than the virtual view — the
+ * same precedence the season leaderboard gives a real class over its synthetic
+ * PAX section (see PAX_SECTION_CODE in season-leaderboard.ts).
+ */
+export function resolveEventView(
+  rows: LeaderboardRow[],
+  classParam: string,
+  paxStandings: boolean,
+): EventView | null {
+  const realClass = filterRowsForClass(rows, classParam);
+  if (realClass != null) {
+    return {
+      rows: realClass.rows,
+      label: realClass.classCode,
+      paxView: classUsesPaxMetric(realClass.rows, paxStandings),
+      navActive: realClass.classCode,
+    };
+  }
+
+  const wanted = classParam.trim().toLowerCase();
+  if (wanted === PAX_VIEW && paxStandings) {
+    return { rows, label: "PAX standings", paxView: true, navActive: PAX_VIEW };
+  }
+  if (wanted === RAW_VIEW) {
+    return { rows, label: "All raw times", paxView: false, navActive: RAW_VIEW };
+  }
+  return null;
+}
+
 export function formatMs(ms: number | null): string {
   if (ms == null) return "—";
   return (ms / 1000).toFixed(3);
