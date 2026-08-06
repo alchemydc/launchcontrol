@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    # Don't propose a version until it has aged. GitHub applies a 3-day default
+    # as of 2026-07-14, but pin it so the posture is explicit and matches
+    # `minimumReleaseAge` in pnpm-workspace.yaml. Security updates ignore this.
+    # See docs/dependabot.md § Supply-chain controls.
+    cooldown:
+      default-days: 3
     groups:
       react:
         patterns:
@@ -57,3 +63,5 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3

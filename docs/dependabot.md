@@ -61,6 +61,44 @@ up-to-date (and re-CI'd) before merging.
    Dependabot PR to merge automatically once strict CI passes (`gh pr merge <n> --auto
    --merge`, or comment `@dependabot merge`), and merged branches are cleaned up.
 
+## Supply-chain controls
+
+The sections above are about *merge mechanics*. These three settings are about not pulling in
+a poisoned release in the first place. They read as ordinary dependency config, so they're
+easy to "clean up" by accident — don't.
+
+1. **`minimumReleaseAge: 4320` (`pnpm-workspace.yaml`)** — pnpm refuses to resolve any version
+   published in the last 3 days. Registry compromises are typically caught and unpublished
+   within hours, so an aging window converts most of them into a non-event. It applies only
+   when the lockfile is *regenerated* (`pnpm update`, `pnpm add`, Dependabot);
+   `pnpm install --frozen-lockfile` in CI and the Dockerfile resolves from the lockfile and is
+   unaffected. Requires pnpm ≥ 10.16 and must live in `pnpm-workspace.yaml` — pnpm 10 no longer
+   reads non-auth settings from `.npmrc`.
+   - Side effect: a Dependabot rebase can land inside the window and resolve nothing. Re-run it
+     once the window elapses; that's the control working, not a failure.
+   - There is a `minimumReleaseAgeExclude` escape hatch. Nothing here needs same-day releases —
+     leave it unset.
+2. **`cooldown.default-days: 3` (`.github/dependabot.yml`)** — the same window on the PR-opening
+   side, so Dependabot doesn't propose a bump pnpm would then refuse. GitHub has defaulted this
+   to 3 days since 2026-07-14; it's pinned here so the posture survives a default change.
+   Security updates deliberately bypass the cooldown.
+3. **`onlyBuiltDependencies` (`pnpm-workspace.yaml`)** — pnpm 10 blocks dependency lifecycle
+   scripts (`preinstall`/`install`/`postinstall`) by default; this list is the allowlist, and
+   it currently holds exactly four entries (`@prisma/client`, `@prisma/engines`,
+   `better-sqlite3`, `prisma`), all of which genuinely need a native/codegen build step.
+   **Adding a package here grants it arbitrary code execution on every `pnpm install`, on every
+   developer machine and CI runner.** Add an entry only when an install visibly fails without
+   it, and prefer `ignoredBuiltDependencies` for packages whose build step we don't need.
+   `pnpm approve-builds` will happily append to this list — review what it wrote.
+
+Worked example — the **ChainDrop** npm worm (2026-08-04), which poisoned `keyv@6.0.0`,
+`flat-cache@6.1.24`, `file-entry-cache@11.1.6` and ~450 other packages with a credential-stealing
+`preinstall` script. This repo was not affected: it carries those packages only transitively under
+`eslint` at pre-attack majors (4.5.4 / 4.0.1 / 8.0.0), which the declared `^` ranges can't escape.
+Had it been reachable, control 3 would have stopped the payload from executing and control 1 would
+have stopped the version from being installed at all — npm unpublished the malicious releases
+within ~1 hour.
+
 ## Routine merge workflow
 
 With strict checks on, order barely matters — each PR is forced to re-CI against latest
