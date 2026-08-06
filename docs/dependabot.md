@@ -83,9 +83,31 @@ easy to "clean up" by accident — don't.
    to 3 days since 2026-07-14; it's pinned here so the posture survives a default change.
    Security updates deliberately bypass the cooldown.
 3. **`onlyBuiltDependencies` (`pnpm-workspace.yaml`)** — pnpm 10 blocks dependency lifecycle
-   scripts (`preinstall`/`install`/`postinstall`) by default; this list is the allowlist, and
-   it currently holds exactly four entries (`@prisma/client`, `@prisma/engines`,
-   `better-sqlite3`, `prisma`), all of which genuinely need a native/codegen build step.
+   scripts (`preinstall`/`install`/`postinstall`) by default; this list is the allowlist, and it
+   currently holds four entries. Only two of them still have a script to run:
+
+   | Entry | Lifecycle script | Notes |
+   | --- | --- | --- |
+   | `prisma` | `preinstall` | real — `scripts/preinstall-entry.js` |
+   | `@prisma/engines` | `postinstall` | real — positions the engine binaries |
+   | `@prisma/client` | none | no-op today |
+   | `better-sqlite3` | none | no-op since v13 — see [Failure mode 2](#failure-mode-2--better-sqlite3-native-binary-fixed-by-v13) |
+
+   The two no-ops are harmless and worth keeping as insurance against a pin back to a version
+   that does build. Re-check with:
+
+   ```bash
+   # from the repo root — reads the pnpm store directly, since @prisma/engines
+   # is transitive and not resolvable from apps/web
+   for f in node_modules/.pnpm/{better-sqlite3,prisma}@*/node_modules/{better-sqlite3,prisma}/package.json \
+            node_modules/.pnpm/@prisma+{client,engines}@*/node_modules/@prisma/{client,engines}/package.json; do
+     [ -f "$f" ] && node -p "
+       const p = require('./$f');
+       p.name + '@' + p.version + ' -> ' +
+       (['preinstall','install','postinstall'].filter(k => (p.scripts ?? {})[k]).join(', ') || 'none')"
+   done 2>/dev/null | sort -u
+   ```
+
    **Adding a package here grants it arbitrary code execution on every `pnpm install`, on every
    developer machine and CI runner.** Add an entry only when an install visibly fails without
    it, and prefer `ignoredBuiltDependencies` for packages whose build step we don't need.
