@@ -2,6 +2,16 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Supply-chain quarantine: refuse to resolve any version published less than
+# 3 days ago. Only bites when the lockfile is regenerated (`pnpm update`,
+# Dependabot) — `pnpm install --frozen-lockfile` in CI is unaffected. Kept in
+# step with the Dependabot `cooldown` in .github/dependabot.yml.
+# See docs/dependabot.md § Supply-chain controls.
+minimumReleaseAge: 4320 # minutes
+
+# Packages allowed to run install-time lifecycle scripts. pnpm 10 blocks these
+# by default; anything added here gets arbitrary code execution on every
+# install, so keep the list as short as it is.
 onlyBuiltDependencies:
   - "@prisma/client"
   - "@prisma/engines"
