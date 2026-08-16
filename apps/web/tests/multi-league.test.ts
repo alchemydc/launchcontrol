@@ -34,10 +34,11 @@ import { buildSeasonLeaderboard } from "@/lib/season-leaderboard";
 //   - "pca-rmr"     (the seeded default league): RMsolo ingest -- class AS,
 //     two drivers: "Jamie Runner" and "Alex Ada". Alex Ada's displayed name
 //     deliberately collides with pca-test's axdb driver "Alex Ada" (real
-//     memberNum SYN-001) to pin the documented NON-merge: axdb identity
-//     hashes (memberNum, first, last); RMsolo identity hashes (null, first,
-//     last) -- same displayed name, different hash, so they must stay two
-//     distinct Driver rows, never a false merge.
+//     memberNum SYN-001) to pin the cross-source merge: axdb identity hashes
+//     (memberNum, first, last) and RMsolo identity hashes (null, first, last),
+//     so the identityHash always misses and the shared nameOnlyHash is what
+//     resolves the two to ONE Driver row rather than splitting one human's
+//     history by source.
 //   - "rmsolo-test" (created via createLeague): a SECOND RMsolo-sourced
 //     league -- class AS again (with a ruleset paxTable override, proving
 //     CarClass same-code isolation) plus the SAME "Jamie Runner" (null
@@ -237,21 +238,20 @@ describe("league directory (listLeagueDirectory)", () => {
 });
 
 describe("cross-league driver identity", () => {
-  it("does NOT merge same-named drivers across an axdb source and an RMsolo source (documented non-merge)", async () => {
+  it("merges an RMsolo driver into the same-named member's existing axdb Driver row", async () => {
     // axdb identityHash = hash(memberNum, first, last); RMsolo's = hash(null, first, last).
-    // Same displayed name ("Alex Ada"), different hash -- must stay two rows.
-    const axdbAlex = await prisma.driver.findFirstOrThrow({
-      where: { firstName: "Alex", lastInitial: "A.", memberNum: "SYN-001" },
-    });
-    const rmsoloAlex = await prisma.driver.findFirstOrThrow({
-      where: { firstName: "Alex", lastInitial: "A.", memberNum: null },
-    });
+    // Same displayed name ("Alex Ada"), different hash, so the RMsolo ingest resolves
+    // this human by the shared nameOnlyHash instead. Exactly one member carries the
+    // name here, so there is nothing to guess; the "two members share a name" guard is
+    // covered in rmsolo-driver-identity.test.ts.
+    const alexAdas = await prisma.driver.findMany({ where: { firstName: "Alex", lastInitial: "A." } });
+    expect(alexAdas).toHaveLength(1);
+    expect(alexAdas[0]!.memberNum).toBe("SYN-001"); // the better-identified row, left as it was
 
-    expect(axdbAlex.id).not.toBe(rmsoloAlex.id);
-    expect(axdbAlex.identityHash).not.toBe(rmsoloAlex.identityHash);
-
-    const allAlexAdas = await prisma.driver.findMany({ where: { firstName: "Alex", lastInitial: "A." } });
-    expect(allAlexAdas).toHaveLength(2);
+    // The payoff: one profile spanning both sources, not one profile per source.
+    const history = await buildDriverHistory(alexAdas[0]!.id, { leagueIds: "all" }, prisma);
+    const leagueIds = Array.from(new Set(history.map((r) => r.leagueId)));
+    expect(leagueIds.sort((a, b) => a - b)).toEqual([pcaTestLeagueId, pcaRmrLeagueId].sort((a, b) => a - b));
   });
 
   it("DOES merge the same RMsolo-sourced driver across two RMsolo leagues (null-memberNum name-hash collision, by design)", async () => {
