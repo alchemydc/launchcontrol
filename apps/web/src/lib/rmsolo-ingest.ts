@@ -335,15 +335,20 @@ export async function ingestRmsoloEvent(
       }
 
       // identityHash miss: adopt the one populated Driver sharing this identity's
-      // full-name key, else create a fresh blank-member row. Only DB rows are
-      // candidates, and no in-file ambiguity guard is needed (unlike ingestAxdb,
-      // whose file can carry both halves): a blank-member identityHash is a pure
-      // function of the same normalized (firstName, lastName) nameOnlyHash is built
-      // from, so two distinct identities in this file can never collide on
-      // nameOnlyHash, and any pre-existing blank row sharing the name would already
-      // have hit on identityHash above. That also makes the synthetic
-      // "Unknown #<car>" identities safe: no member row can carry one, so they
-      // always fall through to a create.
+      // full-name key, else create a fresh blank-member row.
+      //
+      // Only DB rows are candidates here. Unlike ingestAxdb, this path needs no
+      // in-file ambiguity guard, because it has no in-file ambiguity to guard
+      // against: uniqueDriverIdentities is keyed by identityHash, and with a null
+      // memberNum that hash is a pure function of the same normalized (firstName,
+      // lastName) nameOnlyHash is built from. Two same-named entrants therefore
+      // collapse into ONE map entry above, so no two entries reaching this loop can
+      // share a nameOnlyHash. (ingestAxdb's single .axdb genuinely can hold two
+      // rows sharing a name, one blank and one populated, which is what its in-file
+      // guard is for.) A pre-existing blank DB row sharing the name is likewise not
+      // a concern: it carries this exact identityHash, so it hits above and never
+      // reaches the fallback. Same for the synthetic "Unknown #<car>" identities,
+      // which no member row can carry, so they always fall through to a create.
       const createData: DriverIdentity[] = [];
       for (const info of identityMisses) {
         const memberTwins = existingByNameOnlyHash.filter(
