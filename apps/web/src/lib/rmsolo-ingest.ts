@@ -256,11 +256,22 @@ export async function ingestRmsoloEvent(
     // stored; only the redacted lastInitial persists. Anonymous entries are
     // the one exception to the "single letter + period" initial format:
     // they store their car-number label ("#33") so they render as
-    // "Unknown #33". All RMsolo drivers have a null memberNum, so
-    // identityHash is effectively name-keyed already — no blank-member
-    // merge/adopt machinery needed (unlike ingestAxdb's .axdb path). Drivers
-    // are NOT league-scoped (a human can drive in multiple leagues; see
-    // driver-history's cross-league aggregation, Task 6) — same as ingestAxdb.
+    // "Unknown #33". Drivers are NOT league-scoped (a human can drive in
+    // multiple leagues; see driver-history's cross-league aggregation,
+    // Task 6) — same as ingestAxdb.
+    //
+    // Every RMsolo identity is blank-member, because the PDF never prints a
+    // member number. That is not the same as being name-keyed in the database:
+    // since drivers are shared across leagues, the .axdb/MSR path attaches a
+    // memberNum to the same human's row and recomputes identityHash to the
+    // member-inclusive value. From then on a blank-member identityHash can never
+    // match that person again, and this ingest mints a second Driver row that
+    // splits their history. So the blank-member half of ingestAxdb's nameOnlyHash
+    // self-healing applies here too (see its driver-resolution block): on an
+    // identityHash miss, merge into the single populated Driver sharing the
+    // full-name key. The "exactly one candidate" guard is load-bearing, since two
+    // different people genuinely can share a name; 0 or 2+ candidates leaves the
+    // status quo, a new separate blank-member row.
     type DriverIdentity = {
       identityHash: string;
       firstName: string;
@@ -286,18 +297,24 @@ export async function ingestRmsoloEvent(
     const driverIdByIdentity = new Map<string, number>();
     if (uniqueDriverIdentities.size > 0) {
       const identityHashes = Array.from(uniqueDriverIdentities.keys());
+      const nameOnlyHashes = Array.from(
+        new Set(Array.from(uniqueDriverIdentities.values(), (info) => info.nameOnlyHash)),
+      );
       // Sequential on purpose: parallel queries on an interactive-transaction client
       // share one connection and can abort the transaction (Prisma guidance).
       const existingByIdentityHash = await tx.driver.findMany({
         where: { identityHash: { in: identityHashes } },
       });
+      const existingByNameOnlyHash = await tx.driver.findMany({
+        where: { nameOnlyHash: { in: nameOnlyHashes } },
+      });
       const existingByHash = new Map(existingByIdentityHash.map((d) => [d.identityHash, d]));
 
-      const createData: DriverIdentity[] = [];
+      const identityMisses: DriverIdentity[] = [];
       for (const [hash, info] of uniqueDriverIdentities) {
         const cur = existingByHash.get(hash);
         if (!cur) {
-          createData.push(info);
+          identityMisses.push(info);
           continue;
         }
         if (
@@ -315,6 +332,37 @@ export async function ingestRmsoloEvent(
           });
         }
         driverIdByIdentity.set(hash, cur.id);
+      }
+
+      // identityHash miss: adopt the one populated Driver sharing this identity's
+      // full-name key, else create a fresh blank-member row.
+      //
+      // Only DB rows are candidates here. Unlike ingestAxdb, this path needs no
+      // in-file ambiguity guard, because it has no in-file ambiguity to guard
+      // against: uniqueDriverIdentities is keyed by identityHash, and with a null
+      // memberNum that hash is a pure function of the same normalized (firstName,
+      // lastName) nameOnlyHash is built from. Two same-named entrants therefore
+      // collapse into ONE map entry above, so no two entries reaching this loop can
+      // share a nameOnlyHash. (ingestAxdb's single .axdb genuinely can hold two
+      // rows sharing a name, one blank and one populated, which is what its in-file
+      // guard is for.) A pre-existing blank DB row sharing the name is likewise not
+      // a concern: it carries this exact identityHash, so it hits above and never
+      // reaches the fallback. Same for the synthetic "Unknown #<car>" identities,
+      // which no member row can carry, so they always fall through to a create.
+      const createData: DriverIdentity[] = [];
+      for (const info of identityMisses) {
+        const memberTwins = existingByNameOnlyHash.filter(
+          (d) => d.memberNum != null && d.nameOnlyHash === info.nameOnlyHash,
+        );
+        const twin = memberTwins.length === 1 ? memberTwins[0] : undefined;
+        if (twin) {
+          // Nothing on the member row is rewritten. It is the better-identified of
+          // the two, its nameOnlyHash already equals this one by definition, and its
+          // name fields came from a source that knew the member.
+          driverIdByIdentity.set(info.identityHash, twin.id);
+        } else {
+          createData.push(info);
+        }
       }
       if (createData.length > 0) {
         await tx.driver.createMany({
