@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { ClassBadge, type ClassingHints } from "@/components/class-badge";
+import { classingKey } from "@/lib/classing-registry";
 import {
   Table,
   TableBody,
@@ -36,8 +38,13 @@ export function EventHistory({
   history,
   basePath = "",
   defaultLeagueSlug,
+  classing,
 }: {
   history: DriverHistoryRow[];
+  /** classingKey(leagueSlug, seasonYear) -> hints. Rows here can span leagues
+   *  AND seasons, so one map for the whole table would be wrong for most of
+   *  them; a missing key just renders that row's badge plain. */
+  classing?: Record<string, ClassingHints>;
   /** "/l/[slug]" on the locked `/l/[league]/drivers/[id]` page — safe to apply
    *  to every row there, since `buildDriverHistory`'s scoped query only returns
    *  in-league events and combined groups key on (leagueId, dateKey), so no row
@@ -109,7 +116,10 @@ export function EventHistory({
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-0.5 shrink-0 mt-0.5">
-                  <Badge variant="outline">{row.classCode}</Badge>
+                  <ClassBadge
+                    classCode={row.classCode}
+                    classing={classing?.[classingKey(row.leagueSlug, row.seasonYear)]}
+                  />
                   {row.paxClassCode !== row.classCode && (
                     <span className="text-[10px] text-muted-foreground">
                       PAX {row.paxClassCode}
@@ -235,14 +245,11 @@ export function EventHistory({
                   </TableCell>
                 )}
                 <TableCell className="px-3">
-                  <div className="flex items-center gap-1.5">
-                    <Badge variant="outline">{row.classCode}</Badge>
-                    {row.paxClassCode !== row.classCode && (
-                      <span className="text-muted-foreground text-xs">
-                        PAX {row.paxClassCode}
-                      </span>
-                    )}
-                  </div>
+                  <ClassBadge
+                    classCode={row.classCode}
+                    paxClassCode={row.paxClassCode}
+                    classing={classing?.[classingKey(row.leagueSlug, row.seasonYear)]}
+                  />
                 </TableCell>
                 <TableCell className="px-3 text-right tabular-nums">
                   {formatMs(row.bestPaxMs)}

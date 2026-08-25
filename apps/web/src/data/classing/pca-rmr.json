@@ -1,0 +1,1975 @@
+{
+  "organization": "RMR PCA",
+  "eventType": "Autocross",
+  "generatedAt": "2026-08-25",
+  "vehicles": [
+    {
+      "type": "356",
+      "model": "356",
+      "version": null,
+      "years": {
+        "from": 1950,
+        "to": 1965
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "914",
+      "model": "914",
+      "version": null,
+      "years": {
+        "from": 1970,
+        "to": 1976
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "924",
+      "model": "924",
+      "version": null,
+      "years": {
+        "from": 1977,
+        "to": 1988
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "928",
+      "model": "928",
+      "version": null,
+      "years": {
+        "from": 1978,
+        "to": 1995
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "944",
+      "model": "944",
+      "version": null,
+      "years": {
+        "from": 1983,
+        "to": 1991
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "901/911",
+      "model": "911",
+      "version": null,
+      "years": {
+        "from": 1965,
+        "to": 1968
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "912",
+      "model": "912",
+      "version": null,
+      "years": {
+        "from": 1965,
+        "to": 1969
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "912E",
+      "model": "912E",
+      "version": null,
+      "years": {
+        "from": 1976,
+        "to": 1976
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "B-Series",
+      "model": "911",
+      "version": null,
+      "years": {
+        "from": 1969,
+        "to": 1973
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "G-Series",
+      "model": "911",
+      "version": null,
+      "years": {
+        "from": 1974,
+        "to": 1988
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": "3.3L",
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "964",
+      "model": "911",
+      "version": null,
+      "years": {
+        "from": 1989,
+        "to": 1994
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "993",
+      "model": "911",
+      "version": null,
+      "years": {
+        "from": 1995,
+        "to": 1998
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "996",
+      "model": "911",
+      "version": ".1",
+      "years": {
+        "from": 1999,
+        "to": 2001
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "996",
+      "model": "911",
+      "version": ".2",
+      "years": {
+        "from": 2002,
+        "to": 2004
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "996",
+      "model": "GT2",
+      "version": null,
+      "years": {
+        "from": 2002,
+        "to": 2005
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "996",
+      "model": "GT3",
+      "version": ".2",
+      "years": {
+        "from": 2004,
+        "to": 2005
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "997",
+      "model": "911",
+      "version": ".1",
+      "years": {
+        "from": 2005,
+        "to": 2008
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "997",
+      "model": "911",
+      "version": ".2",
+      "years": {
+        "from": 2009,
+        "to": 2012
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "997",
+      "model": "GT2",
+      "version": ".1",
+      "years": {
+        "from": 2008,
+        "to": 2009
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "997",
+      "model": "GT2",
+      "version": ".2",
+      "years": {
+        "from": 2011,
+        "to": 2011
+      },
+      "trims": [
+        {
+          "trim": "RS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "997",
+      "model": "GT3",
+      "version": ".1",
+      "years": {
+        "from": 2007,
+        "to": 2008
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "997",
+      "model": "GT3",
+      "version": ".2",
+      "years": {
+        "from": 2010,
+        "to": 2011
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "991",
+      "model": "911",
+      "version": ".1",
+      "years": {
+        "from": 2012,
+        "to": 2016
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "X51",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "991",
+      "model": "911",
+      "version": ".2",
+      "years": {
+        "from": 2017,
+        "to": 2019
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "X51",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "991",
+      "model": "GT2",
+      "version": ".2",
+      "years": {
+        "from": 2018,
+        "to": 2019
+      },
+      "trims": [
+        {
+          "trim": "RS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "991",
+      "model": "GT3",
+      "version": ".1",
+      "years": {
+        "from": 2014,
+        "to": 2016
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "991",
+      "model": "GT3",
+      "version": ".2",
+      "years": {
+        "from": 2018,
+        "to": 2019
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "992",
+      "model": "911",
+      "version": ".1",
+      "years": {
+        "from": 2020,
+        "to": 2024
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "992",
+      "model": "911",
+      "version": ".2",
+      "years": {
+        "from": 2025,
+        "to": null
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "Turbo S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "992",
+      "model": "GT3",
+      "version": ".1",
+      "years": {
+        "from": 2022,
+        "to": 2025
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "992",
+      "model": "GT3",
+      "version": ".2",
+      "years": {
+        "from": 2026,
+        "to": null
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "986",
+      "model": "Boxster",
+      "version": ".1",
+      "years": {
+        "from": 1997,
+        "to": 1999
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "986",
+      "model": "Boxster",
+      "version": ".2",
+      "years": {
+        "from": 2000,
+        "to": 2004
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "987",
+      "model": "Boxster/Cayman",
+      "version": ".1",
+      "years": {
+        "from": 2005,
+        "to": 2008
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "987",
+      "model": "Boxster/Cayman",
+      "version": ".2",
+      "years": {
+        "from": 2009,
+        "to": 2012
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "R",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "981",
+      "model": "Boxster/Cayman",
+      "version": null,
+      "years": {
+        "from": 2013,
+        "to": 2016
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "981",
+      "model": "Spyder",
+      "version": null,
+      "years": {
+        "from": 2015,
+        "to": 2016
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "981",
+      "model": "GT4",
+      "version": null,
+      "years": {
+        "from": 2015,
+        "to": 2016
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "982",
+      "model": "718 Boxster/Cayman",
+      "version": null,
+      "years": {
+        "from": 2017,
+        "to": 2025
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS 4.0",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "982",
+      "model": "Spyder",
+      "version": null,
+      "years": {
+        "from": 2017,
+        "to": 2025
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "982",
+      "model": "GT4",
+      "version": null,
+      "years": {
+        "from": 2019,
+        "to": 2025
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Carrera GT",
+      "model": "Carrera GT",
+      "version": null,
+      "years": {
+        "from": 2004,
+        "to": 2006
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "918 Spyder",
+      "model": "918 Spyder",
+      "version": null,
+      "years": {
+        "from": 2014,
+        "to": 2015
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Cayenne",
+      "model": "Cayenne",
+      "version": null,
+      "years": {
+        "from": 2003,
+        "to": null
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "CS",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Macan",
+      "model": "Macan",
+      "version": null,
+      "years": {
+        "from": 2003,
+        "to": null
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "CS",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Panamera",
+      "model": "Panamera",
+      "version": null,
+      "years": {
+        "from": 2010,
+        "to": null
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "CS",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Taycan",
+      "model": "Taycan",
+      "version": null,
+      "years": {
+        "from": 2020,
+        "to": null
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            },
+            {
+              "classCode": "CS",
+              "seasons": [
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,7 @@
  */
 
 import { getLeagueConfig } from "@/lib/league-config";
+import { hasClassingModel } from "@/lib/classing-registry";
 import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { prisma } from "@/lib/prisma";
 import { LeagueSubnav } from "./league-subnav";
@@ -23,6 +24,7 @@ export async function DefaultLeagueSubnav() {
       name={league.name}
       seasons={seasons}
       activeSeasonSlug={active?.slug ?? null}
+      hasClassing={hasClassingModel(league.slug)}
     />
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
+import { hasClassingModel } from "@/lib/classing-registry";
 import { LeagueSubnav } from "@/components/league-subnav";
 import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { prisma } from "@/lib/prisma";
@@ -55,6 +56,7 @@ export default async function LeagueLayout({
         name={league.name}
         seasons={seasons}
         activeSeasonSlug={active?.slug ?? null}
+        hasClassing={hasClassingModel(league.slug)}
       />
       {children}
     </>

@@ -10,6 +10,7 @@
     "lint": "eslint",
     "ingest": "tsx --env-file=.env scripts/ingest.ts",
     "ingest:rmsolo": "tsx --env-file=.env scripts/ingest-rmsolo.ts",
+    "classing:import": "tsx scripts/classing-import.ts",
     "season:create": "tsx --env-file=.env scripts/create-season.ts",
     "league:create": "tsx --env-file=.env scripts/create-league.ts",
     "db:wipe": "tsx --env-file=.env scripts/wipe-db.ts",
@@ -58,6 +59,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
     "typescript": "^6",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "yaml": "^2.9.0"
   }
 }

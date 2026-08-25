@@ -23,6 +23,7 @@ export default async function EventClassPage({
       <DefaultLeagueSubnav />
       <EventClassPageView
         leagueId={league.id}
+        leagueSlug={league.slug}
         slug={slug}
         rawClass={rawClass}
       />
