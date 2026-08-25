@@ -70,12 +70,18 @@ export function LeagueSubnav({
     new RegExp(`^${basePath}/leaderboard/s/([^/]+)`),
   );
   const querySeasonParam = searchParams?.get("season") ?? null;
+  // A slug from the URL is only usable if this league actually has it. The
+  // pages fall back to the active season for an unknown `?season=`, so without
+  // this check the switcher would display a bogus slug over active-season
+  // content — and keep propagating it into every tab link it builds.
+  const known = (slug: string | null | undefined) =>
+    slug != null && seasons.some((s) => s.slug === slug) ? slug : null;
   // Classing addresses its season the same way the Events tab does (`?season=`,
   // no path segment), so both read the query param rather than the path.
+  const urlSeasonSlug =
+    onEvents || onClassing ? querySeasonParam : ((seasonMatch && seasonMatch[1]) ?? null);
   const currentSeasonSlug =
-    onEvents || onClassing
-      ? (querySeasonParam ?? activeSeasonSlug ?? seasons[0]?.slug)
-      : ((seasonMatch && seasonMatch[1]) ?? activeSeasonSlug ?? seasons[0]?.slug);
+    known(urlSeasonSlug) ?? activeSeasonSlug ?? seasons[0]?.slug;
   const leaderboardHref = currentSeasonSlug
     ? `${basePath}/leaderboard/s/${currentSeasonSlug}`
     : `${basePath}/leaderboard`;

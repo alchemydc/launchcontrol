@@ -34,10 +34,19 @@ function trimLabel(trim: string): string {
   return trim === NO_TRIM_SPLIT ? "Any trim" : trim;
 }
 
+/**
+ * The visible caption is a plain <span>, not a <label>: Base UI renders each
+ * select as a button, which `htmlFor` does not address. Each trigger below
+ * carries the matching `aria-label`, so the caption is decorative to a screen
+ * reader and the control announces its own name.
+ */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+      <span
+        aria-hidden
+        className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+      >
         {label}
       </span>
       {children}
@@ -101,7 +110,7 @@ export function ClassingLookup({
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="Model">
           <Select value={modelName ?? ""} onValueChange={(v) => v && onModel(String(v))}>
-            <SelectTrigger className="w-full bg-background">
+            <SelectTrigger aria-label="Model" className="w-full bg-background">
               <SelectValue>{modelName ?? "Select…"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -120,7 +129,7 @@ export function ClassingLookup({
             onValueChange={(v) => v && onYear(String(v))}
             disabled={modelName === null}
           >
-            <SelectTrigger className="w-full bg-background">
+            <SelectTrigger aria-label="Year" className="w-full bg-background">
               <SelectValue>{year === null ? "Select…" : String(year)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -139,7 +148,7 @@ export function ClassingLookup({
             onValueChange={(v) => v && setTrim(String(v))}
             disabled={year === null}
           >
-            <SelectTrigger className="w-full bg-background">
+            <SelectTrigger aria-label="Trim" className="w-full bg-background">
               <SelectValue>{trim === null ? "Select…" : trimLabel(trim)}</SelectValue>
             </SelectTrigger>
             <SelectContent>

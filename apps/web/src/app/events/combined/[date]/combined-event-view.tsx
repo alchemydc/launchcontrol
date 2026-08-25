@@ -71,12 +71,13 @@ export async function CombinedEventPageView({
   const photosUrl = await findSmugmugEventFolder(results.label, dayStart, league);
   // Every session in the group shares one Season (the partition above), so one
   // classing lookup covers the whole combined table.
-  const classing = classingHints(
-    league.slug,
-    events[0]!.season.year,
-    events[0]!.season.name,
+  const classing = classingHints({
+    leagueSlug: league.slug,
+    year: events[0]!.season.year,
+    seasonLabel: events[0]!.season.name,
+    seasonSlug: events[0]!.season.slug,
     basePath,
-  );
+  });
 
   return (
     <CombinedResultsView

@@ -50,7 +50,13 @@ export async function EventClassPageView({
 
   // One lookup for the whole table: every row on this page belongs to the same
   // event, so it shares one league and one season.
-  const classing = classingHints(leagueSlug, event.season.year, event.season.name, basePath);
+  const classing = classingHints({
+    leagueSlug,
+    year: event.season.year,
+    seasonLabel: event.season.name,
+    seasonSlug: event.season.slug,
+    basePath,
+  });
 
   const policy = parseScoringPolicy(event.season.ruleset.policy);
   const rows = buildLeaderboard(event.entries, policy.conePenaltyMs);

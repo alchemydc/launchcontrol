@@ -50,6 +50,12 @@ export function ClassBadge({
   const vehicles = classing?.vehicles[classCode];
   const seasonLabel = classing?.seasonLabel;
   const basePath = classing?.basePath ?? "";
+  // Address the guide at the SAME season these lines describe. The guide
+  // defaults to the league's active season, so on a historical event the link
+  // would otherwise open rules that disagree with the card above it.
+  const guideHref = classing
+    ? `${basePath}/classing?season=${encodeURIComponent(classing.seasonSlug)}#${encodeURIComponent(classCode)}`
+    : "";
 
   const badge = (
     <Badge variant="outline" className={compact ? "text-[10px]" : undefined}>
@@ -106,7 +112,7 @@ export function ClassBadge({
             {hidden > 0 && <li className="italic">…and {hidden} more</li>}
           </ul>
           <Link
-            href={`${basePath}/classing#${encodeURIComponent(classCode)}`}
+            href={guideHref}
             className="mt-2.5 inline-block text-xs text-primary hover:underline"
           >
             Full classing guide →

@@ -11,6 +11,12 @@ import {
   vehicleLineText,
   type ClassingModel,
 } from "@/lib/classing";
+import {
+  classingHints,
+  classingHintsByKey,
+  getClassingModel,
+  hasClassingModel,
+} from "@/lib/classing-registry";
 
 // Synthetic model, shaped after the real one's hard cases but naming no real
 // upstream data beyond the class codes. Covers: a type == model vehicle, a
@@ -306,5 +312,45 @@ describe("lookup", () => {
       );
     expect(at(2025)).toEqual(["C5"]);
     expect(at(2026)).toEqual(["CS"]);
+  });
+});
+
+describe("classing registry", () => {
+  it("does not report a classing model for inherited Object keys", () => {
+    // League slugs are operator-supplied and never validated against this
+    // registry, so a plain `in`/`[]` lookup would report a model for a league
+    // named `toString` and then hand back a function to render.
+    for (const slug of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
+      expect(hasClassingModel(slug)).toBe(false);
+      expect(getClassingModel(slug)).toBeNull();
+    }
+  });
+
+  it("keys hints by season slug, not year, so same-year seasons stay distinct", () => {
+    const rows = [
+      { leagueSlug: "pca-rmr", seasonYear: 2026, seasonSlug: "2026" },
+      { leagueSlug: "pca-rmr", seasonYear: 2026, seasonSlug: "2026-winter" },
+    ];
+    const byKey = classingHintsByKey(rows, () => "");
+    expect(Object.keys(byKey).sort()).toEqual([
+      "pca-rmr|2026",
+      "pca-rmr|2026-winter",
+    ]);
+    // Same year => same vehicle lines (the rulebook is year-indexed), but each
+    // carries its own slug so the guide link lands on the right season.
+    expect(byKey["pca-rmr|2026"]!.vehicles).toEqual(byKey["pca-rmr|2026-winter"]!.vehicles);
+    expect(byKey["pca-rmr|2026-winter"]!.seasonSlug).toBe("2026-winter");
+  });
+
+  it("carries the requested season slug into the hints", () => {
+    const hints = classingHints({
+      leagueSlug: "pca-rmr",
+      year: 2026,
+      seasonLabel: "2026 Season",
+      seasonSlug: "2026",
+      basePath: "/l/pca-rmr",
+    });
+    expect(hints?.seasonSlug).toBe("2026");
+    expect(hints?.basePath).toBe("/l/pca-rmr");
   });
 });

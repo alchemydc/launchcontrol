@@ -241,8 +241,8 @@ type Bucket = {
 function trimSignature(trims: VehicleLineTrim[]): string {
   return [...trims]
     .sort(compareTrims)
-    .map((t) => `${t.name} ${t.displacementMax ?? ""}`)
-    .join("");
+    .map((t) => `${t.name}\u0000${t.displacementMax ?? ""}`)
+    .join("\u0001");
 }
 
 /**
@@ -273,7 +273,7 @@ export function classingForSeason(model: ClassingModel, year: number): ClassSect
           byClass.set(assignment.classCode, buckets);
         }
 
-        const key = `${vehicle.type} ${vehicle.model} ${vehicle.version ?? ""}`;
+        const key = `${vehicle.type}\u0000${vehicle.model}\u0000${vehicle.version ?? ""}`;
         const existing = buckets.get(key);
         if (!existing) {
           buckets.set(key, {
@@ -299,7 +299,7 @@ export function classingForSeason(model: ClassingModel, year: number): ClassSect
     // family key -> trim signature -> merged bucket
     const families = new Map<string, Map<string, Bucket>>();
     for (const bucket of buckets.values()) {
-      const familyKey = `${bucket.type} ${bucket.model}`;
+      const familyKey = `${bucket.type}\u0000${bucket.model}`;
       let bySignature = families.get(familyKey);
       if (!bySignature) {
         bySignature = new Map();
@@ -352,6 +352,12 @@ export type ClassingHints = {
   vehicles: Record<string, string[]>;
   /** The season those lines describe — "2026 Season", or a bare year. */
   seasonLabel: string;
+  /**
+   * Slug of that same season, so the "full guide" link can open the guide AT
+   * the season the lines came from. Without it a badge on a 2024 event opens
+   * the active season's guide, which may class the same car differently.
+   */
+  seasonSlug: string;
   /** "" for the legacy routes, "/l/[slug]" for league-scoped. */
   basePath: string;
 };

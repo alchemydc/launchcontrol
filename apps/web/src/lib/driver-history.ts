@@ -33,6 +33,10 @@ export type DriverHistoryRow = {
    *  this table's rows can span both, so the class hover cards key on it. Not
    *  derivable from `eventDate`: a season may straddle a calendar year. */
   seasonYear: number;
+  /** That Season's slug, so a row's class hover card can link the classing
+   *  guide at the season the row belongs to rather than the active one. Two
+   *  seasons in one league can share a year, so the year alone won't address it. */
+  seasonSlug: string;
 };
 
 /**
@@ -134,6 +138,7 @@ async function loadEventsForDates(
       season: {
         select: {
           leagueId: true,
+          slug: true,
           year: true,
           league: { select: { slug: true, name: true } },
           ruleset: { select: { policy: true } },
@@ -254,6 +259,7 @@ function buildSingleEventRow(event: LoadedEvent, driverId: number): DriverHistor
     leagueSlug: event.season.league.slug,
     leagueName: event.season.league.name,
     seasonYear: event.season.year,
+    seasonSlug: event.season.slug,
   };
 }
 
@@ -401,6 +407,7 @@ function buildCombinedHistoryRow(
     leagueSlug: sessions[0]!.season.league.slug,
     leagueName: sessions[0]!.season.league.name,
     seasonYear: sessions[0]!.season.year,
+    seasonSlug: sessions[0]!.season.slug,
   };
 }
 

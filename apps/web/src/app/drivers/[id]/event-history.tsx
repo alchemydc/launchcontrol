@@ -41,7 +41,7 @@ export function EventHistory({
   classing,
 }: {
   history: DriverHistoryRow[];
-  /** classingKey(leagueSlug, seasonYear) -> hints. Rows here can span leagues
+  /** classingKey(leagueSlug, seasonSlug) -> hints. Rows here can span leagues
    *  AND seasons, so one map for the whole table would be wrong for most of
    *  them; a missing key just renders that row's badge plain. */
   classing?: Record<string, ClassingHints>;
@@ -118,7 +118,7 @@ export function EventHistory({
                 <div className="flex flex-col items-end gap-0.5 shrink-0 mt-0.5">
                   <ClassBadge
                     classCode={row.classCode}
-                    classing={classing?.[classingKey(row.leagueSlug, row.seasonYear)]}
+                    classing={classing?.[classingKey(row.leagueSlug, row.seasonSlug)]}
                   />
                   {row.paxClassCode !== row.classCode && (
                     <span className="text-[10px] text-muted-foreground">
@@ -248,7 +248,7 @@ export function EventHistory({
                   <ClassBadge
                     classCode={row.classCode}
                     paxClassCode={row.paxClassCode}
-                    classing={classing?.[classingKey(row.leagueSlug, row.seasonYear)]}
+                    classing={classing?.[classingKey(row.leagueSlug, row.seasonSlug)]}
                   />
                 </TableCell>
                 <TableCell className="px-3 text-right tabular-nums">
