@@ -11,7 +11,12 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
 
 const eventDetailInclude = {
-  season: { select: { ruleset: { select: { policy: true } } } },
+  // `year` is the season the classing hover cards resolve against — classing
+  // rules are per (league, season), and a season can straddle a calendar year,
+  // so it can't be derived from `Event.date`.
+  season: {
+    select: { slug: true, year: true, name: true, ruleset: { select: { policy: true } } },
+  },
   entries: {
     include: {
       driver: true,
@@ -61,7 +66,9 @@ export async function countSiblingEventsByDate(
 }
 
 const combinedSessionInclude = {
-  season: { select: { ruleset: { select: { policy: true } } } },
+  season: {
+    select: { slug: true, year: true, name: true, ruleset: { select: { policy: true } } },
+  },
   entries: {
     include: {
       driver: true,

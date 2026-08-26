@@ -11,6 +11,7 @@ import { getLeagueConfig, getLeagueConfigForSlug } from "@/lib/league-config";
 import { ProgressionChart, type ProgressionPoint } from "./progression-chart";
 import { TimeDeltaChart } from "./time-delta-chart";
 import { BackButton } from "@/components/back-button";
+import { classingHintsByKey } from "@/lib/classing-registry";
 import { EventHistory } from "./event-history";
 import { DriverFilterBar } from "./driver-filter-bar";
 
@@ -377,6 +378,12 @@ export async function DriverPageView({
         history={history}
         basePath={basePath}
         defaultLeagueSlug={defaultLeague.slug}
+        classing={classingHintsByKey(history, (leagueSlug) =>
+          // Mirrors historyRowEventHref's link base: on the locked page every
+          // row is in-league and uses that prefix; on the legacy page rows can
+          // span leagues, and only the default league's are served unprefixed.
+          basePath || (leagueSlug === defaultLeague.slug ? "" : `/l/${leagueSlug}`),
+        )}
       />
     </main>
   );

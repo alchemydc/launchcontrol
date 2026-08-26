@@ -8,6 +8,7 @@ import {
   resolveEventView,
   summarizeEventClasses,
 } from "@/lib/leaderboard";
+import { classingHints } from "@/lib/classing-registry";
 import { findEventBySlug } from "@/lib/event-queries";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { EventClassNav } from "./event-class-nav";
@@ -32,17 +33,30 @@ function decodeClassParam(raw: string): string {
 
 export async function EventClassPageView({
   leagueId,
+  leagueSlug,
   slug,
   rawClass,
   basePath = "",
 }: {
   leagueId: number;
+  /** Selects this league's classing model for the class hover cards. */
+  leagueSlug: string;
   slug: string;
   rawClass: string;
   basePath?: string;
 }) {
   const event = await findEventBySlug(leagueId, slug, prisma);
   if (!event) notFound();
+
+  // One lookup for the whole table: every row on this page belongs to the same
+  // event, so it shares one league and one season.
+  const classing = classingHints({
+    leagueSlug,
+    year: event.season.year,
+    seasonLabel: event.season.name,
+    seasonSlug: event.season.slug,
+    basePath,
+  });
 
   const policy = parseScoringPolicy(event.season.ruleset.policy);
   const rows = buildLeaderboard(event.entries, policy.conePenaltyMs);
@@ -90,6 +104,7 @@ export async function EventClassPageView({
         rows={classRows}
         paxView={paxView}
         driverBasePath={basePath}
+        classing={classing}
       />
     </main>
   );

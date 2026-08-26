@@ -5,6 +5,11 @@ on:
     branches:
       - main
   pull_request:
+  # Manual re-run escape hatch. `gh run rerun` re-enters the same queue entry, so
+  # it is useless when a run is wedged server-side (queued forever, zero jobs,
+  # and un-cancellable). Dispatch mints a brand-new run instead, which is the
+  # only way to get CI to report again without pushing a no-op commit.
+  workflow_dispatch:
 
 permissions:
   contents: read

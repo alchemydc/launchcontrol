@@ -8,6 +8,7 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { buildCombinedResults } from "@/lib/combined-event";
+import { classingHints } from "@/lib/classing-registry";
 import { findEventsByDate } from "@/lib/event-queries";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { findSmugmugEventFolder, type SmugmugLeagueTarget } from "@/lib/smugmug";
@@ -29,7 +30,7 @@ export async function CombinedEventPageView({
   date,
   basePath = "",
 }: {
-  league: { id: number } & SmugmugLeagueTarget;
+  league: { id: number; slug: string } & SmugmugLeagueTarget;
   date: string;
   /** "" for the legacy route (byte-identical to pre-Task-5 hrefs), "/l/[slug]"
    *  for league-scoped. */
@@ -68,6 +69,15 @@ export async function CombinedEventPageView({
   const conePenaltyMs = parseScoringPolicy(events[0]!.season.ruleset.policy).conePenaltyMs;
   const results = buildCombinedResults(events, conePenaltyMs);
   const photosUrl = await findSmugmugEventFolder(results.label, dayStart, league);
+  // Every session in the group shares one Season (the partition above), so one
+  // classing lookup covers the whole combined table.
+  const classing = classingHints({
+    leagueSlug: league.slug,
+    year: events[0]!.season.year,
+    seasonLabel: events[0]!.season.name,
+    seasonSlug: events[0]!.season.slug,
+    basePath,
+  });
 
   return (
     <CombinedResultsView
@@ -75,6 +85,7 @@ export async function CombinedEventPageView({
       dateLabel={formatDateLabel(dayStart)}
       photosUrl={photosUrl}
       basePath={basePath}
+      classing={classing}
     />
   );
 }
