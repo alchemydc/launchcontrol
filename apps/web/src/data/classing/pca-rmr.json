@@ -1,8 +1,30 @@
 {
   "organization": "RMR PCA",
   "eventType": "Autocross",
-  "generatedAt": "2026-08-25",
+  "generatedAt": "2026-08-26",
   "vehicles": [
+    {
+      "type": "non-Porsche",
+      "model": "non-Porsche",
+      "version": null,
+      "years": null,
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "TO",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
     {
       "type": "356",
       "model": "356",
@@ -129,6 +151,31 @@
       ]
     },
     {
+      "type": "968",
+      "model": "968",
+      "version": null,
+      "years": {
+        "from": 1992,
+        "to": 1995
+      },
+      "trims": [
+        {
+          "trim": "all",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C1",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "901/911",
       "model": "911",
       "version": null,
@@ -138,7 +185,7 @@
       },
       "trims": [
         {
-          "trim": "base",
+          "trim": "all",
           "displacementMax": null,
           "classing": [
             {
@@ -1461,7 +1508,7 @@
     },
     {
       "type": "987",
-      "model": "Boxster/Cayman",
+      "model": "Boxster",
       "version": ".1",
       "years": {
         "from": 2005,
@@ -1500,7 +1547,114 @@
     },
     {
       "type": "987",
-      "model": "Boxster/Cayman",
+      "model": "Cayman",
+      "version": ".1",
+      "years": {
+        "from": 2005,
+        "to": 2008
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "987",
+      "model": "Boxster",
+      "version": ".2",
+      "years": {
+        "from": 2009,
+        "to": 2012
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "R",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "987",
+      "model": "Cayman",
       "version": ".2",
       "years": {
         "from": 2009,
@@ -1568,7 +1722,75 @@
     },
     {
       "type": "981",
-      "model": "Boxster/Cayman",
+      "model": "Boxster",
+      "version": null,
+      "years": {
+        "from": 2013,
+        "to": 2016
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C2",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C3",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "981",
+      "model": "Cayman",
       "version": null,
       "years": {
         "from": 2013,
@@ -1639,7 +1861,7 @@
       "model": "Spyder",
       "version": null,
       "years": {
-        "from": 2015,
+        "from": 2016,
         "to": 2016
       },
       "trims": [
@@ -1664,7 +1886,7 @@
       "model": "GT4",
       "version": null,
       "years": {
-        "from": 2015,
+        "from": 2016,
         "to": 2016
       },
       "trims": [
@@ -1685,8 +1907,8 @@
       ]
     },
     {
-      "type": "982",
-      "model": "718 Boxster/Cayman",
+      "type": "718 (982)",
+      "model": "Boxster",
       "version": null,
       "years": {
         "from": 2017,
@@ -1767,8 +1989,8 @@
       ]
     },
     {
-      "type": "982",
-      "model": "Spyder",
+      "type": "718 (982)",
+      "model": "Cayman",
       "version": null,
       "years": {
         "from": 2017,
@@ -1776,7 +1998,89 @@
       },
       "trims": [
         {
-          "trim": "all",
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C3",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "S",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        },
+        {
+          "trim": "GTS 4.0",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C4",
+              "seasons": [
+                2025,
+                2026
+              ]
+            },
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "718 (982)",
+      "model": "Spyder",
+      "version": null,
+      "years": {
+        "from": 2020,
+        "to": 2023
+      },
+      "trims": [
+        {
+          "trim": "base",
           "displacementMax": null,
           "classing": [
             {
@@ -1792,16 +2096,66 @@
       ]
     },
     {
-      "type": "982",
-      "model": "GT4",
+      "type": "718 (982)",
+      "model": "Spyder",
       "version": null,
       "years": {
-        "from": 2019,
+        "from": 2022,
         "to": 2025
       },
       "trims": [
         {
-          "trim": "all",
+          "trim": "RS",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "718 (982)",
+      "model": "GT4",
+      "version": null,
+      "years": {
+        "from": 2020,
+        "to": 2023
+      },
+      "trims": [
+        {
+          "trim": "base",
+          "displacementMax": null,
+          "classing": [
+            {
+              "classCode": "C5",
+              "seasons": [
+                2024,
+                2025,
+                2026
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "718 (982)",
+      "model": "GT4",
+      "version": null,
+      "years": {
+        "from": 2022,
+        "to": 2025
+      },
+      "trims": [
+        {
+          "trim": "RS",
           "displacementMax": null,
           "classing": [
             {
@@ -1896,7 +2250,7 @@
       "model": "Macan",
       "version": null,
       "years": {
-        "from": 2003,
+        "from": 2015,
         "to": null
       },
       "trims": [

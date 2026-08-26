@@ -354,3 +354,82 @@ describe("classing registry", () => {
     expect(hints?.basePath).toBe("/l/pca-rmr");
   });
 });
+
+describe("vehicles with no year range", () => {
+  // Upstream's `non-Porsche` -> TO row: a class defined by what a car ISN'T has
+  // no model years to bound, so the whole `years:` block is absent.
+  const ANY: ClassingModel = parseClassingModel({
+    organization: "R",
+    eventType: "Autocross",
+    generatedAt: "2026-01-01",
+    vehicles: [
+      {
+        type: "non-Porsche",
+        model: "non-Porsche",
+        version: null,
+        years: null,
+        trims: [
+          { trim: "all", displacementMax: null, classing: [{ classCode: "TO", seasons: [2026] }] },
+        ],
+      },
+    ],
+  });
+
+  it("parses an absent years block as null rather than rejecting it", () => {
+    expect(ANY.vehicles[0]!.years).toBeNull();
+  });
+
+  it("renders the line bare, with no year part", () => {
+    const line = classingForSeason(ANY, 2026)[0]!.vehicles[0]!;
+    expect(line.years).toBeNull();
+    expect(vehicleLineText(line)).toBe("non-Porsche");
+  });
+
+  it("covers every year in lookup", () => {
+    for (const year of [1965, 2026, 2200]) {
+      expect(
+        lookupClass(ANY, { modelName: "non-Porsche", year, trim: "all", season: 2026 }).map(
+          (m) => m.classCode,
+        ),
+      ).toEqual(["TO"]);
+    }
+  });
+
+  it("offers no years to enumerate, which is what makes the picker say 'Any year'", () => {
+    expect(lookupModels(ANY, 2026)).toEqual(["non-Porsche"]);
+    expect(lookupYears(ANY, 2026, "non-Porsche", 2026)).toEqual([]);
+  });
+
+  it("does not narrow a merged line when collapsed against a bounded sibling", () => {
+    // An unbounded source swallows the range, the same way an open `to` does —
+    // a merged line must never read as narrower than its sources.
+    const mixed = parseClassingModel({
+      organization: "R",
+      eventType: "Autocross",
+      generatedAt: "2026-01-01",
+      vehicles: [
+        {
+          type: "X",
+          model: "X",
+          version: ".1",
+          years: { from: 2000, to: 2004 },
+          trims: [
+            { trim: "all", displacementMax: null, classing: [{ classCode: "C1", seasons: [2026] }] },
+          ],
+        },
+        {
+          type: "X",
+          model: "X",
+          version: ".2",
+          years: null,
+          trims: [
+            { trim: "all", displacementMax: null, classing: [{ classCode: "C1", seasons: [2026] }] },
+          ],
+        },
+      ],
+    });
+    const lines = classingForSeason(mixed, 2026)[0]!.vehicles;
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.years).toBeNull();
+  });
+});

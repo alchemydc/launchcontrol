@@ -48,7 +48,13 @@ export type ClassingVehicle = {
   model: string;
   /** Generation half-split, already display-formatted: ".1" / ".2". */
   version: string | null;
-  years: ClassingYears;
+  /**
+   * `null` when upstream lists no year range at all, which means "every year".
+   * Its `non-Porsche` -> TO entry is the case: a class defined by what a car
+   * ISN'T has no model years to bound. Distinct from `{ to: null }`, which is a
+   * range that has a start and is merely open at the top.
+   */
+  years: ClassingYears | null;
   trims: ClassingTrim[];
 };
 
@@ -87,7 +93,8 @@ function asYear(raw: unknown, path: string): number {
   return raw;
 }
 
-function parseYears(raw: unknown, path: string): ClassingYears {
+function parseYears(raw: unknown, path: string): ClassingYears | null {
+  if (raw == null) return null;
   const obj = asObject(raw, path);
   const from = asYear(obj.from, `${path}.from`);
   if (obj.to === null || obj.to === undefined) return { from, to: null };
@@ -168,8 +175,8 @@ export type VehicleLine = {
   title: string;
   /** Empty when the vehicle has no trim split (upstream `trim: all`). */
   trims: VehicleLineTrim[];
-  /** "1983-1991" | "2020+" | "all years". */
-  years: string;
+  /** "1983-1991" | "2020+", or `null` for a vehicle with no year range at all. */
+  years: string | null;
 };
 
 export type ClassSection = { classCode: string; vehicles: VehicleLine[] };
@@ -192,7 +199,8 @@ function compareTrims(a: VehicleLineTrim, b: VehicleLineTrim): number {
   return ai - bi || an.localeCompare(bn);
 }
 
-function formatYears(years: ClassingYears): string {
+function formatYears(years: ClassingYears | null): string | null {
+  if (years == null) return null;
   if (years.to == null) return `${years.from}+`;
   return `${years.from}-${years.to}`;
 }
@@ -203,7 +211,10 @@ function formatYears(years: ClassingYears): string {
  * otherwise "996.1 (1999-2001) + 996.2 (2002-2004)" would read as a closed
  * range that happens to be right only by luck.
  */
-function mergeYears(a: ClassingYears, b: ClassingYears): ClassingYears {
+function mergeYears(a: ClassingYears | null, b: ClassingYears | null): ClassingYears | null {
+  // An unbounded source swallows the range for the same reason an open `to`
+  // does: the merged line must not read as narrower than its sources.
+  if (a == null || b == null) return null;
   return {
     from: Math.min(a.from, b.from),
     to: a.to == null || b.to == null ? null : Math.max(a.to, b.to),
@@ -219,7 +230,7 @@ function vehicleTitle(vehicle: { type: string; model: string; version: string | 
 
 /** The rendered form of one vehicle + the trims of it that landed in this class. */
 export function formatVehicleLabel(
-  vehicle: { type: string; model: string; version: string | null; years: ClassingYears },
+  vehicle: { type: string; model: string; version: string | null; years: ClassingYears | null },
   trims: VehicleLineTrim[],
 ): VehicleLine {
   return {
@@ -233,7 +244,7 @@ type Bucket = {
   type: string;
   model: string;
   version: string | null;
-  years: ClassingYears;
+  years: ClassingYears | null;
   trims: VehicleLineTrim[];
 };
 
@@ -339,7 +350,10 @@ export function vehicleLineText(line: VehicleLine): string {
         .join(", "),
     );
   }
-  parts.push(line.years);
+  // Omitted rather than spelled "all years": the published table renders a
+  // year-less vehicle bare, and "non-Porsche · all years" reads as a claim
+  // about model years rather than the absence of one.
+  if (line.years !== null) parts.push(line.years);
   return parts.join(" · ");
 }
 
@@ -390,7 +404,8 @@ export type LookupMatch = {
   displacementMax: string | null;
 };
 
-function coversYear(years: ClassingYears, year: number): boolean {
+function coversYear(years: ClassingYears | null, year: number): boolean {
+  if (years == null) return true; // no range listed == every year
   return year >= years.from && (years.to == null || year <= years.to);
 }
 
@@ -420,6 +435,10 @@ export function lookupYears(
   for (const vehicle of model.vehicles) {
     if (vehicle.model !== modelName) continue;
     if (!vehicle.trims.some((t) => t.classing.some((c) => c.seasons.includes(season)))) continue;
+    // A vehicle with no range contributes no years to enumerate. When that
+    // leaves a model with none at all, the picker drops the year step rather
+    // than inventing a span (see `lookupHasUnboundedYears`).
+    if (vehicle.years == null) continue;
     const to = Math.max(vehicle.years.to ?? maxYear, vehicle.years.from);
     for (let y = vehicle.years.from; y <= to; y += 1) years.add(y);
   }

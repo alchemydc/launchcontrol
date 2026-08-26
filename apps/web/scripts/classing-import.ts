@@ -62,16 +62,26 @@ function versionText(value: unknown): string | null {
   return raw.startsWith("0") ? raw.slice(1) : raw;
 }
 
-function normalizeYears(raw: unknown, where: string): { from: number; to: number | null } | null {
-  if (raw == null || typeof raw !== "object") {
-    warnings.push(`${where}: no \`years\` block — skipped`);
-    return null;
+/**
+ * `undefined` means "drop this vehicle"; `null` means "no year range", which is
+ * a legitimate upstream shape (the `non-Porsche` -> TO entry: a class defined
+ * by what a car isn't has no model years to bound) and renders bare, the way
+ * the published table renders it.
+ */
+function normalizeYears(
+  raw: unknown,
+  where: string,
+): { from: number; to: number | null } | null | undefined {
+  if (raw == null) return null;
+  if (typeof raw !== "object") {
+    warnings.push(`${where}: \`years\` is not a mapping (${JSON.stringify(raw)}) — skipped`);
+    return undefined;
   }
   const obj = raw as Record<string, unknown>;
   const from = Number(obj.from);
   if (!Number.isInteger(from)) {
     warnings.push(`${where}: \`years.from\` is not a year (${JSON.stringify(obj.from)}) — skipped`);
-    return null;
+    return undefined;
   }
   if (obj.to == null) return { from, to: null };
   const to = Number(obj.to);
@@ -103,16 +113,16 @@ function normalize(raw: unknown, generatedAt: string): ClassingModel {
     const type = text(v.type);
     const where = `vehicle \`${type ?? "?"}\``;
 
-    // Upstream carries at least one placeholder entry that is nothing but a
-    // `type:` (the 968). Drop it loudly rather than emitting a vehicle with no
-    // model, no years, and no classes.
+    // Upstream has carried placeholder entries that are nothing but a `type:`
+    // (the 968 was one until it was filled in). Drop them loudly rather than
+    // emitting a vehicle with no model and no classes.
     const model = text(v.model);
     if (type === null || model === null) {
       warnings.push(`${where}: missing \`type\` or \`model\` — skipped`);
       continue;
     }
     const years = normalizeYears(v.years, where);
-    if (years === null) continue;
+    if (years === undefined) continue;
     if (!Array.isArray(v.trims) || v.trims.length === 0) {
       warnings.push(`${where}: no \`trims\` — skipped`);
       continue;

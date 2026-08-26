@@ -74,17 +74,27 @@ export function ClassingLookup({
     () => (modelName ? lookupYears(model, season, modelName, season) : []),
     [model, season, modelName],
   );
+  // A model whose entries carry no year range at all — upstream's `non-Porsche`
+  // -> TO row — has no years to offer. Asking "which year?" about it is
+  // meaningless, so the step is answered as "Any year" and resolution uses the
+  // season year, which a year-less entry covers by definition.
+  const anyYear = modelName !== null && years.length === 0;
+  const effectiveYear = anyYear ? season : year;
+
   const trims = useMemo(
-    () => (modelName && year ? lookupTrims(model, season, modelName, year) : []),
-    [model, season, modelName, year],
+    () =>
+      modelName && effectiveYear !== null
+        ? lookupTrims(model, season, modelName, effectiveYear)
+        : [],
+    [model, season, modelName, effectiveYear],
   );
 
   const matches = useMemo(
     () =>
-      modelName && year && trim
-        ? lookupClass(model, { modelName, year, trim, season })
+      modelName && effectiveYear !== null && trim
+        ? lookupClass(model, { modelName, year: effectiveYear, trim, season })
         : [],
-    [model, season, modelName, year, trim],
+    [model, season, modelName, effectiveYear, trim],
   );
 
   // Each step invalidates the ones after it — keeping a stale year from the
@@ -99,7 +109,7 @@ export function ClassingLookup({
     setTrim(null);
   };
 
-  const complete = modelName !== null && year !== null && trim !== null;
+  const complete = modelName !== null && effectiveYear !== null && trim !== null;
 
   return (
     <section className="rounded-2xl border border-border/70 bg-card p-4 sm:p-5 shadow-sm">
@@ -127,10 +137,12 @@ export function ClassingLookup({
           <Select
             value={year === null ? "" : String(year)}
             onValueChange={(v) => v && onYear(String(v))}
-            disabled={modelName === null}
+            disabled={modelName === null || anyYear}
           >
             <SelectTrigger aria-label="Year" className="w-full bg-background">
-              <SelectValue>{year === null ? "Select…" : String(year)}</SelectValue>
+              <SelectValue>
+                {anyYear ? "Any year" : year === null ? "Select…" : String(year)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {years.map((y) => (
@@ -146,7 +158,7 @@ export function ClassingLookup({
           <Select
             value={trim ?? ""}
             onValueChange={(v) => v && setTrim(String(v))}
-            disabled={year === null}
+            disabled={effectiveYear === null}
           >
             <SelectTrigger aria-label="Trim" className="w-full bg-background">
               <SelectValue>{trim === null ? "Select…" : trimLabel(trim)}</SelectValue>
