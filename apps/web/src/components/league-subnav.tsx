@@ -35,11 +35,14 @@ export function LeagueSubnav({
   name,
   seasons,
   activeSeasonSlug,
+  hasClassing = false,
 }: {
   slug: string;
   name: string;
   seasons: Array<{ slug: string; name: string }>;
   activeSeasonSlug: string | null;
+  /** Classing rules are league-specific; leagues without a model get no tab. */
+  hasClassing?: boolean;
 }) {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
@@ -48,11 +51,17 @@ export function LeagueSubnav({
   // this, `onLeaderboard` falls out false there (its own path matches
   // neither branch below) and the Events tab lit up as a false-active match.
   const onDriverPage = pathname.startsWith(`${basePath}/drivers`);
+  const onClassing =
+    !onDriverPage &&
+    (pathname.startsWith(`${basePath}/classing`) || pathname.startsWith("/classing"));
   const onLeaderboard =
     !onDriverPage &&
+    !onClassing &&
     (pathname.startsWith(`${basePath}/leaderboard`) ||
       pathname.startsWith("/leaderboard"));
-  const onEvents = !onLeaderboard && !onDriverPage;
+  // Events remains the fallthrough tab, so every new tab above must exclude
+  // itself here too or it would light Events up alongside itself.
+  const onEvents = !onLeaderboard && !onDriverPage && !onClassing;
   // On a season-addressed leaderboard page, the selector reflects THAT
   // season; on the Events tab it reflects the `?season=` query param instead
   // (there's no path segment there), falling back to the league's active
@@ -60,10 +69,19 @@ export function LeagueSubnav({
   const seasonMatch = pathname.match(
     new RegExp(`^${basePath}/leaderboard/s/([^/]+)`),
   );
-  const eventsSeasonParam = searchParams?.get("season") ?? null;
-  const currentSeasonSlug = onEvents
-    ? (eventsSeasonParam ?? activeSeasonSlug ?? seasons[0]?.slug)
-    : ((seasonMatch && seasonMatch[1]) ?? activeSeasonSlug ?? seasons[0]?.slug);
+  const querySeasonParam = searchParams?.get("season") ?? null;
+  // A slug from the URL is only usable if this league actually has it. The
+  // pages fall back to the active season for an unknown `?season=`, so without
+  // this check the switcher would display a bogus slug over active-season
+  // content — and keep propagating it into every tab link it builds.
+  const known = (slug: string | null | undefined) =>
+    slug != null && seasons.some((s) => s.slug === slug) ? slug : null;
+  // Classing addresses its season the same way the Events tab does (`?season=`,
+  // no path segment), so both read the query param rather than the path.
+  const urlSeasonSlug =
+    onEvents || onClassing ? querySeasonParam : ((seasonMatch && seasonMatch[1]) ?? null);
+  const currentSeasonSlug =
+    known(urlSeasonSlug) ?? activeSeasonSlug ?? seasons[0]?.slug;
   const leaderboardHref = currentSeasonSlug
     ? `${basePath}/leaderboard/s/${currentSeasonSlug}`
     : `${basePath}/leaderboard`;
@@ -77,6 +95,10 @@ export function LeagueSubnav({
     currentSeasonSlug && currentSeasonSlug !== activeSeasonSlug
       ? `${basePath}?season=${currentSeasonSlug}`
       : basePath;
+  const classingHref =
+    currentSeasonSlug && currentSeasonSlug !== activeSeasonSlug
+      ? `${basePath}/classing?season=${currentSeasonSlug}`
+      : `${basePath}/classing`;
 
   const tabClass = (active: boolean) =>
     `border-b-2 px-1 py-2 text-sm transition-colors ${
@@ -101,7 +123,13 @@ export function LeagueSubnav({
               currentSlug={currentSeasonSlug}
               basePath={`${basePath}/leaderboard/s`}
               compact
-              buildHref={onEvents ? (s) => `${basePath}?season=${s}` : undefined}
+              buildHref={
+                onClassing
+                  ? (s) => `${basePath}/classing?season=${s}`
+                  : onEvents
+                    ? (s) => `${basePath}?season=${s}`
+                    : undefined
+              }
             />
           </div>
         )}
@@ -114,6 +142,11 @@ export function LeagueSubnav({
         <Link href={leaderboardHref} className={tabClass(onLeaderboard)}>
           Leaderboard
         </Link>
+        {hasClassing && (
+          <Link href={classingHref} className={tabClass(onClassing)}>
+            Classing
+          </Link>
+        )}
       </div>
     </div>
   );

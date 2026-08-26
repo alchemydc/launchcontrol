@@ -11,8 +11,8 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ClassBadge, type ClassingHints } from "@/components/class-badge";
 import { DriverLink } from "@/components/driver-link";
 import { RankPill } from "@/components/podium";
 import {
@@ -116,12 +116,14 @@ function DriverCard({
   sessionLabels,
   delta,
   driverBasePath,
+  classing,
 }: {
   row: CombinedResultRow;
   rank: number | undefined;
   sessionLabels: string[];
   delta: { fromPrior: number | null; fromP1: number | null } | undefined;
   driverBasePath?: string;
+  classing?: ClassingHints;
 }) {
   return (
     <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
@@ -138,7 +140,7 @@ function DriverCard({
             <p className="text-xs text-muted-foreground truncate">{row.carDescription}</p>
           )}
           <div className="mt-1.5">
-            <Badge variant="outline">{row.classCode}</Badge>
+            <ClassBadge classCode={row.classCode} classing={classing} />
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -167,7 +169,15 @@ function DriverCard({
   );
 }
 
-function UnrankedList({ rows, driverBasePath }: { rows: CombinedResultRow[]; driverBasePath?: string }) {
+function UnrankedList({
+  rows,
+  driverBasePath,
+  classing,
+}: {
+  rows: CombinedResultRow[];
+  driverBasePath?: string;
+  classing?: ClassingHints;
+}) {
   if (rows.length === 0) return null;
   return (
     <div className="border-t border-border/60 px-4 py-4">
@@ -187,9 +197,7 @@ function UnrankedList({ rows, driverBasePath }: { rows: CombinedResultRow[]; dri
               basePath={driverBasePath}
             />
             {row.classCode && (
-              <Badge variant="outline" className="text-[10px]">
-                {row.classCode}
-              </Badge>
+              <ClassBadge classCode={row.classCode} classing={classing} compact />
             )}
             <span className="text-muted-foreground text-xs">
               {[
@@ -211,11 +219,14 @@ function UnrankedList({ rows, driverBasePath }: { rows: CombinedResultRow[]; dri
 export function CombinedTable({
   results,
   driverBasePath,
+  classing,
 }: {
   results: CombinedResults;
   /** "" for the legacy route (byte-identical to pre-Task-20 driver hrefs),
    *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` below. */
   driverBasePath?: string;
+  /** Class hover cards; absent for a league with no classing model. */
+  classing?: ClassingHints;
 }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: "sumMs", desc: false }]);
   const [classFilter, setClassFilter] = useState<string>(ALL_CLASSES);
@@ -336,7 +347,9 @@ export function CombinedTable({
             onClick={() => column.toggleSorting()}
           />
         ),
-        cell: ({ row }) => <Badge variant="outline">{row.original.classCode}</Badge>,
+        cell: ({ row }) => (
+          <ClassBadge classCode={row.original.classCode} classing={classing} />
+        ),
       },
       ...sessionColumns,
       {
@@ -375,7 +388,7 @@ export function CombinedTable({
         ),
       },
     ];
-  }, [results.sessions, sessionLabels, deltaByRow, rankByRow, driverBasePath]);
+  }, [results.sessions, sessionLabels, deltaByRow, rankByRow, driverBasePath, classing]);
 
   // React Compiler can't safely memoize TanStack Table's returned functions;
   // we accept that limitation here because the table state lives in this
@@ -441,6 +454,7 @@ export function CombinedTable({
               sessionLabels={sessionLabels}
               delta={deltaByRow.get(row.original)}
               driverBasePath={driverBasePath}
+              classing={classing}
             />
           ))
         )}
@@ -500,7 +514,7 @@ export function CombinedTable({
         </Table>
       </div>
 
-      <UnrankedList rows={section.unranked} driverBasePath={driverBasePath} />
+      <UnrankedList rows={section.unranked} driverBasePath={driverBasePath} classing={classing} />
     </section>
   );
 }

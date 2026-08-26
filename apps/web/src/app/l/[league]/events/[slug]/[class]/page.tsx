@@ -24,6 +24,7 @@ export default async function LeagueEventClassPage({
   return (
     <EventClassPageView
       leagueId={league.id}
+      leagueSlug={league.slug}
       slug={slug}
       rawClass={rawClass}
       basePath={basePath}

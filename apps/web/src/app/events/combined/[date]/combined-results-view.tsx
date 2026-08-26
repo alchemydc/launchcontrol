@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BackButton } from "@/components/back-button";
+import type { ClassingHints } from "@/lib/classing";
 import type { CombinedResults } from "@/lib/combined-event";
 import { CombinedTable } from "./combined-table";
 
@@ -8,10 +9,13 @@ export function CombinedResultsView({
   dateLabel,
   photosUrl,
   basePath = "",
+  classing,
 }: {
   results: CombinedResults;
   dateLabel: string;
   photosUrl: string | null;
+  /** Class hover cards; absent for a league with no classing model. */
+  classing?: ClassingHints;
   /** "" for the legacy route (byte-identical to pre-Task-5 hrefs), "/l/[slug]"
    *  for league-scoped. */
   basePath?: string;
@@ -56,7 +60,7 @@ export function CombinedResultsView({
         </div>
       </header>
 
-      <CombinedTable results={results} driverBasePath={basePath} />
+      <CombinedTable results={results} driverBasePath={basePath} classing={classing} />
     </main>
   );
 }

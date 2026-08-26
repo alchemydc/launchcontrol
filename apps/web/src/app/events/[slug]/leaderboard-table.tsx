@@ -15,6 +15,7 @@ import {
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ClassBadge, type ClassingHints } from "@/components/class-badge";
 import { DriverLink } from "@/components/driver-link";
 import { RankPill } from "@/components/podium";
 import {
@@ -87,35 +88,20 @@ function RunChips({ runs }: { runs: LeaderboardRow["runs"] }) {
   );
 }
 
-function ClassBadge({
-  classCode,
-  paxClassCode,
-}: {
-  classCode: string;
-  paxClassCode: string;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <Badge variant="outline">{classCode}</Badge>
-      {paxClassCode !== classCode && (
-        <span className="text-muted-foreground text-xs">PAX {paxClassCode}</span>
-      )}
-    </div>
-  );
-}
-
 function DriverCard({
   row,
   rank,
   delta,
   paxView = false,
   driverBasePath,
+  classing,
 }: {
   row: LeaderboardRow;
   rank: number | undefined;
   delta: { fromPrior: number | null; fromP1: number | null } | undefined;
   paxView?: boolean;
   driverBasePath?: string;
+  classing?: ClassingHints;
 }) {
   return (
     <li className="px-4 py-3 odd:bg-background even:bg-muted/10">
@@ -137,6 +123,7 @@ function DriverCard({
             <ClassBadge
               classCode={row.classCode}
               paxClassCode={row.paxClassCode}
+              classing={classing}
             />
           </div>
         </div>
@@ -175,6 +162,7 @@ export function LeaderboardTable({
   rows,
   paxView,
   driverBasePath,
+  classing,
 }: {
   rows: LeaderboardRow[];
   /** Rank and show gaps on the PAX-indexed metric rather than raw time. */
@@ -182,6 +170,8 @@ export function LeaderboardTable({
   /** "" for the legacy route (byte-identical to pre-Task-20 driver hrefs),
    *  "/l/[slug]" for league-scoped — threaded to every `DriverLink` below. */
   driverBasePath?: string;
+  /** Class hover cards; absent for a league with no classing model. */
+  classing?: ClassingHints;
 }) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: paxView ? "bestPaxMs" : "bestRawMs", desc: false },
@@ -278,6 +268,7 @@ export function LeaderboardTable({
           <ClassBadge
             classCode={row.original.classCode}
             paxClassCode={row.original.paxClassCode}
+            classing={classing}
           />
         ),
       },
@@ -345,7 +336,7 @@ export function LeaderboardTable({
         cell: ({ row }) => <RunChips runs={row.original.runs} />,
       },
     ],
-    [deltaByRow, rankByRow, paxMetric, driverBasePath],
+    [deltaByRow, rankByRow, paxMetric, driverBasePath, classing],
   );
 
   // React Compiler can't safely memoize TanStack Table's returned functions;
@@ -381,6 +372,7 @@ export function LeaderboardTable({
               delta={deltaByRow.get(row.original)}
               paxView={paxMetric}
               driverBasePath={driverBasePath}
+              classing={classing}
             />
           ))
         )}
