@@ -31,7 +31,7 @@
     "@libsql/client": "^0.17.3",
     "@prisma/adapter-libsql": "^7.9.1",
     "@prisma/client": "^7.9.1",
-    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-table": "^9.2.3",
     "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
