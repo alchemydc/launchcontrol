@@ -73,7 +73,13 @@ export async function applyMigration(
     );
   }
   // Probe the connection itself: a nested BEGIN fails fast ("cannot start a
-  // transaction within a transaction") if one is somehow already open.
+  // transaction within a transaction") if one is somehow already open. This is
+  // best-effort defence in depth, not a guarantee — @libsql/client 0.18 stopped
+  // honouring a bare `execute("BEGIN")` on a local `file:` client (the statement
+  // no longer opens a durable transaction at all), so on that path there is
+  // nothing left for the probe to catch. Keep it for the clients and versions
+  // where a session-scoped transaction can still persist between calls; the
+  // structural check above is the guard that always fires.
   await client.executeMultiple("BEGIN; ROLLBACK;");
   await client.executeMultiple(sql);
   await client.execute({

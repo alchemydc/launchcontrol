@@ -78,16 +78,14 @@ describe("applyMigration", () => {
     }
   });
 
-  it("fails fast when the connection already has an open transaction", async () => {
-    const c = createClient({ url: `file:${DB}` });
-    try {
-      await c.execute("BEGIN");
-      await expect(
-        applyMigration(c, "20990101000000_nope", "SELECT 1;"),
-      ).rejects.toThrow(/transaction/i);
-    } finally {
-      await c.execute("ROLLBACK").catch(() => {});
-      c.close();
-    }
-  });
+  // The companion case — a Client whose connection already has an open
+  // transaction — is no longer constructible. Up to @libsql/client 0.17,
+  // `execute("BEGIN")` on a local `file:` client opened a durable transaction
+  // that later calls saw, so applyMigration's `BEGIN; ROLLBACK;` probe tripped
+  // on it. As of 0.18 that statement no longer opens anything: a following
+  // INSERT survives a ROLLBACK, `ROLLBACK` itself reports "no transaction is
+  // active", and `PRAGMA foreign_keys=OFF` is honoured rather than silently
+  // ignored — i.e. the hazard this test described cannot be reached that way.
+  // The probe stays in applyMigration as defence in depth for clients that do
+  // keep session state; the structural check above is what this suite pins.
 });
