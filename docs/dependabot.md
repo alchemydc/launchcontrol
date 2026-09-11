@@ -18,6 +18,9 @@ typecheck → test → build.
 - The old `Could not locate the bindings file … better_sqlite3.node` trap is **fixed** as of
   `better-sqlite3` 13 — no more `pnpm install --force` in the routine. See
   [Failure mode 2](#failure-mode-2--better-sqlite3-native-binary-fixed-by-v13).
+- A red **security** PR whose diff has no `pnpm-lock.yaml` in it isn't worth fixing — merge the
+  green grouped PR carrying the same version instead. See
+  [Failure mode 3](#failure-mode-3--security-pr-that-updates-packagejson-but-not-the-lockfile).
 
 ## Why it broke (root cause)
 
@@ -44,9 +47,9 @@ up-to-date (and re-CI'd) before merging.
    tailwind) plus `dev-minor-patch` and a catch-all `production-minor-patch` group collapse
    most weekly updates into a handful of PRs instead of one-per-dependency, so the lockfile
    mutates far less often. Major bumps still get individual PRs (they need scrutiny).
-3. **Held majors (`ignore:` in `.github/dependabot.yml`).** Two `version-update:semver-major`
-   holds are in place, each blocked on the same upstream problem — the eslint plugin set that
-   `eslint-config-next` pins transitively:
+3. **Held majors (`ignore:` in `.github/dependabot.yml`).** Three `version-update:semver-major`
+   holds are in place. The first two share an upstream cause — the eslint plugin set that
+   `eslint-config-next` pins transitively — and the third is unrelated:
    - **`eslint` at v9** — awaiting v10-compatible peer ranges from `eslint-plugin-react` /
      `-import` / `-jsx-a11y`. See #22, #31.
    - **`typescript` at v6** — under TS 7 the lint step dies with
@@ -54,9 +57,16 @@ up-to-date (and re-CI'd) before merging.
      `eslint-config-next` pins `typescript-eslint` 8.x and `apps/web/eslint.config.mjs`
      consumes `eslint-config-next/typescript` directly, so there's no way to route around it.
      See #109, #122.
+   - **`@tanstack/react-table` at v8** — v9 is an API rewrite, not a bump: the row-model
+     factories are renamed (`getCoreRowModel` → `createCoreRowModel`, likewise filtered and
+     sorted), `ColumnDef`/`Row` gain a `TableFeatures` generic and now need 2–3 type arguments,
+     and `column.getIsSorted` / `toggleSorting` move behind a feature opt-in. That is 54 `tsc`
+     errors across `leaderboard-table.tsx` and `combined-table.tsx`, so it needs a deliberate
+     migration rather than a merge. v8 minor/patch still flows through
+     `production-minor-patch`. See #159, and #168 for the migration.
 
-   Re-check both when `eslint-config-next` makes a major move; drop the entry to let the bump
-   back in.
+   Re-check the first two when `eslint-config-next` makes a major move, and the third when #168
+   is done; drop the entry to let the bump back in.
 4. **Repo settings:** `allow_auto_merge` and `delete_branch_on_merge` are on. You can queue a
    Dependabot PR to merge automatically once strict CI passes (`gh pr merge <n> --auto
    --merge`, or comment `@dependabot merge`), and merged branches are cleaned up.
@@ -250,6 +260,41 @@ runs; GitHub CI compiled it correctly on every PR, so it never blocked CI.
 > The long-standing "replace `better-sqlite3` with a pure-JS / WASM SQLite" idea is now much
 > lower value — v13 already removed the build step that motivated it. See the appendix note in
 > [BUILD.md](./BUILD.md#appendix--post-mvp-deployment-hardening).
+
+## Failure mode 3 — security PR that updates `package.json` but not the lockfile
+
+**Symptom:** a Dependabot *security* PR fails at the install step with
+
+```
+ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with "frozen-lockfile" because
+pnpm-lock.yaml is not up to date with <ROOT>/apps/web/package.json
+
+  Failure reason:
+  specifiers in the lockfile don't match specifiers in package.json:
+  * 1 dependencies are mismatched:
+    - next (lockfile: 16.3.2, manifest: 16.3.3)
+```
+
+The PR's file list is the tell: it touches `apps/web/package.json` **only**, with no
+`pnpm-lock.yaml` in the diff. Its title also reads `… in /apps/web in the npm_and_yarn group`,
+even though `.github/dependabot.yml` declares only `directory: "/"` — that `/apps/web` scope is
+Dependabot's own security-update path, not repo config, and from inside `apps/web` it can't
+regenerate the workspace lockfile that lives at the repo root.
+
+**Don't** comment `@dependabot rebase` — the PR will come back in the same shape.
+
+**Recovery:** don't hand-build anything. The ordinary grouped PR for the same dependency
+carries the identical version *with* a matching lockfile — merge that one, and the security PR
+becomes a no-op that Dependabot closes on its own.
+
+Worked example: #163 (security, next 16.3.2 → 16.3.3, no lockfile) sat red alongside #164 (same
+bump, with lockfile) and #155 (the `next` group: the same bump plus `eslint-config-next`).
+Merging #155 — the superset, already green and up-to-date — landed the two critical RCE
+advisories (GHSA-p293-qw3h-jr36, GHSA-2xp9-vwfh-vxw4), and Dependabot then closed both #163 and
+#164 automatically.
+
+> Don't let the red check stall the security fix. Check whether a green grouped PR already
+> carries the same version before spending any time on the red one.
 
 ## Local CI mirror verification
 

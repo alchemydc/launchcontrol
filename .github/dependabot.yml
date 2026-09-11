@@ -59,6 +59,15 @@ updates:
       # `TypeError: Cannot read properties of undefined (reading 'Cjs')`. See #109.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # Hold @tanstack/react-table at v8 until the v9 migration is done. v9 is an
+      # API rewrite, not a bump: the row-model factories are renamed
+      # (getCoreRowModel -> createCoreRowModel, and likewise filtered/sorted),
+      # ColumnDef/Row gain a TableFeatures generic, and column sorting moves
+      # behind a feature opt-in — 54 tsc errors across leaderboard-table.tsx and
+      # combined-table.tsx. v8 minor/patch still flows via production-minor-patch.
+      # See #159, #168.
+      - dependency-name: "@tanstack/react-table"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
