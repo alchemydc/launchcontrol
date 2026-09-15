@@ -549,7 +549,7 @@ M2 ships full MSR OAuth 1.0a sign-in end-to-end: a three-legged OAuth handshake 
 **`/rest/me.json` shape pinned as `MsrMeResponse` in `apps/web/src/lib/msr.ts`:** double-wrapped `{ response: { profile: { id, firstName, lastName, email, avatar, organizations: [{ id, memberId, name }] } } }`. `id` and `organizations[].id` are uppercase-hex UUIDs with dashes.
 
 **Pages:**
-- `/login` — public; renders an error message from `?error=`; "Sign in with MotorsportReg" is a `<Link>` to `/api/auth/msr/login`.
+- `/login` — public; renders an error message from `?error=`; "Sign in with MotorsportReg" is a plain `<a>` to `/api/auth/msr/login`. It must **not** be a `<Link>`: the target is a Route Handler that 302s cross-origin to MSR, so the App Router client fetches an RSC payload for it, fails on the redirect ("Failed to fetch RSC payload … Falling back to browser navigation"), and re-navigates — running OAuth step 1 twice per click, minting two request tokens and writing `lc_msr_req` twice. `components/landing.tsx`'s sign-in button is a plain `<a>` for the same reason.
 - `/me` — server component; redirects to `/login` if `msrUid` is missing; renders `firstName lastInitial` + monospace MSR UID + RMR-membership badge + logout form, and (added later) a "My results" card linking to the viewer's own driver stats page.
 
 **Header nav (`apps/web/src/components/header-nav.tsx`):** server component reading `getSession()`; signed-in users see their display name as a `<Link>` to `/me`; signed-out users see a "Sign in" link. Integrated into `apps/web/src/app/layout.tsx`.
