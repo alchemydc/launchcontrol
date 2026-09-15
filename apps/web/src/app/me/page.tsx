@@ -14,7 +14,8 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { resolveSelfDriver } from "@/lib/driver-self";
 import { buildDriverHistory, listSeasonsForDriver } from "@/lib/driver-history";
-import { getLeagueConfig } from "@/lib/league-config";
+import { getLeagueConfig, getLeagueConfigForSlug, type LeagueConfig } from "@/lib/league-config";
+import { checkLeagueAccess } from "@/lib/session";
 import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { CloseButton } from "@/components/close-button";
 import { Badge } from "@/components/ui/badge";
@@ -28,27 +29,23 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /**
- * Where "View my full stats" points.
+ * The driver's leagues, narrowed to the ones THIS session may actually open.
  *
- * `/drivers/[id]` gates on the DEPLOYMENT's default league (requireRmrMember),
- * so a viewer whose results live only in another league would bounce off it.
- * When none of their leagues is the default one, send them to that league's
- * own scoped route instead, which gates on the league that actually holds
- * their results. Otherwise use the legacy route, widened to every league via
- * `?league=all` when they've run in more than one (the driver page's own
- * filter already understands that param).
+ * `/me` carries no league gate of its own, so without this the card would
+ * summarize events from a league whose own stats route would redirect the
+ * viewer — showing a count they cannot click through to. `checkLeagueAccess`
+ * short-circuits to "allow" for non-required gates with no session or DB
+ * read, so the common case costs nothing.
  */
-function statsHref(
-  driverId: number,
-  leagueSlugs: string[],
-  defaultLeagueSlug: string,
-): string {
-  if (leagueSlugs.length > 0 && !leagueSlugs.includes(defaultLeagueSlug)) {
-    return `/l/${leagueSlugs[0]}/drivers/${driverId}`;
-  }
-  return leagueSlugs.length > 1
-    ? `/drivers/${driverId}?league=all`
-    : `/drivers/${driverId}`;
+async function accessibleLeagues(
+  driverSeasons: Array<{ leagueId: number; leagueSlug: string }>,
+): Promise<LeagueConfig[]> {
+  const slugs = Array.from(new Set(driverSeasons.map((s) => s.leagueSlug)));
+  const configs = await Promise.all(slugs.map((slug) => getLeagueConfigForSlug(slug)));
+  const decisions = await Promise.all(
+    configs.map((c) => (c ? checkLeagueAccess(c) : Promise.resolve("deny" as const))),
+  );
+  return configs.filter((c, i): c is LeagueConfig => c != null && decisions[i] === "allow");
 }
 
 export default async function MePage() {
@@ -128,13 +125,35 @@ async function MyResults({
     );
   }
 
-  // These three reads don't depend on each other; against Turso each is a
-  // network round trip, so issue them together.
-  const [driverSeasons, history, defaultLeague] = await Promise.all([
+  const [driverSeasons, defaultLeague] = await Promise.all([
     listSeasonsForDriver(self.driverId),
-    buildDriverHistory(self.driverId, { leagueIds: "all" }),
     getLeagueConfig(),
   ]);
+  const allowed = await accessibleLeagues(driverSeasons);
+
+  if (allowed.length === 0) {
+    return (
+      <Section>
+        <p className="text-sm text-muted-foreground">
+          {driverSeasons.length === 0
+            ? "No event results yet — your stats page will fill in after your first event."
+            : "Your results are in leagues you don't currently have access to."}
+        </p>
+      </Section>
+    );
+  }
+
+  // `/drivers/[id]` gates on the DEPLOYMENT default league, so it is the only
+  // cross-league destination and it is unreachable without access to that
+  // league. When it is out of reach there is no route that spans several
+  // leagues, so pin BOTH the summary and the link to one league rather than
+  // summarizing events the link can't show.
+  const hasDefault = allowed.some((l) => l.slug === defaultLeague.slug);
+  const scope = hasDefault ? allowed : allowed.slice(0, 1);
+
+  const history = await buildDriverHistory(self.driverId, {
+    leagueIds: scope.map((l) => l.id),
+  });
 
   // Same "best finish" definition the driver page uses: only events where the
   // driver actually posted a scoring position count.
@@ -144,8 +163,11 @@ async function MyResults({
       ? null
       : Math.min(...cleanRows.map((r) => r.position as number));
 
-  const leagueSlugs = Array.from(new Set(driverSeasons.map((s) => s.leagueSlug)));
-  const href = statsHref(self.driverId, leagueSlugs, defaultLeague.slug);
+  const href = hasDefault
+    ? scope.length > 1
+      ? `/drivers/${self.driverId}?league=all`
+      : `/drivers/${self.driverId}`
+    : `/l/${scope[0]!.slug}/drivers/${self.driverId}`;
 
   return (
     <Section>

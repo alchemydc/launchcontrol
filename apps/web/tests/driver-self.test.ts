@@ -96,6 +96,25 @@ describe("resolveSelfDriver", () => {
     });
   });
 
+  it("does not return a row already claimed by a different user", async () => {
+    // Two humans share a full name; the other one logged in first. Returning
+    // their row would show this viewer someone else's results.
+    await makeDriver({ identityHash: "id-1", nameOnlyHash: HASH, msrUid: "U2" });
+    expect(await resolveSelfDriver({ msrUid: "U1", nameOnlyHash: HASH }, client)).toEqual({
+      status: "unmatched",
+    });
+  });
+
+  it("stays ambiguous when a claimed and an unclaimed row share the hash", async () => {
+    // Ambiguity is a property of the data, not of who claimed what: filtering
+    // claimed rows out would turn a genuine 2 into a false "exactly one".
+    await makeDriver({ identityHash: "id-1", nameOnlyHash: HASH, msrUid: "U2" });
+    await makeDriver({ identityHash: "id-2", nameOnlyHash: HASH });
+    expect(await resolveSelfDriver({ msrUid: "U1", nameOnlyHash: HASH }, client)).toEqual({
+      status: "unmatched",
+    });
+  });
+
   it("returns unlinkable for a session minted before nameOnlyHash shipped", async () => {
     await makeDriver({ identityHash: "id-1", nameOnlyHash: HASH });
     expect(await resolveSelfDriver({ msrUid: "U1" }, client)).toEqual({
@@ -129,6 +148,13 @@ describe("claimSelfDriver", () => {
     const d = await makeDriver({ identityHash: "id-1", nameOnlyHash: HASH, msrUid: "OTHER" });
     await claimSelfDriver("U1", HASH, client);
     expect((await client.driver.findUniqueOrThrow({ where: { id: d.id } })).msrUid).toBe("OTHER");
+  });
+
+  it("does not claim the unclaimed row when another same-name row is claimed", async () => {
+    await makeDriver({ identityHash: "id-a", nameOnlyHash: HASH, msrUid: "U2" });
+    const b = await makeDriver({ identityHash: "id-b", nameOnlyHash: HASH });
+    await claimSelfDriver("U1", HASH, client);
+    expect((await client.driver.findUniqueOrThrow({ where: { id: b.id } })).msrUid).toBeNull();
   });
 
   it("is a no-op when this user is already linked to another row", async () => {

@@ -64,14 +64,24 @@ export async function resolveSelfDriver(
 
   // take: 2 is all we need — one row means a confident match, two means
   // ambiguity, and we treat both ">=2" cases identically.
+  //
+  // The query deliberately does NOT filter on `msrUid: null`: ambiguity is a
+  // property of the DATA, not of who happens to have claimed what. Excluding
+  // claimed rows would hide a same-name row behind its owner and turn a
+  // genuine ≥2 into a false "exactly one".
   const candidates = await client.driver.findMany({
     where: { nameOnlyHash: session.nameOnlyHash },
-    select: { id: true, firstName: true, lastInitial: true },
+    select: { id: true, firstName: true, lastInitial: true, msrUid: true },
     take: 2,
   });
   if (candidates.length !== 1) return { status: "unmatched" };
 
   const only = candidates[0]!;
+  // Claimed by someone else — two humans share this full name and the other
+  // one got here first. Returning it would show this viewer THAT person's
+  // results. (Claimed by *us* can't reach here: the findUnique above caught it.)
+  if (only.msrUid !== null) return { status: "unmatched" };
+
   return {
     status: "linked",
     driverId: only.id,
@@ -102,12 +112,18 @@ export async function claimSelfDriver(
     });
     if (existing) return;
 
+    // Same rule as the read path: count over ALL rows carrying the hash, not
+    // just unclaimed ones. Filtering on `msrUid: null` here would make
+    // ambiguity depend on ownership — with a claimed row and an unclaimed row
+    // sharing one name, this would see a single candidate and claim it,
+    // which is exactly the guess the "exactly one candidate" rule forbids.
     const candidates = await client.driver.findMany({
-      where: { nameOnlyHash, msrUid: null },
-      select: { id: true },
+      where: { nameOnlyHash },
+      select: { id: true, msrUid: true },
       take: 2,
     });
     if (candidates.length !== 1) return;
+    if (candidates[0]!.msrUid !== null) return;
 
     // updateMany + `msrUid: null` in the WHERE makes a concurrent claim a
     // no-op rather than a crash: the loser matches zero rows.
