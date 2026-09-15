@@ -10,7 +10,8 @@
  *  6. Apply PII rule: compute lastInitial via redactLastName; discard full lastName.
  *  7. Compute isRmrMember from org list (display only — when the default
  *     league has org config at all).
- *  8. Persist the SessionData fields in the main session cookie.
+ *  8. Persist the SessionData fields in the main session cookie, then
+ *     best-effort claim this user's Driver row (Driver.msrUid).
  *  9. 302 to the re-validated returnTo, else "/" (the league card grid).
  *
  * This callback is deliberately league-AGNOSTIC (PR #99 review): it neither
@@ -33,7 +34,8 @@ import { parseFormEncoded, signRequest, signedMsrFetch } from "@/lib/msr";
 import type { MsrMeResponse } from "@/lib/msr";
 import { getRequestTokenSession, getSession, sanitizeReturnTo } from "@/lib/session";
 import { getLeagueConfig } from "@/lib/league-config";
-import { redactLastName } from "@/lib/pii";
+import { computeNameOnlyHash, redactLastName } from "@/lib/pii";
+import { claimSelfDriver } from "@/lib/driver-self";
 
 export const runtime = "nodejs";
 
@@ -111,11 +113,17 @@ export async function GET(request: NextRequest) {
   //    redactLastName is imported from lib/pii (not redefined here).
   const lastInitial = redactLastName(profile.lastName);
 
+  //    Same PII rule, one extra derivation: sha256 the full name into the
+  //    key that Driver rows already carry (Driver.nameOnlyHash), so /me can
+  //    find this viewer's own Driver row without anyone storing a surname.
+  //    The digest is one-way; profile.lastName still dies with this scope.
+  const nameOnlyHash = computeNameOnlyHash(profile.firstName, profile.lastName);
+
   // 7. Default-league org membership — a display flag (/me badge), not an
   //    authorization input; per-league gates use session.msrOrgIds instead.
   const isRmrMember = orgId != null && profile.organizations.some((o) => o.id === orgId);
 
-  // 8. Persist session — only the seven approved fields; full lastName is never stored.
+  // 8. Persist session — only the approved fields; full lastName is never stored.
   const session = await getSession();
   session.msrUid = profile.id;
   session.firstName = profile.firstName;
@@ -124,7 +132,14 @@ export async function GET(request: NextRequest) {
   session.accessTokenSecret = accessSecret;
   session.isRmrMember = isRmrMember;
   session.msrOrgIds = profile.organizations.map((o) => o.id);
+  session.nameOnlyHash = nameOnlyHash;
   await session.save();
+
+  // 8b. Best-effort: link this MSR user to their Driver row (Driver.msrUid).
+  //     Login is the only write path for that column — /me resolves read-only,
+  //     so no page render carries a side effect. Never allowed to fail a
+  //     login: claimSelfDriver swallows its own errors.
+  await claimSelfDriver(profile.id, nameOnlyHash);
 
   // 9. Redirect to the re-validated (same-origin, path-only) returnTo, else
   //    "/". Not gated on org membership: the destination page enforces its

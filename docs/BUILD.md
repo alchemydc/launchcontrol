@@ -131,12 +131,12 @@ model Event {
 
 model Driver {
   id           Int      @id @default(autoincrement())
-  msrUid       String?  @unique
+  msrUid       String?  @unique             // set at MSR login by claimSelfDriver() — links a signed-in user to their own Driver row. Null until that user logs in (or forever, for a driver who never does).
   firstName    String
   lastInitial  String                       // single uppercase letter + period, e.g. "K." — never the full last name; enforced at ingest
   identityHash String   @unique             // SHA-256 of `${memberNum ?? ''}|${firstName.toLowerCase().trim()}|${lastName.toLowerCase().trim()}` — cross-event person identity. Full last name is used transiently for the hash and never persisted.
   memberNum    String?                      // family/account-level in VisualAX; NOT person-unique. Stored for display/lookup only — the upsert key is identityHash.
-  nameOnlyHash String?                      // sha256(lower(first)|lower(last)) — full-name key, the FALLBACK when an identityHash lookup misses (blank-member .axdb rows, and every RMsolo entry). Nullable: pre-existing rows can't be backfilled, since the full surname is never stored.
+  nameOnlyHash String?                      // sha256(lower(first)|lower(last)) — full-name key, the FALLBACK when an identityHash lookup misses (blank-member .axdb rows, and every RMsolo entry), and the key that matches a signed-in MSR user to this row. Nullable: pre-existing rows can't be backfilled, since the full surname is never stored.
   entries      Entry[]
   videos       Video[]
 
@@ -524,7 +524,7 @@ M2 ships full MSR OAuth 1.0a sign-in end-to-end: a three-legged OAuth handshake 
 - `oauth-1.0a` (npm) + Node `crypto` for HMAC-SHA1 request signing per RFC 5849.
 - `iron-session` for encrypted session cookies (App Router-native, stateless, AES-256-GCM). No NextAuth/Auth.js — v5 explicitly deprioritizes OAuth 1.0a, and a single-provider MVP doesn't earn back the dep weight or upgrade tax.
 
-**Session shape (`apps/web/src/lib/session.ts`):** `SessionData` has six fields: `msrUid`, `firstName`, `lastInitial`, `accessToken`, `accessTokenSecret`, `isRmrMember`. Note: `profileId` from the original M2 plan was dropped — `msrUid` (the `id` field from `/rest/me.json`) is the authoritative user identifier; the speculative `tokenData["memberid"]` parsing was removed.
+**Session shape (`apps/web/src/lib/session.ts`):** `SessionData` shipped with six fields: `msrUid`, `firstName`, `lastInitial`, `accessToken`, `accessTokenSecret`, `isRmrMember`. Two were added later: `msrOrgIds` (PR 3, per-league org gating) and `nameOnlyHash` (see "My results" below). Note: `profileId` from the original M2 plan was dropped — `msrUid` (the `id` field from `/rest/me.json`) is the authoritative user identifier; the speculative `tokenData["memberid"]` parsing was removed.
 
 **Two cookies:**
 - `lc_session` — 30-day sliding window, HttpOnly + Secure(prod) + SameSite=Lax. Carries the full session (MSR UID, name initials, tokens, membership flag).
@@ -549,8 +549,8 @@ M2 ships full MSR OAuth 1.0a sign-in end-to-end: a three-legged OAuth handshake 
 **`/rest/me.json` shape pinned as `MsrMeResponse` in `apps/web/src/lib/msr.ts`:** double-wrapped `{ response: { profile: { id, firstName, lastName, email, avatar, organizations: [{ id, memberId, name }] } } }`. `id` and `organizations[].id` are uppercase-hex UUIDs with dashes.
 
 **Pages:**
-- `/login` — public; renders an error message from `?error=`; "Sign in with MotorsportReg" is a `<Link>` to `/api/auth/msr/login`.
-- `/me` — server component; redirects to `/login` if `msrUid` is missing; renders `firstName lastInitial` + monospace MSR UID + RMR-membership badge + logout form.
+- `/login` — public; renders an error message from `?error=`; "Sign in with MotorsportReg" is a plain `<a>` to `/api/auth/msr/login`. It must **not** be a `<Link>`: the target is a Route Handler that 302s cross-origin to MSR, so the App Router client fetches an RSC payload for it, fails on the redirect ("Failed to fetch RSC payload … Falling back to browser navigation"), and re-navigates — running OAuth step 1 twice per click, minting two request tokens and writing `lc_msr_req` twice. `components/landing.tsx`'s sign-in button is a plain `<a>` for the same reason.
+- `/me` — server component; redirects to `/login` if `msrUid` is missing; renders `firstName lastInitial` + monospace MSR UID + RMR-membership badge + logout form, and (added later) a "My results" card linking to the viewer's own driver stats page.
 
 **Header nav (`apps/web/src/components/header-nav.tsx`):** server component reading `getSession()`; signed-in users see their display name as a `<Link>` to `/me`; signed-out users see a "Sign in" link. Integrated into `apps/web/src/app/layout.tsx`.
 
@@ -909,6 +909,29 @@ Verified against the published table: the 2026 grouping is line-for-line identic
 **Class hover cards.** `src/components/class-badge.tsx` is now the single class-badge component; the event leaderboard, combined-event table, and driver event history each carried their own copy before, so a class code rendered differently depending on where you saw it. It opens a `HoverCard` (`src/components/ui/hover-card.tsx`) listing the class's cars for that event's season. Built on Base UI's **Popover**, not its Tooltip: Tooltip is hover/focus-only and would never open on a phone, while Popover's `openOnHover` keeps desktop hover *and* the press-to-open a popover already has. Data is one `ClassingHints` prop resolved per render on the server — no per-row work, no client fetch — and its absence is what makes the badge fall back to its old plain rendering (unclassed league, or PCA's time-only `TO`).
 
 `DriverHistoryRow` gained `seasonYear`/`seasonSlug`, and `eventDetailInclude`/`combinedSessionInclude` gained `season.year`/`season.name`/`season.slug`: classing is per (league, season), the driver page's rows can span both, and a season may straddle a calendar year, so it is not derivable from `Event.date`. The **year** selects the vehicle lines (the upstream rulebook is written per calendar year, so two Season rows sharing a year — a main season and a winter series — correctly resolve to the same table); the **slug** addresses the guide, so a card's "Full classing guide →" opens `?season=<that row's season>` rather than the league's active one, which on a historical event could class the same car differently. `classingKey` is therefore `(leagueSlug, seasonSlug)`.
+
+### My results — self-service driver stats from `/me` ✓ (done 2026-09-15)
+
+Driver feedback: reaching your own stats meant opening an event or the championship and finding yourself in a results table. Clicking your own name in the header should just take you there.
+
+**The header already linked to `/me`** — what `/me` lacked was any idea which `Driver` row the viewer was. `Driver.msrUid` had been a unique column since the `init` migration with **no read or write path anywhere in the codebase**; this is what finally uses it. No migration was needed.
+
+**Two keys, in priority order** (`src/lib/driver-self.ts`):
+
+1. `Driver.msrUid` — an explicit link, written once at login. Authoritative, and survives a later MSR name change.
+2. `Driver.nameOnlyHash` — matched only when **exactly one** Driver carries the hash, mirroring ingest's own merge/adopt rule: 0 or ≥2 candidates means we don't guess. Two humans sharing a full name therefore resolve to nothing rather than to each other's results, and the `@unique` on `msrUid` means one MSR user can only ever own one row.
+
+**The full-name hash is what makes this possible without storing a surname.** The OAuth callback holds `profile.lastName` transiently before discarding it, so it computes the same `computeNameOnlyHash` digest that ingest already stamps on every Driver row, and keeps it in the session as `nameOnlyHash`. A one-way digest is not the surname, the identical value is already a DB column, and the cookie is AES-256-GCM encrypted — the PII rule (never persist a full last name) is intact.
+
+**`computeNameOnlyHash` moved from `ingest.ts` to `pii.ts`** (re-exported, so existing importers are untouched). `ingest.ts` top-level-imports `better-sqlite3`; importing the digest from there would have pulled a native SQLite driver into the OAuth callback's bundle.
+
+**Reads and writes are split deliberately.** `resolveSelfDriver` is pure read, so rendering `/me` carries no side effect; the single write is `claimSelfDriver`, called from the callback and wrapped so it can never fail a login. A guarded `updateMany` (`where: { id, msrUid: null }`) makes a racing second login a no-op rather than a unique-constraint crash.
+
+**Three states on `/me`**, because "we couldn't find you" has three different fixes: `linked` (event count + best finish + a link to the stats page), `unmatched` (0 or ≥2 candidates — usually a nickname mismatch, "Bob" vs "Robert"; needs an admin), and `unlinkable` (session predates `nameOnlyHash` — needs a re-login, since the 30-day cookie carries no key to match on).
+
+**Where the link points** depends on the leagues the driver actually has entries in, because `/drivers/[id]` gates on the *deployment default* league: no footprint in the default league → `/l/<their-league>/drivers/<id>` (gated on the league that actually holds their results); more than one league → `/drivers/<id>?league=all`; otherwise the plain route. Cross-league aggregation needed no new code — `buildDriverHistory` already accepts `leagueIds: "all"` and the driver page's filter already understands the param.
+
+Covered by `apps/web/tests/driver-self.test.ts` (12 cases across both functions, including ambiguity, a row already claimed by another user, and the legacy-null-`nameOnlyHash` row).
 
 ### M3 — Public calendar (target: 0.5 session, after M2)
 
