@@ -4,10 +4,15 @@
  * Reads ?error= from the query string and shows contextual copy.
  * Renders a "Sign in with MotorsportReg" button that links to the
  * OAuth login route handler.
+ *
+ * That button is a plain <a>, NOT next/link: the target is a Route Handler
+ * that 302s to MSR (cross-origin), so the App Router client would try to
+ * fetch an RSC payload for it, fail on the cross-origin redirect, and fall
+ * back to a browser navigation — running OAuth step 1 twice per click and
+ * minting two request tokens. See also components/landing.tsx.
  */
 
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata: Metadata = {
@@ -45,12 +50,12 @@ export default async function LoginPage({ searchParams }: PageProps) {
             Use your MotorsportReg account to sign in. You do not need a
             separate password.
           </p>
-          <Link
+          <a
             href="/api/auth/msr/login"
             className="inline-flex w-full items-center justify-center rounded-lg border border-transparent bg-primary px-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/80 h-8"
           >
             Sign in with MotorsportReg
-          </Link>
+          </a>
         </CardContent>
       </Card>
     </main>
