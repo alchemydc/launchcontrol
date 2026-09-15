@@ -4,8 +4,8 @@ import Database from "better-sqlite3";
 import { PrismaClient, RunDisposition } from "@/generated/prisma/client";
 import { prisma as defaultClient } from "@/lib/prisma";
 import { resolveOrCreateSeason, resolveSeasonBySlug } from "@/lib/season-resolve";
-import { redactLastName } from "./pii";
-export { redactLastName };
+import { computeNameOnlyHash, redactLastName } from "./pii";
+export { computeNameOnlyHash, redactLastName };
 
 export type IngestSummary = {
   status: "ingested" | "unchanged";
@@ -82,16 +82,6 @@ export function computeIdentityHash(
   return createHash("sha256").update(key).digest("hex");
 }
 
-// Full-name-only key, independent of member_num. Used to self-heal legacy .axdb
-// exports (e.g. the 2024 AxWare transition) where every driver row has a blank
-// member_num, which would otherwise split one human into a distinct Driver per
-// event. Never used as the primary identity — only to find merge/adopt
-// candidates when an identityHash lookup misses (see the driver-resolution
-// block below).
-export function computeNameOnlyHash(firstName: string, lastName: string): string {
-  const key = `${firstName.toLowerCase().trim()}|${lastName.toLowerCase().trim()}`;
-  return createHash("sha256").update(key).digest("hex");
-}
 
 // VisualAX's post-AxWare-transition exports sometimes append a "verified" token
 // to member_num (`"1234 verified"`, `"1234-verified"`) that isn't present on

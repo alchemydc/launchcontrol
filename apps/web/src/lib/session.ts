@@ -2,13 +2,14 @@
  * iron-session typed wrappers for Launch Control.
  *
  * Two cookies:
- *   lc_session      — main session (30 days). Stores the seven SessionData fields.
+ *   lc_session      — main session (30 days). Stores the SessionData fields.
  *   lc_msr_req      — transient request-token cookie (10 min, path-scoped to
  *                     the callback route). Stashes oauth_token_secret between
  *                     /api/auth/msr/login and /api/auth/msr/callback.
  *
  * PII rule: full lastName is NEVER stored here. The callback route applies
- * redactLastName() and stores only lastInitial.
+ * redactLastName() and stores only lastInitial, plus a one-way nameOnlyHash
+ * digest (see the field's doc comment).
  */
 
 import { getIronSession } from "iron-session";
@@ -57,6 +58,18 @@ export interface SessionData {
   isRmrMember?: boolean;
   /** MSR org IDs from the login profile — enables per-league org gating (PR 3). */
   msrOrgIds?: string[];
+  /**
+   * sha256("<firstName>|<lastName>", lowercased/trimmed) — the join key to
+   * `Driver.nameOnlyHash`, computed at login from the MSR profile before the
+   * full last name is discarded. This is what lets `/me` find the viewer's own
+   * Driver row (src/lib/driver-self.ts).
+   *
+   * PII: a one-way digest, NOT the surname — the identical value is already a
+   * column on every Driver row. The full last name is still never stored here.
+   * Absent on sessions minted before this field shipped (30-day cookie); those
+   * viewers get the "sign in again" empty state until they re-login.
+   */
+  nameOnlyHash?: string;
 }
 
 // ---------------------------------------------------------------------------
