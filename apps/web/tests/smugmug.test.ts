@@ -114,6 +114,98 @@ describe("matchEventFolder", () => {
     const combinedLabel = matchEventFolder(combinedFolders, "Cone in 60 Seconds", combinedDate);
     expect(combinedLabel).toBe(sessionA);
   });
+
+  // An event name can consist entirely of a number ("The 912" — "the" is a
+  // stopword, leaving just "912"). The folder side used to strip every
+  // pure-digit token to drop the "YYYY-MM-DD-" prefix, which erased the 912
+  // from the folder name too, so no folder had any content token left to
+  // match and the photos link silently never rendered.
+  describe("numeric event names", () => {
+    const nineTwelveDate = new Date("2026-09-12T00:00:00Z");
+    const nineTwelveUri =
+      "https://rmrpca.smugmug.com/Autocross/2026/2026-09-12-The-912-Autocross";
+    const nineTwelveFolders = [
+      {
+        urlName: "2026-09-12-The-912-Autocross",
+        webUri: nineTwelveUri,
+        dateAdded: "2026-09-13T12:00:00Z",
+      },
+    ];
+
+    it("matches an event whose only token is a number", () => {
+      expect(matchEventFolder(nineTwelveFolders, "The 912", nineTwelveDate)).toBe(
+        nineTwelveUri,
+      );
+    });
+
+    it("matches when the folder omits the leading article", () => {
+      expect(
+        matchEventFolder(
+          [
+            {
+              urlName: "2026-09-12-912-Autocross",
+              webUri: nineTwelveUri,
+              dateAdded: "2026-09-13T12:00:00Z",
+            },
+          ],
+          "The 912",
+          nineTwelveDate,
+        ),
+      ).toBe(nineTwelveUri);
+    });
+
+    // A lone numeric token must not match anything that merely shares its date.
+    it("does not match a same-day folder with no shared token", () => {
+      expect(
+        matchEventFolder(
+          [
+            {
+              urlName: "2026-09-12-Fall-Finale",
+              webUri: "WRONG",
+              dateAdded: "2026-09-13T12:00:00Z",
+            },
+          ],
+          "The 912",
+          nineTwelveDate,
+        ),
+      ).toBeNull();
+    });
+
+    // Date proximity still gates a perfect token score: 0.6 * 1.0 + 0.4 * 0
+    // is exactly the threshold, and the comparison is strictly greater-than.
+    it("does not match a same-named folder far from the event date", () => {
+      expect(
+        matchEventFolder(
+          [
+            {
+              urlName: "2026-07-04-The-912",
+              webUri: "WRONG",
+              dateAdded: "2026-07-05T12:00:00Z",
+            },
+          ],
+          "The 912",
+          nineTwelveDate,
+        ),
+      ).toBeNull();
+    });
+
+    it("picks the date-nearest folder when several share the numeric token", () => {
+      expect(
+        matchEventFolder(
+          [
+            ...nineTwelveFolders,
+            {
+              urlName: "2026-05-02-912-Tribute",
+              webUri: "WRONG",
+              dateAdded: "2026-05-03T12:00:00Z",
+            },
+          ],
+          "The 912",
+          nineTwelveDate,
+        ),
+      ).toBe(nineTwelveUri);
+    });
+  });
 });
 
 // PR #99 review: the SMUGMUG_* env fallbacks (and the "rmrpca"/"Autocross"
