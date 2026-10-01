@@ -8,13 +8,15 @@
  *  4. 302 to MSR authorize page.
  */
 
-import type { NextRequest } from "next/server";
+import { connection, type NextRequest } from "next/server";
 import { redirect } from "next/navigation";
 import { MSR_AUTHORIZE_URL_BASE, MSR_REQUEST_TOKEN_URL } from "@/lib/msr-endpoints";
 import { parseFormEncoded, signRequest } from "@/lib/msr";
 import { getRequestTokenSession, sanitizeReturnTo } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
+  // OAuth runs per request; without this the build prerenders the handler.
+  await connection();
   const callbackUrl = process.env.MSR_OAUTH_CALLBACK_URL;
   if (!callbackUrl) {
     throw new Error("MSR_OAUTH_CALLBACK_URL environment variable is not set");
