@@ -2,14 +2,16 @@ import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { EventPageView } from "@/app/events/[slug]/event-page-view";
+import { connection } from "next/server";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function LeagueEventPage({
   params,
 }: {
   params: Promise<{ league: string; slug: string }>;
 }) {
+  await connection();
   const { league: leagueSlug, slug } = await params;
   const league = await getLeagueConfigForSlug(leagueSlug);
   if (!league) notFound();

@@ -9,14 +9,16 @@ import { isSuperUser } from "@/lib/super-user";
 import { prisma } from "@/lib/prisma";
 import { LeagueSettingsForm } from "./league-settings-form";
 import { IngestNowButton } from "./ingest-now-button";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
+  await connection();
   const { slug } = await params;
   const league = await prisma.league.findUnique({ where: { slug } });
   return { title: league ? `Admin · ${league.name}` : "Admin" };
@@ -27,6 +29,7 @@ export default async function AdminLeaguePage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  await connection();
   const { slug } = await params;
 
   const league = await prisma.league.findUnique({ where: { slug } });

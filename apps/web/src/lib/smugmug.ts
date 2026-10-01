@@ -50,6 +50,12 @@ const STOPWORDS = new Set([
   "an",
 ]);
 
+// Folder names are conventionally "YYYY-MM-DD-Event-Name". Strip that prefix
+// before tokenizing rather than filtering every pure-digit token: an event
+// name can BE a number ("The 912"), and a blanket digit filter erases it from
+// the folder side too, leaving nothing to match against.
+const DATE_PREFIX = /^(\d{4}-\d{2}-\d{2})[-_ ]?/;
+
 interface FolderSummary {
   urlName: string;
   webUri: string;
@@ -77,10 +83,13 @@ export function matchEventFolder(
   let bestUri: string | null = null;
 
   for (const folder of folders) {
-    // Content tokens: strip pure-digit tokens (date prefix like 2026, 05, 17) from folder name
-    const contentTokens = tokenize(folder.urlName).filter(
-      (t) => !/^\d+$/.test(t)
-    );
+    // Drop the leading date prefix (e.g. "2026-04-25-") and tokenize the rest.
+    // Digits inside the name itself are kept — they can be the whole name.
+    const dateMatch = DATE_PREFIX.exec(folder.urlName);
+    const bareName = dateMatch
+      ? folder.urlName.slice(dateMatch[0].length)
+      : folder.urlName;
+    const contentTokens = tokenize(bareName);
     if (contentTokens.length === 0) continue;
 
     const matchCount = eventTokens.filter((t) =>
@@ -93,8 +102,8 @@ export function matchEventFolder(
     const reverse = matchCount / contentTokens.length;
     const tScore = Math.max(forward, reverse);
 
-    // Parse date from UrlName prefix (e.g. "2026-04-25-blooming-cones")
-    const dateMatch = /^(\d{4}-\d{2}-\d{2})/.exec(folder.urlName);
+    // Reuse the prefix match above for date proximity; fall back to DateAdded
+    // for folders that don't follow the date-prefix convention.
     const folderDate = dateMatch
       ? new Date(dateMatch[1] + "T00:00:00Z")
       : new Date(folder.dateAdded);

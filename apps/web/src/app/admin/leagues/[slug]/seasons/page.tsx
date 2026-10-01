@@ -6,14 +6,16 @@ import { getSession } from "@/lib/session";
 import { isLeagueAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { SeasonsTable, type SeasonRow } from "./seasons-table";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
+  await connection();
   const { slug } = await params;
   const league = await prisma.league.findUnique({ where: { slug } });
   return { title: league ? `Seasons · ${league.name}` : "Seasons" };
@@ -24,6 +26,7 @@ export default async function AdminSeasonsPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  await connection();
   const { slug } = await params;
 
   const league = await prisma.league.findUnique({ where: { slug } });

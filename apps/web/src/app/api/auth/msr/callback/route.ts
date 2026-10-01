@@ -27,7 +27,7 @@
  * logged, stored in a cookie, or written to any persistent layer.
  */
 
-import type { NextRequest } from "next/server";
+import { connection, type NextRequest } from "next/server";
 import { redirect } from "next/navigation";
 import { MSR_ACCESS_TOKEN_URL, MSR_ME_URL } from "@/lib/msr-endpoints";
 import { parseFormEncoded, signRequest, signedMsrFetch } from "@/lib/msr";
@@ -37,9 +37,9 @@ import { getLeagueConfig } from "@/lib/league-config";
 import { computeNameOnlyHash, redactLastName } from "@/lib/pii";
 import { claimSelfDriver } from "@/lib/driver-self";
 
-export const runtime = "nodejs";
-
 export async function GET(request: NextRequest) {
+  // OAuth runs per request; without this the build prerenders the handler.
+  await connection();
   // No org-config precondition: a required league gated purely by explicit
   // LeagueMembership rows (msrOrgId null) is a supported configuration, and
   // throwing here would 500 every login on such a deployment.

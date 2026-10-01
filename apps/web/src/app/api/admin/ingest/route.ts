@@ -9,8 +9,6 @@ import { ingestAxdb } from "@/lib/ingest";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 
-export const runtime = "nodejs";
-
 const MAX_BYTES = 4 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {

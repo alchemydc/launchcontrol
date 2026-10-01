@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
 import {
-  buildSeasonLeaderboard,
   findSeasonSection,
   summarizeSeasonSections,
 } from "@/lib/season-leaderboard";
-import { prisma } from "@/lib/prisma";
+import { cachedSeasonLeaderboard } from "@/lib/cached-results";
 import { SeasonLeaderboardView } from "@/app/leaderboard/season-leaderboard-view";
 import { SeasonOverviewView } from "@/app/leaderboard/season-overview-view";
 
@@ -56,7 +55,7 @@ export async function renderLeagueSeasonLeaderboard({
     );
   }
 
-  const result = await buildSeasonLeaderboard({ seasonId: season.id }, prisma);
+  const result = await cachedSeasonLeaderboard({ seasonId: season.id });
   const summaries = summarizeSeasonSections(result.sections);
 
   if (classParam == null) {

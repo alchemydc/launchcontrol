@@ -7,14 +7,16 @@ import { isSuperUser, superUserEnvAllowlist } from "@/lib/super-user";
 import { prisma } from "@/lib/prisma";
 import type { MembershipRole } from "@/lib/membership";
 import { UsersTable, type MembershipGroup, type SuperUserRow } from "./users-table";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export const metadata: Metadata = {
   title: "Users",
 };
 
 export default async function AdminUsersPage() {
+  await connection();
   const session = await getSession();
   // admin/layout.tsx only checks isAnyLeagueAdmin (superuser OR admin of ANY
   // league) — this page is superuser-only, so re-check that specifically.

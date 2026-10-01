@@ -3,14 +3,16 @@ import { getLeagueConfig } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { CombinedEventPageView } from "./combined-event-view";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
+import { connection } from "next/server";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function CombinedEventPage({
   params,
 }: {
   params: Promise<{ date: string }>;
 }) {
+  await connection();
   const { date } = await params;
 
   // Gate runs before any validation/data fetch so unauth viewers can't probe
