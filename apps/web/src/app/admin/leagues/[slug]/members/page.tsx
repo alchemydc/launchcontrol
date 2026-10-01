@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import type { MembershipRole } from "@/lib/membership";
 import { MembersTable, type MemberRow } from "./members-table";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export async function generateMetadata({
   params,

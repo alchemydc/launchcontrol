@@ -37,8 +37,6 @@ import { getLeagueConfig } from "@/lib/league-config";
 import { computeNameOnlyHash, redactLastName } from "@/lib/pii";
 import { claimSelfDriver } from "@/lib/driver-self";
 
-export const runtime = "nodejs";
-
 export async function GET(request: NextRequest) {
   // No org-config precondition: a required league gated purely by explicit
   // LeagueMembership rows (msrOrgId null) is a supported configuration, and

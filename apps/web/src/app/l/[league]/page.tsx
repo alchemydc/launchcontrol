@@ -9,7 +9,7 @@ import {
 import { EventsHome } from "@/app/_events-home";
 import { Landing } from "@/components/landing";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 /**
  * League home (Task 5) — the league-scoped equivalent of app/page.tsx,

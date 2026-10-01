@@ -3,7 +3,7 @@ import { EventClassPageView } from "@/app/events/[slug]/event-class-page-view";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function LeagueEventClassPage({
   params,

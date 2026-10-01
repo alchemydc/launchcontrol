@@ -5,7 +5,7 @@ import { administeredLeagues } from "@/lib/admin";
 import { EventsTable, type EventRow } from "./events-table";
 import { EventsFilterBar } from "./events-filter-bar";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export const metadata: Metadata = {
   title: "Manage events",

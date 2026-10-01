@@ -5,7 +5,7 @@ import { gateResultsPage } from "@/lib/session";
 import { listSeasonsForLeague, pickSeasonBySlug } from "@/lib/season-resolve";
 import { renderLeagueSeasonLeaderboard } from "../../render-league-leaderboard";
 
-export const revalidate = 300;
+export const instant = false;
 
 /**
  * Season-addressed leaderboard (Task 5): `/l/[league]/leaderboard/s/[slug]`.

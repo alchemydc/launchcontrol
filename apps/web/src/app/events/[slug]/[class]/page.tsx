@@ -3,7 +3,7 @@ import { gateResultsPage } from "@/lib/session";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { EventClassPageView } from "../event-class-page-view";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function EventClassPage({
   params,

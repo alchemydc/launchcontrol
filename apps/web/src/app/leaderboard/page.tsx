@@ -1,15 +1,15 @@
 import {
-  buildSeasonLeaderboard,
   listSeasonYears,
   summarizeSeasonSections,
 } from "@/lib/season-leaderboard";
+import { cachedSeasonLeaderboard } from "@/lib/cached-results";
 import { getLeagueConfig } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { SeasonSwitcher } from "./season-switcher";
 import { SeasonOverviewView } from "./season-overview-view";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function LeaderboardPage() {
   const league = await getLeagueConfig();
@@ -17,7 +17,7 @@ export default async function LeaderboardPage() {
 
   const years = await listSeasonYears();
   const currentYear = years[0] ?? new Date().getUTCFullYear();
-  const result = await buildSeasonLeaderboard(currentYear);
+  const result = await cachedSeasonLeaderboard(currentYear);
 
   return (
     <>

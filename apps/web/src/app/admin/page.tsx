@@ -8,7 +8,7 @@ import { administeredLeagues } from "@/lib/admin";
 import { isSuperUser } from "@/lib/super-user";
 import { CreateLeagueDialog } from "./create-league-dialog";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export const metadata: Metadata = {
   title: "Admin",

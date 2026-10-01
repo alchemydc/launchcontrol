@@ -1,6 +1,6 @@
 import { LeagueGate } from "@/components/league-gate";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 /**
  * ROOT `/` — always the league gate (card grid), for every deployment,

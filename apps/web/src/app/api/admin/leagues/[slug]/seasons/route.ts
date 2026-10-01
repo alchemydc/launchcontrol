@@ -3,8 +3,6 @@ import { createSeason, type CreateSeasonOptions } from "@/lib/create-season";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
-export const runtime = "nodejs";
-
 /**
  * The created season points at a ScoringSystem ruleset (live reference —
  * Task R2): the league's default (oldest) ruleset unless `presetName` names

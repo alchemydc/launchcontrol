@@ -14,6 +14,8 @@ import { prisma } from "@/lib/prisma";
  * slug returns no metadata override; the page-level notFound() below (and in
  * every nested page) still 404s the subtree the normal way.
  */
+export const instant = false;
+
 export async function generateMetadata({
   params,
 }: {

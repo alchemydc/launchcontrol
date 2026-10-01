@@ -3,7 +3,7 @@ import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { CombinedEventPageView } from "@/app/events/combined/[date]/combined-event-view";
 
-export const revalidate = 300;
+export const instant = false;
 
 /**
  * League-scoped combined-event page — not explicitly named in the Task 5

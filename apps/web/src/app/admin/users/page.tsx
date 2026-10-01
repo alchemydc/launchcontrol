@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import type { MembershipRole } from "@/lib/membership";
 import { UsersTable, type MembershipGroup, type SuperUserRow } from "./users-table";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export const metadata: Metadata = {
   title: "Users",

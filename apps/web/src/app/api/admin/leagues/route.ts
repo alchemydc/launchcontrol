@@ -4,9 +4,6 @@ import { setLeagueMembership } from "@/lib/membership";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
-// createLeague (transitively, via create-league.ts's `readFileSync`) needs Node APIs.
-export const runtime = "nodejs";
-
 /**
  * League creation is intentionally NOT allowed to point `--policy-file` at
  * an arbitrary server path over the REST surface (unlike the CLI) — a

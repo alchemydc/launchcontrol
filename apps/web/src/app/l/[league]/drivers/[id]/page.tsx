@@ -3,7 +3,7 @@ import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { requireMember } from "@/lib/session";
 import { DriverPageView } from "@/app/drivers/[id]/driver-page-view";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 /**
  * League-scoped driver page (Task 20) — driver links from `/l/[league]`

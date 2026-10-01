@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { PresetsTable, type PresetRow } from "./presets-table";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export async function generateMetadata({
   params,

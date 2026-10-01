@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { ClassingPageView } from "./classing-page-view";
 
-export const revalidate = 300;
+export const instant = false;
 
 /**
  * League-scoped classing guide. NO gate call, unlike the results routes beside

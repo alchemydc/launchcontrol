@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireRmrMember } from "@/lib/session";
 import { DriverPageView } from "./driver-page-view";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export default async function DriverPage({
   params,

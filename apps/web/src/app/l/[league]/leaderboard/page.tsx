@@ -5,7 +5,7 @@ import { gateResultsPage } from "@/lib/session";
 import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { renderLeagueSeasonLeaderboard } from "./render-league-leaderboard";
 
-export const revalidate = 300;
+export const instant = false;
 
 /**
  * Bare /l/[league]/leaderboard — the league's active season (spec: status

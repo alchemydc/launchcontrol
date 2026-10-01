@@ -15,6 +15,8 @@
 import type { Metadata } from "next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+export const instant = false;
+
 export const metadata: Metadata = {
   title: "Sign in",
 };

@@ -10,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { LeagueSettingsForm } from "./league-settings-form";
 import { IngestNowButton } from "./ingest-now-button";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export async function generateMetadata({
   params,

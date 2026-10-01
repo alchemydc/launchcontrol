@@ -1,16 +1,16 @@
 import { notFound } from "next/navigation";
 import {
-  buildSeasonLeaderboard,
   listSeasonYears,
   summarizeSeasonSections,
 } from "@/lib/season-leaderboard";
+import { cachedSeasonLeaderboard } from "@/lib/cached-results";
 import { getLeagueConfig } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { SeasonSwitcher } from "../season-switcher";
 import { SeasonOverviewView } from "../season-overview-view";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function LeaderboardYearPage({
   params,
@@ -29,7 +29,7 @@ export default async function LeaderboardYearPage({
   if (!Number.isInteger(year) || year < 2000 || year > 2100) notFound();
 
   const years = await listSeasonYears();
-  const result = await buildSeasonLeaderboard(year);
+  const result = await cachedSeasonLeaderboard(year);
 
   return (
     <>

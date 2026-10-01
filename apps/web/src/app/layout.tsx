@@ -15,12 +15,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// The root layout resolves branding from the DB on every request (via
-// getLeagueConfig()). Force dynamic rendering for the whole tree so Next
-// never tries to statically prerender routes like /_not-found against a
-// build-time DB connection that may not exist yet (e.g. a fresh checkout
-// before `prisma migrate deploy`).
-export const dynamic = "force-dynamic";
+// The root layout resolves branding from the DB and HeaderNav reads the
+// session cookie on every request, so this segment blocks rather than
+// streaming behind <Suspense>. `instant = false` (Cache Components) allows
+// that; every page and layout opts out the same way until it is converted.
+export const instant = false;
 
 export async function generateMetadata(): Promise<Metadata> {
   const league = await getLeagueConfig();

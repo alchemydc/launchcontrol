@@ -1,6 +1,6 @@
 import { LeagueGate } from "@/components/league-gate";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 /**
  * `/leagues` — the league gate, always rendered. Kept as an explicit alias

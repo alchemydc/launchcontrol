@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { AuditFilterBar } from "./audit-filter-bar";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export const metadata: Metadata = {
   title: "Audit log",

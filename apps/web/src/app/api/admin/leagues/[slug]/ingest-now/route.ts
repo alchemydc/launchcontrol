@@ -3,10 +3,6 @@ import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { expireResultsCache } from "@/lib/results-cache";
 
-// The shared scrape lib shells out to pdftotext (execFileSync) — force nodejs.
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 /**
  * On-demand RMsolo scrape for one league. Guard (404 fail-closed like every
  * league admin route) → capability gate (501 + reason when disabled) →

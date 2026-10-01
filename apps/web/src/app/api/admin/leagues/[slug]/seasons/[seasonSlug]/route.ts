@@ -4,8 +4,6 @@ import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { expireResultsCache } from "@/lib/results-cache";
 
-export const runtime = "nodejs";
-
 const PATCH_KEYS = [
   "name",
   "slug",

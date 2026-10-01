@@ -5,7 +5,7 @@ import { gateResultsPage } from "@/lib/session";
 import { listSeasonsForLeague, pickSeasonBySlug } from "@/lib/season-resolve";
 import { renderLeagueSeasonLeaderboard } from "../../../render-league-leaderboard";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function LeagueLeaderboardClassPage({
   params,

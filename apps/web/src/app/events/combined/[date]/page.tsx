@@ -4,7 +4,7 @@ import { gateResultsPage } from "@/lib/session";
 import { CombinedEventPageView } from "./combined-event-view";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function CombinedEventPage({
   params,

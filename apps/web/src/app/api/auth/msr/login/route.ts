@@ -14,8 +14,6 @@ import { MSR_AUTHORIZE_URL_BASE, MSR_REQUEST_TOKEN_URL } from "@/lib/msr-endpoin
 import { parseFormEncoded, signRequest } from "@/lib/msr";
 import { getRequestTokenSession, sanitizeReturnTo } from "@/lib/session";
 
-export const runtime = "nodejs";
-
 export async function GET(request: NextRequest) {
   const callbackUrl = process.env.MSR_OAUTH_CALLBACK_URL;
   if (!callbackUrl) {

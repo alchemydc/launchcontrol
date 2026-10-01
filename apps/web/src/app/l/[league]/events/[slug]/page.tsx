@@ -3,7 +3,7 @@ import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { EventPageView } from "@/app/events/[slug]/event-page-view";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function LeagueEventPage({
   params,

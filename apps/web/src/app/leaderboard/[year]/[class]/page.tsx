@@ -1,17 +1,17 @@
 import { notFound } from "next/navigation";
 import {
-  buildSeasonLeaderboard,
   findSeasonSection,
   listSeasonYears,
   summarizeSeasonSections,
 } from "@/lib/season-leaderboard";
+import { cachedSeasonLeaderboard } from "@/lib/cached-results";
 import { getLeagueConfig } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { SeasonSwitcher } from "../../season-switcher";
 import { SeasonLeaderboardView } from "../../season-leaderboard-view";
 
-export const revalidate = 300;
+export const instant = false;
 
 function decodeClassParam(raw: string): string {
   try {
@@ -41,7 +41,7 @@ export default async function LeaderboardClassPage({
   if (!Number.isInteger(year) || year < 2000 || year > 2100) notFound();
 
   const years = await listSeasonYears();
-  const result = await buildSeasonLeaderboard(year);
+  const result = await cachedSeasonLeaderboard(year);
   const section = findSeasonSection(
     result.sections,
     decodeClassParam(rawClass),

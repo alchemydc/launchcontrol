@@ -2,11 +2,11 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
 import {
-  buildDriverHistory,
   listSeasonsForDriver,
   type DriverHistoryFilter,
   type DriverHistoryRow,
 } from "@/lib/driver-history";
+import { cachedDriverHistory } from "@/lib/cached-results";
 import { getLeagueConfig, getLeagueConfigForSlug } from "@/lib/league-config";
 import { ProgressionChart, type ProgressionPoint } from "./progression-chart";
 import { TimeDeltaChart } from "./time-delta-chart";
@@ -210,7 +210,7 @@ export async function DriverPageView({
     lockedLeague != null,
   );
 
-  const history = await buildDriverHistory(driverId, filter, prisma);
+  const history = await cachedDriverHistory(driverId, filter);
   const driverName = `${driver.firstName} ${driver.lastInitial}`;
 
   const cleanRows = history.filter((r) => r.position != null);

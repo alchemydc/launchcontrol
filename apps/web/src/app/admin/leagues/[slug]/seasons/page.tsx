@@ -7,7 +7,7 @@ import { isLeagueAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { SeasonsTable, type SeasonRow } from "./seasons-table";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export async function generateMetadata({
   params,

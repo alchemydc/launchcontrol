@@ -13,7 +13,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { resolveSelfDriver } from "@/lib/driver-self";
-import { buildDriverHistory, listSeasonsForDriver } from "@/lib/driver-history";
+import { listSeasonsForDriver } from "@/lib/driver-history";
+import { cachedDriverHistory } from "@/lib/cached-results";
 import { getLeagueConfig, getLeagueConfigForSlug, type LeagueConfig } from "@/lib/league-config";
 import { checkLeagueAccess } from "@/lib/session";
 import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
   title: "My Profile",
 };
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 /**
  * The driver's leagues, narrowed to the ones THIS session may actually open.
@@ -151,7 +152,7 @@ async function MyResults({
   const hasDefault = allowed.some((l) => l.slug === defaultLeague.slug);
   const scope = hasDefault ? allowed : allowed.slice(0, 1);
 
-  const history = await buildDriverHistory(self.driverId, {
+  const history = await cachedDriverHistory(self.driverId, {
     leagueIds: scope.map((l) => l.id),
   });
 

@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { isAnyLeagueAdmin } from "@/lib/admin";
 
+export const instant = false;
+
 export default async function AdminLayout({
   children,
 }: {
