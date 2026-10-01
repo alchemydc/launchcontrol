@@ -8,10 +8,12 @@ import { gateResultsPage } from "@/lib/session";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { SeasonSwitcher } from "./season-switcher";
 import { SeasonOverviewView } from "./season-overview-view";
+import { connection } from "next/server";
 
 export const instant = false;
 
 export default async function LeaderboardPage() {
+  await connection();
   const league = await getLeagueConfig();
   await gateResultsPage(league, "/leaderboard", `/l/${league.slug}`);
 

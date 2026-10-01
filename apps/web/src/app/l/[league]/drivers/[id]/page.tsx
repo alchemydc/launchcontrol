@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { requireMember } from "@/lib/session";
 import { DriverPageView } from "@/app/drivers/[id]/driver-page-view";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -19,6 +20,7 @@ export default async function LeagueDriverPage({
   params: Promise<{ league: string; id: string }>;
   searchParams: Promise<{ league?: string; season?: string; from?: string; to?: string }>;
 }) {
+  await connection();
   const { league: leagueSlug, id } = await params;
   const league = await getLeagueConfigForSlug(leagueSlug);
   if (!league) notFound();

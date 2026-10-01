@@ -1,6 +1,7 @@
 import { getLeagueConfig } from "@/lib/league-config";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { ClassingPageView } from "@/app/l/[league]/classing/classing-page-view";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -16,6 +17,7 @@ export default async function ClassingPage({
 }: {
   searchParams: Promise<{ season?: string }>;
 }) {
+  await connection();
   const { season } = await searchParams;
   const league = await getLeagueConfig();
 

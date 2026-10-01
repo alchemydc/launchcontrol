@@ -10,6 +10,7 @@ import { gateResultsPage } from "@/lib/session";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { SeasonSwitcher } from "../../season-switcher";
 import { SeasonLeaderboardView } from "../../season-leaderboard-view";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -28,6 +29,7 @@ export default async function LeaderboardClassPage({
   params: Promise<{ year: string; class: string }>;
   searchParams: Promise<{ sort?: string }>;
 }) {
+  await connection();
   const { year: yearStr, class: rawClass } = await params;
   const { sort } = await searchParams;
   const league = await getLeagueConfig();

@@ -7,6 +7,7 @@ import { isLeagueAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import type { MembershipRole } from "@/lib/membership";
 import { MembersTable, type MemberRow } from "./members-table";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -15,6 +16,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
+  await connection();
   const { slug } = await params;
   const league = await prisma.league.findUnique({ where: { slug } });
   return { title: league ? `Admins · ${league.name}` : "Admins" };
@@ -25,6 +27,7 @@ export default async function AdminMembersPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  await connection();
   const { slug } = await params;
 
   const league = await prisma.league.findUnique({ where: { slug } });

@@ -9,6 +9,7 @@ import { gateResultsPage } from "@/lib/session";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { SeasonSwitcher } from "../season-switcher";
 import { SeasonOverviewView } from "../season-overview-view";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -17,6 +18,7 @@ export default async function LeaderboardYearPage({
 }: {
   params: Promise<{ year: string }>;
 }) {
+  await connection();
   const { year: yearStr } = await params;
   const league = await getLeagueConfig();
   await gateResultsPage(

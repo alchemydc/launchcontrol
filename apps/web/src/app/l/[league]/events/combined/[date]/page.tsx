@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { CombinedEventPageView } from "@/app/events/combined/[date]/combined-event-view";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -16,6 +17,7 @@ export default async function LeagueCombinedEventPage({
 }: {
   params: Promise<{ league: string; date: string }>;
 }) {
+  await connection();
   const { league: leagueSlug, date } = await params;
   const league = await getLeagueConfigForSlug(leagueSlug);
   if (!league) notFound();

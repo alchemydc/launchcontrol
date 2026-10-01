@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { administeredLeagues } from "@/lib/admin";
 import { EventsTable, type EventRow } from "./events-table";
 import { EventsFilterBar } from "./events-filter-bar";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -16,6 +17,7 @@ export default async function AdminEventsPage({
 }: {
   searchParams: Promise<{ league?: string; season?: string }>;
 }) {
+  await connection();
   const { league: leagueParam, season: seasonParam } = await searchParams;
   const session = await getSession();
 

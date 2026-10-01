@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { ClassingPageView } from "./classing-page-view";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -18,6 +19,7 @@ export default async function LeagueClassingPage({
   params: Promise<{ league: string }>;
   searchParams: Promise<{ season?: string }>;
 }) {
+  await connection();
   const { league: leagueSlug } = await params;
   const { season } = await searchParams;
   const league = await getLeagueConfigForSlug(leagueSlug);

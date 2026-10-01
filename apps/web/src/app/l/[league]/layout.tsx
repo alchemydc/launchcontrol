@@ -5,6 +5,7 @@ import { hasClassingModel } from "@/lib/classing-registry";
 import { LeagueSubnav } from "@/components/league-subnav";
 import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { prisma } from "@/lib/prisma";
+import { connection } from "next/server";
 
 /**
  * Per-league <title>/<meta description> for the /l/[league] subtree — without
@@ -21,6 +22,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ league: string }>;
 }): Promise<Metadata> {
+  await connection();
   const { league: slug } = await params;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) return {};
@@ -44,6 +46,7 @@ export default async function LeagueLayout({
   children: React.ReactNode;
   params: Promise<{ league: string }>;
 }) {
+  await connection();
   const { league: slug } = await params;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) notFound();

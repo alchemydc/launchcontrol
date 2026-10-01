@@ -1,4 +1,5 @@
 import { LeagueGate } from "@/components/league-gate";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -8,5 +9,6 @@ export const instant = false;
  * has a stable, memorable URL independent of `/`.
  */
 export default async function LeaguesPage() {
+  await connection();
   return <LeagueGate />;
 }

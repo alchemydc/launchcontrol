@@ -1,4 +1,5 @@
 import { LeagueGate } from "@/components/league-gate";
+import { connection } from "next/server";
 
 export const instant = false;
 
@@ -18,5 +19,6 @@ export const instant = false;
  * league directly, same as before.
  */
 export default async function HomePage() {
+  await connection();
   return <LeagueGate />;
 }

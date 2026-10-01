@@ -22,6 +22,7 @@ import { CloseButton } from "@/components/close-button";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: "My Profile",
@@ -50,6 +51,7 @@ async function accessibleLeagues(
 }
 
 export default async function MePage() {
+  await connection();
   const session = await getSession();
 
   if (!session.msrUid) {
