@@ -2,14 +2,16 @@ import { getLeagueConfig } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { DefaultLeagueSubnav } from "@/components/default-league-subnav";
 import { EventClassPageView } from "../event-class-page-view";
+import { connection } from "next/server";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function EventClassPage({
   params,
 }: {
   params: Promise<{ slug: string; class: string }>;
 }) {
+  await connection();
   const { slug, class: rawClass } = await params;
   const league = await getLeagueConfig();
   await gateResultsPage(

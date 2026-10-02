@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { connection } from "next/server";
 import { HeaderNav } from "@/components/header-nav";
 import { getLeagueConfig } from "@/lib/league-config";
 import "./globals.css";
@@ -15,14 +16,18 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// The root layout resolves branding from the DB on every request (via
-// getLeagueConfig()). Force dynamic rendering for the whole tree so Next
-// never tries to statically prerender routes like /_not-found against a
-// build-time DB connection that may not exist yet (e.g. a fresh checkout
-// before `prisma migrate deploy`).
-export const dynamic = "force-dynamic";
+// The root layout resolves branding from the DB and HeaderNav reads the
+// session cookie on every request, so this segment blocks rather than
+// streaming behind <Suspense>. `instant = false` (Cache Components) allows
+// that; every page and layout opts out the same way until it is converted.
+//
+// `connection()` below defers the DB read to request time, so the build
+// never prerenders a route (e.g. /_not-found) against a build-time DB that
+// may be empty or absent (CI, a fresh checkout before `prisma migrate deploy`).
+export const instant = false;
 
 export async function generateMetadata(): Promise<Metadata> {
+  await connection();
   const league = await getLeagueConfig();
   return {
     title: { default: league.siteTitle, template: "%s · Launch Control" },
@@ -35,6 +40,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  await connection();
   const league = await getLeagueConfig();
   return (
     <html

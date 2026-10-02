@@ -4,9 +4,6 @@ import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { expireResultsCache } from "@/lib/results-cache";
 
-// updateLeague/deleteLeague pull in create-league.ts, which uses node:fs.
-export const runtime = "nodejs";
-
 const PATCH_KEYS = [
   "name",
   "siteTitle",

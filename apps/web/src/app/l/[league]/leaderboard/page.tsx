@@ -4,8 +4,9 @@ import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { listSeasonsForLeague, pickActiveSeason } from "@/lib/season-resolve";
 import { renderLeagueSeasonLeaderboard } from "./render-league-leaderboard";
+import { connection } from "next/server";
 
-export const revalidate = 300;
+export const instant = false;
 
 /**
  * Bare /l/[league]/leaderboard — the league's active season (spec: status
@@ -17,6 +18,7 @@ export default async function LeagueLeaderboardPage({
 }: {
   params: Promise<{ league: string }>;
 }) {
+  await connection();
   const { league: slug } = await params;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) notFound();

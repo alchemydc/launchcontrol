@@ -4,8 +4,9 @@ import { getLeagueConfigForSlug } from "@/lib/league-config";
 import { gateResultsPage } from "@/lib/session";
 import { listSeasonsForLeague, pickSeasonBySlug } from "@/lib/season-resolve";
 import { renderLeagueSeasonLeaderboard } from "../../../render-league-leaderboard";
+import { connection } from "next/server";
 
-export const revalidate = 300;
+export const instant = false;
 
 export default async function LeagueLeaderboardClassPage({
   params,
@@ -14,6 +15,7 @@ export default async function LeagueLeaderboardClassPage({
   params: Promise<{ league: string; seasonSlug: string; class: string }>;
   searchParams: Promise<{ sort?: string }>;
 }) {
+  await connection();
   const { league: slug, seasonSlug, class: classParam } = await params;
   const { sort } = await searchParams;
   const league = await getLeagueConfigForSlug(slug);

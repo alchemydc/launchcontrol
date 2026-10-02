@@ -14,6 +14,9 @@
 
 import type { Metadata } from "next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { connection } from "next/server";
+
+export const instant = false;
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -31,6 +34,7 @@ interface PageProps {
 }
 
 export default async function LoginPage({ searchParams }: PageProps) {
+  await connection();
   const { error } = await searchParams;
   const errorMessage = error ? (ERROR_MESSAGES[error] ?? "An unexpected error occurred. Please try again.") : null;
 

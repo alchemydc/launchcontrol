@@ -7,14 +7,16 @@ import { getSession } from "@/lib/session";
 import { administeredLeagues } from "@/lib/admin";
 import { isSuperUser } from "@/lib/super-user";
 import { CreateLeagueDialog } from "./create-league-dialog";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export const metadata: Metadata = {
   title: "Admin",
 };
 
 export default async function AdminPage() {
+  await connection();
   const session = await getSession();
   const [leagues, canManageUsers] = await Promise.all([
     administeredLeagues(session.msrUid),

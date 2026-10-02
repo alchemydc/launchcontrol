@@ -7,14 +7,16 @@ import { isLeagueAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { parseScoringPolicy } from "@/lib/scoring-policy";
 import { PresetsTable, type PresetRow } from "./presets-table";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
+  await connection();
   const { slug } = await params;
   const league = await prisma.league.findUnique({ where: { slug } });
   return { title: league ? `Scoring rulesets · ${league.name}` : "Scoring rulesets" };
@@ -25,6 +27,7 @@ export default async function AdminPresetsPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  await connection();
   const { slug } = await params;
 
   const league = await prisma.league.findUnique({ where: { slug } });

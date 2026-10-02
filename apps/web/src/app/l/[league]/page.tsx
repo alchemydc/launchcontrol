@@ -8,8 +8,9 @@ import {
 } from "@/lib/session";
 import { EventsHome } from "@/app/_events-home";
 import { Landing } from "@/components/landing";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 /**
  * League home (Task 5) — the league-scoped equivalent of app/page.tsx,
@@ -29,6 +30,7 @@ export default async function LeagueHomePage({
   params: Promise<{ league: string }>;
   searchParams: Promise<{ season?: string; returnTo?: string | string[] }>;
 }) {
+  await connection();
   const { league: slug } = await params;
   const league = await getLeagueConfigForSlug(slug);
   if (!league) notFound();

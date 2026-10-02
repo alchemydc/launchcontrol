@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { UploadForm } from "./upload-form";
 
+export const instant = false;
+
 export const metadata: Metadata = {
   title: "Ingest .axdb",
 };

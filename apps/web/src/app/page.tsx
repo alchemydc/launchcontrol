@@ -1,6 +1,7 @@
 import { LeagueGate } from "@/components/league-gate";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 /**
  * ROOT `/` — always the league gate (card grid), for every deployment,
@@ -18,5 +19,6 @@ export const dynamic = "force-dynamic";
  * league directly, same as before.
  */
 export default async function HomePage() {
+  await connection();
   return <LeagueGate />;
 }

@@ -12,8 +12,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AuditFilterBar } from "./audit-filter-bar";
+import { connection } from "next/server";
 
-export const dynamic = "force-dynamic";
+export const instant = false;
 
 export const metadata: Metadata = {
   title: "Audit log",
@@ -82,6 +83,7 @@ export default async function AdminAuditPage({
 }: {
   searchParams: Promise<{ league?: string }>;
 }) {
+  await connection();
   const { league: leagueParam } = await searchParams;
   const session = await getSession();
 
