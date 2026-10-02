@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { connection } from "next/server";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { HeaderNav } from "@/components/header-nav";
 import { getLeagueConfig } from "@/lib/league-config";
 import "./globals.css";
@@ -64,6 +66,14 @@ export default async function RootLayout({
         <footer className="mt-auto border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
           {league.footerText ?? "Powered by Launch Control"}
         </footer>
+
+        {/* Self-hosted (Docker) deploys have no /_vercel/* endpoints. */}
+        {process.env.VERCEL && (
+          <>
+            <Analytics />
+            <SpeedInsights />
+          </>
+        )}
       </body>
     </html>
   );

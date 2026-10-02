@@ -2,6 +2,7 @@ import { guardLeagueAdmin } from "@/lib/admin-guard";
 import { createSeason, type CreateSeasonOptions } from "@/lib/create-season";
 import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
+import { expireResultsCache } from "@/lib/results-cache";
 
 /**
  * The created season points at a ScoringSystem ruleset (live reference —
@@ -54,6 +55,8 @@ export async function POST(
       });
       return created;
     });
+    // A leaderboard viewed before this season existed cached an empty result.
+    expireResultsCache();
     return Response.json({ season }, { status: 201 });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "create failed" }, { status: 400 });
