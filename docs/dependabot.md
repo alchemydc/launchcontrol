@@ -160,6 +160,9 @@ time — wait for each to fully merge before rebasing the next. When polling, ga
 actually being current, not just green: require both `mergeStateStatus == CLEAN` **and** a
 fresh `web` pass on the *new* head SHA (a stale pre-rebase run still shows `pass`).
 
+`.claude/skills/dependabot-merge/dependabot-merge.sh` automates this whole section
+(`status`, `merge [--dry-run]`, `verify`). Agents pick it up as the `dependabot-merge` skill.
+
 After the batch, run the [local CI mirror](#local-ci-mirror-verification) against `main` to
 confirm the lockfile is healthy.
 
