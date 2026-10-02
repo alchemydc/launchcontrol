@@ -8,7 +8,8 @@
 real_season_data/
 
 # claude config / scratch
-.claude/
+.claude/*
+!.claude/skills/
 
 # deps & build output (workspace-wide)
 node_modules/
