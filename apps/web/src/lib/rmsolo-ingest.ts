@@ -10,6 +10,7 @@ import {
 import { resolveOrCreateSeason, resolveSeasonBySlug } from "@/lib/season-resolve";
 import { nearestPaxClass, parseSeasonPaxTable, resolveRulesetPaxIndex } from "@/lib/rmsolo-pax";
 import { reconcileTimes, type ParsedEntry, type ParsedRmsoloEvent, type ParsedRun } from "@/lib/rmsolo-parse";
+import { indexClassKey, type RmsoloIndexRow } from "@/lib/rmsolo-index-pdf";
 
 const CONE_SECONDS = 2.0;
 const EPS = 0.0005;
@@ -35,7 +36,17 @@ export type RmsoloIngestInput = {
    * resolveOrCreateSeason refuses to guess between them (PR #99 review).
    */
   seasonSlug?: string;
+  /**
+   * Rows from the same event's Index PDF (parseRmsoloIndexText). When given,
+   * run-group entries take their paxClass from the class printed there, and a
+   * class the ruleset table doesn't list takes the factor printed there.
+   * Optional: without it, run-group classes are guessed from the factor.
+   */
+  indexRows?: RmsoloIndexRow[];
 };
+
+// Run-group section headings (M/N/S/P/X) are single letters; real classes are >=2 chars.
+const isRunGroupCode = (code: string): boolean => /^[A-Z]$/.test(code);
 
 function toDisposition(raw: ParsedRun["disposition"]): RunDisposition {
   switch (raw) {
@@ -132,29 +143,69 @@ export async function ingestRmsoloEvent(
   const penalizedTotal = (r: ParsedRun): number => rawSeconds(r) + r.cones * CONE_SECONDS;
 
   // Run-group sections (M/N/S/P/X) print a PAX-indexed Best but never the
-  // driver's underlying class. The applied factor is recoverable as
-  // printedBest / bestPenalizedRaw, and nearestPaxClass maps it back to the
-  // class it belongs to — giving the entry its true paxClass while the
-  // entered class remains the run group (mirroring the .axdb class/paxmult
-  // split this schema was built for). Entries whose factor matches nothing
-  // in the table keep paxClass = entered class (factor 1.0 fallback). This
-  // matching is against the built-in RMSOLO_PAX_2026 table only — the
-  // ruleset's paxTable doesn't affect WHICH class a derived factor maps to,
-  // only the numeric paxIndex ultimately stored for that class (below).
+  // driver's underlying class; the entered class stays the run group (mirroring
+  // the .axdb class/paxmult split this schema was built for) and the real class
+  // becomes the entry's paxClass. Two sources, in order:
+  //
+  // 1. The event's Index PDF, which prints the class outright ("X/SST"),
+  //    matched by name + car number. Always right, for every season.
+  // 2. Otherwise, a guess: the applied factor is recoverable as
+  //    printedBest / bestPenalizedRaw, and nearestPaxClass maps it to the
+  //    closest class in the built-in RMSOLO_PAX_2026 table. This is wrong
+  //    whenever a past season's factor matches a different 2026 class (2024
+  //    SST at 0.836 reads as AST), which is why the Index PDF wins.
+  //
+  // Entries neither source resolves keep paxClass = entered class (factor 1.0
+  // fallback). The ruleset's paxTable doesn't affect WHICH class an entry maps
+  // to, only the numeric factor stored for that class (below).
+  const indexRowByKey = new Map<string, RmsoloIndexRow>();
+  for (const row of input.indexRows ?? []) {
+    const key = `${row.name}|${row.carNumber}`;
+    if (!indexRowByKey.has(key)) indexRowByKey.set(key, row);
+  }
   const derivedPaxCodeByEntry = new Map<ParsedEntry, string>();
-  for (const e of unreconciled) {
-    // Only run-group section headings (single letters: M/N/S/P/X) print
-    // indexed Bests; real classes are >=2 chars. Without this gate, any
-    // unreconciled normal-class entry (e.g. a printing glitch) whose
-    // best/raw ratio lands near a table factor would silently get a
-    // mislabeled paxClass — notably AM (1.000) for near-1.0 ratios.
-    if (!/^[A-Z]$/.test(e.classCode)) continue;
+  const unmatchedRunGroup: ParsedEntry[] = [];
+  for (const e of parsed.entries) {
+    // Real classes never need deriving. Without this gate, any unreconciled
+    // normal-class entry (e.g. a printing glitch) whose best/raw ratio lands
+    // near a table factor would silently get a mislabeled paxClass — notably
+    // AM (1.000) for near-1.0 ratios.
+    if (!isRunGroupCode(e.classCode)) continue;
+    const row = indexRowByKey.get(indexClassKey(e.firstName, e.lastName, e.carNumber));
+    if (row && !isRunGroupCode(row.baseClass)) {
+      derivedPaxCodeByEntry.set(e, row.baseClass);
+      continue;
+    }
+    if (input.indexRows) unmatchedRunGroup.push(e);
+    if (!unreconciledSet.has(e)) continue;
     if (e.bestSeconds == null) continue;
     const clean = e.runs.filter((r) => r.disposition === "CLEAN");
     if (clean.length === 0) continue;
     const minPenal = Math.min(...clean.map(penalizedTotal));
     const match = nearestPaxClass(e.bestSeconds / minPenal);
     if (match) derivedPaxCodeByEntry.set(e, match.code);
+  }
+  if (unmatchedRunGroup.length > 0) {
+    console.warn(
+      `[rmsolo-ingest] ${unmatchedRunGroup.length} run-group entr${unmatchedRunGroup.length === 1 ? "y" : "ies"} not found in the Index PDF — class guessed from the factor: ` +
+        unmatchedRunGroup.map((e) => `${e.classCode}/${driverLabelFor(e)} #${e.carNumber}`).join(", "),
+    );
+  }
+
+  // The factor each class was actually run at, per the Index PDF (most common
+  // printed value per base class). Backs classes the ruleset table doesn't
+  // list — mostly past seasons' classes (STX, STU, XP, ...) that a 2026 table
+  // never carried, which would otherwise score at 1.0.
+  const indexFactorCounts = new Map<string, Map<number, number>>();
+  for (const row of input.indexRows ?? []) {
+    const counts = indexFactorCounts.get(row.baseClass) ?? new Map<number, number>();
+    counts.set(row.factor, (counts.get(row.factor) ?? 0) + 1);
+    indexFactorCounts.set(row.baseClass, counts);
+  }
+  const indexFactorByClass = new Map<string, number>();
+  for (const [code, counts] of indexFactorCounts) {
+    const [factor] = [...counts.entries()].reduce((a, b) => (b[1] > a[1] ? b : a));
+    indexFactorByClass.set(code, factor);
   }
 
   return await client.$transaction(async (tx) => {
@@ -185,6 +236,12 @@ export async function ingestRmsoloEvent(
     // malformed stored table must not crash an ingest.
     const ruleset = await tx.scoringSystem.findUniqueOrThrow({ where: { id: season.rulesetId } });
     const rulesetPaxTable = parseSeasonPaxTable(ruleset.paxTable);
+    // Ruleset first (it owns the factors); then what the Index PDF printed for
+    // a class the ruleset doesn't list; then resolveRulesetPaxIndex's 1.0.
+    const factorFor = (code: string): number => {
+      if (Object.hasOwn(rulesetPaxTable, code)) return rulesetPaxTable[code]!;
+      return indexFactorByClass.get(code) ?? resolveRulesetPaxIndex(code, rulesetPaxTable);
+    };
 
     const existing = await tx.event.findUnique({ where: { seasonId_slug: { seasonId, slug } } });
 
@@ -235,13 +292,13 @@ export async function ingestRmsoloEvent(
 
     const newClassData = classCodes
       .filter((code) => !existingClassByCode.has(code))
-      .map((code) => ({ leagueId: league.id, code, paxIndex: resolveRulesetPaxIndex(code, rulesetPaxTable) }));
+      .map((code) => ({ leagueId: league.id, code, paxIndex: factorFor(code) }));
     if (newClassData.length > 0) {
       await tx.carClass.createMany({ data: newClassData });
     }
     for (const code of classCodes) {
       const cur = existingClassByCode.get(code);
-      const pax = resolveRulesetPaxIndex(code, rulesetPaxTable);
+      const pax = factorFor(code);
       if (cur && Number(cur.paxIndex) !== pax) {
         await tx.carClass.update({ where: { id: cur.id }, data: { paxIndex: pax } });
       }
@@ -384,14 +441,14 @@ export async function ingestRmsoloEvent(
       const paxCode = derivedPaxCodeByEntry.get(e) ?? e.classCode;
       const paxClassId = classIdByCode.get(paxCode);
       if (paxClassId == null) throw new Error(`Entry references unknown pax class code '${paxCode}'`);
-      // Snapshot the factor in force at ingest. resolveRulesetPaxIndex(paxCode)
+      // Snapshot the factor in force at ingest. factorFor(paxCode)
       // is exactly what set CarClass.paxIndex for paxCode's class above, so
       // Entry.paxClass.paxIndex === Entry.paxIndexApplied now — they diverge
       // only if the CarClass is later edited. Covers both paths: the derived
-      // run-group class (paxCode from nearestPaxClass) and the fallback where
+      // run-group class (paxCode from the Index PDF or nearestPaxClass) and the fallback where
       // paxCode = entered class (no match → the class's own factor, 1.0 for a
       // bare run-group heading).
-      const paxIndexApplied = resolveRulesetPaxIndex(paxCode, rulesetPaxTable);
+      const paxIndexApplied = factorFor(paxCode);
       const identityHash = identityByEntry.get(e)!;
       const driverId = driverIdByIdentity.get(identityHash);
       if (driverId == null) throw new Error(`Missing driver mapping for identity hash '${identityHash.slice(0, 12)}…'`);

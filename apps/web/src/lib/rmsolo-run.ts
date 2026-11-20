@@ -1,7 +1,8 @@
 // Shared RMsolo scrape-loop orchestration, extracted from
 // scripts/ingest-rmsolo.ts so the CLI and the capability-gated "Ingest now"
-// admin route run the EXACT same loop: index fetch → per-event Full-PDF
-// download (1.5s polite delay) → sha256 pre-check → parse → ingestRmsoloEvent.
+// admin route run the EXACT same loop: index fetch → per-event Full-PDF (+
+// Index-PDF) download (1.5s polite delay) → sha256 pre-check → parse →
+// ingestRmsoloEvent.
 //
 // This module imports extractPdfText (which shells out to `pdftotext` via
 // execFileSync). The admin route imports THIS module dynamically inside its
@@ -19,6 +20,7 @@ import { prisma as defaultClient } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { extractPdfText, parseRmsoloFullText } from "@/lib/rmsolo-parse";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
+import { parseRmsoloIndexText, type RmsoloIndexRow } from "@/lib/rmsolo-index-pdf";
 import { fetchResultsPage, fetchRmsoloPdf, parseResultsPage } from "@/lib/rmsolo-index";
 
 const POLITE_DELAY_MS = 1500;
@@ -111,12 +113,49 @@ export type RmsoloRunCounts = {
   failed: number;
 };
 
+const sha256Hex = (data: Buffer | string): string => createHash("sha256").update(data).digest("hex");
+
+/**
+ * The event's source hash. With an Index PDF it covers both files, so adding
+ * (or changing) the Index PDF re-ingests an event that was first ingested
+ * from its Full PDF alone, picking up the corrected run-group classes.
+ */
+export function rmsoloSourceSha256(fullPdf: Buffer, indexPdf?: Buffer): string {
+  const fullSha = sha256Hex(fullPdf);
+  return indexPdf ? sha256Hex(`${fullSha}:${sha256Hex(indexPdf)}`) : fullSha;
+}
+
+/**
+ * pdftotext needs a path argument, so the buffer goes to a temp file. The PDF
+ * holds names + hometowns, so the directory is removed in the finally whether
+ * extraction succeeds or throws — a polling deployment must not accumulate PII
+ * (or fill the disk) under /tmp.
+ */
+function extractPdfBufferText(pdf: Buffer): string {
+  const tmpDir = mkdtempSync(join(tmpdir(), "rmsolo-"));
+  try {
+    const tmp = join(tmpDir, "event.pdf");
+    writeFileSync(tmp, pdf);
+    return extractPdfText(tmp);
+  } finally {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best-effort — never fail an ingest over temp-dir cleanup
+    }
+  }
+}
+
 /**
  * Ingest one downloaded PDF buffer into `leagueSlug`. Preserves the CLI's
  * league-scoped sha256 pre-check (cheap skip before shelling out to pdftotext),
  * mkdtemp temp-file handling (cleaned up in a finally), and a best-effort
  * per-event "ingest" audit attributed to `actor`.
  * Returns the ingest summary, or `null` when the sha pre-check skipped it.
+ *
+ * `opts.indexPdf` is the same event's Index PDF: it supplies the real class of
+ * every run-group (M/N/S/P/X) entry. An Index PDF that yields no rows is
+ * ignored with a warning rather than failing the event.
  *
  * Exported so the CLI's `--file` single-PDF path shares this exact code.
  */
@@ -127,13 +166,13 @@ export async function ingestBuffer(
   name: string | undefined,
   leagueSlug: string | undefined,
   client: PrismaClient = defaultClient,
-  opts: { actor?: IngestActor; seasonSlug?: string } = {},
+  opts: { actor?: IngestActor; seasonSlug?: string; indexPdf?: Buffer } = {},
 ): Promise<IngestSummary | null> {
   const actor = opts.actor ?? CLI_ACTOR;
-  const sha256 = createHash("sha256").update(pdf).digest("hex");
+  const sha256 = rmsoloSourceSha256(pdf, opts.indexPdf);
   const effectiveLeagueSlug = leagueSlug?.trim() || DEFAULT_LEAGUE_SLUG;
   // Cheap skip before we bother shelling out to pdftotext / parsing: if a
-  // prior run already ingested this exact PDF INTO THIS LEAGUE, do nothing.
+  // prior run already ingested these exact PDFs INTO THIS LEAGUE, do nothing.
   // Scoped by league (not global) — the same PDF sha256 ingested into two
   // different leagues (e.g. a shared results source) must ingest into both,
   // not skip the second because the first already claimed that hash.
@@ -146,25 +185,17 @@ export async function ingestBuffer(
     console.log(`[skip] ${sourceName} — already ingested (event ${existing.slug})`);
     return null;
   }
-  // The temp file exists only because pdftotext needs a path argument; the
-  // PDF holds names + hometowns, so the directory is removed in the finally
-  // whether the parse succeeds or throws — a polling deployment must not
-  // accumulate PII (or fill the disk) under /tmp.
-  const tmpDir = mkdtempSync(join(tmpdir(), "rmsolo-"));
-  let parsed: ReturnType<typeof parseRmsoloFullText>;
-  try {
-    const tmp = join(tmpDir, "event.pdf");
-    writeFileSync(tmp, pdf);
-    parsed = parseRmsoloFullText(extractPdfText(tmp));
-  } finally {
-    try {
-      rmSync(tmpDir, { recursive: true, force: true });
-    } catch {
-      // best-effort — never fail an ingest over temp-dir cleanup
+  const parsed = parseRmsoloFullText(extractPdfBufferText(pdf));
+  let indexRows: RmsoloIndexRow[] | undefined;
+  if (opts.indexPdf) {
+    indexRows = parseRmsoloIndexText(extractPdfBufferText(opts.indexPdf));
+    if (indexRows.length === 0) {
+      console.warn(`[ingest:rmsolo] ${sourceName} — Index PDF had no readable rows; run-group classes will be guessed`);
+      indexRows = undefined;
     }
   }
   const result = await ingestRmsoloEvent(
-    { parsed, sha256, date, name, leagueSlug, seasonSlug: opts.seasonSlug },
+    { parsed, sha256, date, name, leagueSlug, seasonSlug: opts.seasonSlug, indexRows },
     client,
   );
   console.log(JSON.stringify(result, null, 2));
@@ -187,7 +218,8 @@ export async function ingestBuffer(
 
 /**
  * Run the full RMsolo scrape loop for one league: fetch the results index,
- * then for each listed event download its Full PDF (with a 1.5s polite delay),
+ * then for each listed event download its Full PDF and, when listed, its Index
+ * PDF (with a 1.5s polite delay before each),
  * skipping Pro-Solo files (unsupported format) and events with no Full link,
  * and ingest the rest. One bad PDF is logged loudly and counted as `failed`
  * without aborting the season. Callers own their own audit — this writes only
@@ -235,6 +267,17 @@ export async function runRmsoloIngest({
       // fetchRmsoloPdf enforces the allowlisted-host/no-redirect/timeout/
       // size-cap/%PDF-signature guards — the URL comes from scraped HTML.
       const pdf = await fetchRmsoloPdf(ev.pdfUrls.full);
+      // The Index PDF carries the real class of every run-group entry. Missing
+      // or unfetchable, the event still ingests (classes guessed from factors).
+      let indexPdf: Buffer | undefined;
+      if (ev.pdfUrls.index) {
+        try {
+          await sleep(POLITE_DELAY_MS);
+          indexPdf = await fetchRmsoloPdf(ev.pdfUrls.index);
+        } catch (e) {
+          console.warn(`[warn] event #${ev.eventNumber} (${ev.date}) — Index PDF unavailable, run-group classes will be guessed:`, e);
+        }
+      }
       const result = await ingestBuffer(
         pdf,
         basename(ev.pdfUrls.full),
@@ -242,7 +285,7 @@ export async function runRmsoloIngest({
         undefined,
         leagueSlug,
         client,
-        { actor, seasonSlug },
+        { actor, seasonSlug, indexPdf },
       );
       if (result == null) counts.skipped += 1;
       else if (result.status === "ingested") counts.ingested += 1;

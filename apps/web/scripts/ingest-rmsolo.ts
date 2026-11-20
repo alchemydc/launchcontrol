@@ -32,19 +32,29 @@ async function main() {
   if (file) {
     const date = argValue("--date");
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      console.error('Usage: pnpm ingest:rmsolo [--league <slug>] [--season <slug>] --file <pdf> --date YYYY-MM-DD [--name "Event name"]');
+      console.error(
+        'Usage: pnpm ingest:rmsolo [--league <slug>] [--season <slug>] --file <pdf> [--index <index-pdf>] --date YYYY-MM-DD [--name "Event name"]',
+      );
       process.exit(2);
     }
     // pnpm sets INIT_CWD to the directory where the user invoked pnpm,
     // so relative paths work the way the user expects (not relative to apps/web).
     const path = resolve(process.env.INIT_CWD ?? process.cwd(), file);
-    if (!existsSync(path)) {
-      console.error(`File not found: ${path}`);
-      process.exit(2);
+    // --index: the same event's Index PDF, which gives run-group (M/N/S/P/X)
+    // entries their real class. Without it those classes are guessed from
+    // their PAX factor against the 2026 table, which misreads past seasons.
+    const indexArg = argValue("--index");
+    const indexPath = indexArg ? resolve(process.env.INIT_CWD ?? process.cwd(), indexArg) : undefined;
+    for (const p of [path, indexPath]) {
+      if (p && !existsSync(p)) {
+        console.error(`File not found: ${p}`);
+        process.exit(2);
+      }
     }
     requirePdftotext();
     await ingestBuffer(readFileSync(path), basename(path), date, argValue("--name"), leagueSlug, prisma, {
       seasonSlug,
+      indexPdf: indexPath ? readFileSync(indexPath) : undefined,
     });
     return;
   }
