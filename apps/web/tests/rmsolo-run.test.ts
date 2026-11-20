@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { acquireIngestLock, ingestNowCapability, pdftotextCapability } from "@/lib/rmsolo-run";
+import { createHash } from "node:crypto";
+import { acquireIngestLock, ingestNowCapability, pdftotextCapability, rmsoloSourceSha256 } from "@/lib/rmsolo-run";
 
 // Capability probe + per-league mutex only — the scrape loop itself
 // (runRmsoloIngest) hits the live network and is intentionally NOT tested here.
@@ -44,5 +45,23 @@ describe("ingest-now mutex", () => {
     expect(acquireIngestLock("other-league")).not.toBeNull();
     release!();
     expect(acquireIngestLock("rmsolo")).not.toBeNull();
+  });
+});
+
+describe("rmsoloSourceSha256", () => {
+  const full = Buffer.from("%PDF-full");
+  const index = Buffer.from("%PDF-index");
+
+  it("is the plain sha256 of the Full PDF when there is no Index PDF", () => {
+    expect(rmsoloSourceSha256(full)).toBe(createHash("sha256").update(full).digest("hex"));
+  });
+
+  it("changes when an Index PDF is added, so a Full-only event re-ingests", () => {
+    expect(rmsoloSourceSha256(full, index)).not.toBe(rmsoloSourceSha256(full));
+  });
+
+  it("is stable for the same pair and changes with the Index PDF", () => {
+    expect(rmsoloSourceSha256(full, index)).toBe(rmsoloSourceSha256(full, index));
+    expect(rmsoloSourceSha256(full, Buffer.from("%PDF-index-v2"))).not.toBe(rmsoloSourceSha256(full, index));
   });
 });

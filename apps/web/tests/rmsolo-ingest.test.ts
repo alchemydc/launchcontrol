@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaClient } from "@/generated/prisma/client";
 import { ingestRmsoloEvent } from "@/lib/rmsolo-ingest";
-import type { ParsedRmsoloEvent } from "@/lib/rmsolo-parse";
+import type { ParsedEntry, ParsedRmsoloEvent } from "@/lib/rmsolo-parse";
+import type { RmsoloIndexRow } from "@/lib/rmsolo-index-pdf";
 
 // Ported from archive (feat/rmsolo-ingest @ 12edd82, apps/web/tests/rmsolo-ingest.test.ts),
 // adapted to the League model: every ingest here targets the default (pca-rmr) league —
@@ -466,5 +467,69 @@ describe("duplicate driver-in-class collapse (shared-car anomaly)", () => {
     expect(collapseWarnings[0]![0]).toContain("SS");
     expect(collapseWarnings[0]![0]).toContain("Unknown #176"); // car number is the identity, not redacted
     warnSpy.mockRestore();
+  });
+});
+
+describe("run-group class from the event's Index PDF", () => {
+  // A 2024-style X section: the printed Best is indexed at the 2024 SST
+  // factor (0.836), which the 2026 table also gives to AST. Guessing from the
+  // factor alone picks AST; the Index PDF prints the real class, "X/SST".
+  const xEntry = (carNumber: string, firstName: string, lastName: string, raw: number, factor: number): ParsedEntry => ({
+    classCode: "X", position: 1, trophy: false, carNumber, altCarNumber: null,
+    firstName, lastName, carDescription: null, hometown: null,
+    bestSeconds: Number((raw * factor).toFixed(3)),
+    runs: [
+      { seconds: raw, cones: 0, disposition: "CLEAN" },
+      { seconds: raw + 1, cones: 0, disposition: "CLEAN" },
+    ],
+  });
+  const event: ParsedRmsoloEvent = {
+    title: "2024 RMSolo#2",
+    classCodes: ["AS", "X"],
+    entries: [
+      // Plain-class rows print raw Bests; reconcileTimes needs them to be the majority.
+      ...["11", "12", "13", "14"].map((carNumber, i): ParsedEntry => ({
+        classCode: "AS", position: i + 1, trophy: false, carNumber, altCarNumber: null,
+        firstName: "Plain", lastName: `Driver${carNumber}`, carDescription: null, hometown: null,
+        bestSeconds: 44 + i,
+        runs: [{ seconds: 44 + i, cones: 0, disposition: "CLEAN" }],
+      })),
+      xEntry("82", "Riley", "Placeholder", 45.806, 0.836), // Index: X/SST (in the ruleset table)
+      xEntry("36", "Avery", "Fixture", 46.9, 0.819), // Index: X/STX (missing from the ruleset table)
+      xEntry("198", "Dana", "Missing", 40.024, 0.836), // not in the Index rows → factor guess
+    ],
+  };
+  const indexRows: RmsoloIndexRow[] = [
+    { name: "riley placeholder", carNumber: "82", classCode: "X/SST", group: "X", baseClass: "SST", factor: 0.836 },
+    { name: "avery fixture", carNumber: "36", classCode: "X/STX", group: "X", baseClass: "STX", factor: 0.819 },
+  ];
+  const slug = "2024-04-28-2024-rmsolo-2";
+  const entryFor = (carNumber: string) =>
+    prisma.entry.findFirstOrThrow({
+      where: { carNumber, event: { slug } },
+      include: { class: true, paxClass: true },
+    });
+
+  beforeAll(async () => {
+    await ingestRmsoloEvent({ parsed: event, sha256: "indexclass1", date: "2024-04-28", indexRows }, prisma);
+  });
+
+  it("takes the class printed in the Index PDF instead of guessing from the factor", async () => {
+    const entry = await entryFor("82");
+    expect(entry.class.code).toBe("X");
+    expect(entry.paxClass.code).toBe("SST");
+    expect(Number(entry.paxIndexApplied)).toBeCloseTo(0.838, 6); // the ruleset's SST factor still governs
+  });
+
+  it("uses the Index PDF's printed factor when the ruleset has no factor for that class", async () => {
+    const entry = await entryFor("36");
+    expect(entry.paxClass.code).toBe("STX");
+    expect(Number(entry.paxIndexApplied)).toBeCloseTo(0.819, 6);
+    expect(Number(entry.paxClass.paxIndex)).toBeCloseTo(0.819, 6);
+  });
+
+  it("falls back to the factor guess for an entry the Index PDF doesn't list", async () => {
+    const entry = await entryFor("198");
+    expect(entry.paxClass.code).toBe("AST");
   });
 });

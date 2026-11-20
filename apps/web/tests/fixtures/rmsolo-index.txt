@@ -1,0 +1,13 @@
+                             Indexed Results
+                                    2024 RMSolo#2
+
+Pos Name                   Class    Num      Time   Index   Index Time   Behind From First Points
+  1 Casey Example          X/CAMT     66   45.487   0.820       37.299         -         - 1000
+  2 Jordan Sample          AS        113   46.453   0.824       38.277     0.978     0.978  974
+  3 Riley Placeholder      X/SST      82   45.806   0.836       38.294     0.017     0.995  974
+  4 Morgan Testcase        SST        99   45.899   0.836       38.372     0.078     1.073  972
+  5 Avery Fixture          X/STX      36   46.900   0.819       38.411     0.039     1.112  971
+  6                        X/STX       2   47.107   0.819       38.581     0.170     1.282  967
+  7 Quinn de la Rowe       PS-CAM/CAMC 53  46.481   0.826       38.393     0.021     1.094  972
+  8 Sky Notime           N/CAMT      19   No Time   0.820      No Time         -         -       -
+  9 Fs X 26 44.191         1.000          44.191   0.765       11.514         -         -    0
